@@ -1,5 +1,12 @@
 # dev-project-for-non-developers
 
+> **Naming**: this is the **repo name** (audience-focused — describes who the skill is for). The **skill name** that shows up in Claude Code's registry, the Makefile target shipped to bootstrapped projects, and all internal references is **`dev-project-setup`** (action-focused — describes what the skill does). The two intentionally differ:
+>
+> - Repo: `dev-project-for-non-developers` — discoverable on GitHub by people looking for "I'm not a developer but I want a real dev workflow".
+> - Skill: `dev-project-setup` — what `~/.claude/skills/dev-project-setup/` is symlinked to, what `bootstrap.py` identifies as, what the merged plan in Boxette references throughout.
+>
+> If you fork this repo and rename, the skill name stays `dev-project-setup`; only the repo URL changes.
+
 Bootstrap a working dev workflow into Python / Node-TS / Go projects:
 
 - CI on GitHub Actions (`make check`-equivalent)
