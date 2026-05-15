@@ -11,7 +11,7 @@ install:	## install deps (runs `npm install`; first run generates package-lock.j
 
 install-hooks:	## arm Husky hooks (defensive — `npm install` already runs `prepare`; idempotent re-arm for --ignore-scripts users)
 	@test -d .git || { echo "skipping: not a git repo"; exit 0; }
-	git config core.hooksPath .husky
+	npx husky
 
 test:	## run vitest
 	npm test
