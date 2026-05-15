@@ -289,4 +289,18 @@ def main(argv):
         print("next steps:")
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")
+    if args.github_review != "none":
+        # Surface the required-secret step right where the user sees the
+        # other next-steps — most discoverable spot before they push to
+        # GitHub. Without this secret, the emitted claude-review workflow
+        # runs but the action fails auth and no review is posted.
+        print("")
+        print("after pushing to GitHub, set the CLAUDE_CODE_OAUTH_TOKEN repo secret:")
+        print("  1. install https://github.com/apps/claude on your account")
+        print("  2. run `claude setup-token` (one-time per user)")
+        print(
+            "  3. add the token as repo secret CLAUDE_CODE_OAUTH_TOKEN "
+            "via Settings → Secrets → Actions"
+        )
+        print("  (same token works across multiple repos; see CONTRIBUTING.md for details)")
     return 0
