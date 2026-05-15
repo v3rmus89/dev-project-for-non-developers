@@ -43,6 +43,18 @@ cd ~/.claude/skills/dev-project-setup
 
 After `--apply` succeeds, the printed `to rollback:` line is a self-contained command you can re-run from anywhere to roll back.
 
+## GitHub secret for opt-in `--github-review` modes
+
+When the user picks `--github-review=claude` or `--github-review=both-docs`, the generated project includes `.github/workflows/claude-review.yml`. That workflow requires a `CLAUDE_CODE_OAUTH_TOKEN` repo secret on the target repo — without it, the workflow runs but the action fails auth and no review is posted.
+
+Tell the user this is a required step right after `gh repo create` / their first push:
+
+1. Install https://github.com/apps/claude on their account (one-time per user)
+2. Run `claude setup-token` locally (one-time; opens browser)
+3. Add the printed token as repo secret `CLAUDE_CODE_OAUTH_TOKEN` via `Settings → Secrets and variables → Actions`
+
+The same token works across all their repos. The bootstrap's post-apply printout surfaces this hint when `--github-review != none`.
+
 ## Post-bootstrap hook adoption
 
 The generated project ships a `make install-hooks` target. Bootstrap itself never installs git hooks; the user runs them in the target project's venv:
