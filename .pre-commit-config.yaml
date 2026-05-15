@@ -1,0 +1,30 @@
+# Pre-commit and pre-push hooks for the dev-project-setup skill repo.
+#
+# Install (one-time per clone): `make install && make install-hooks`
+#
+# Pre-commit (every `git commit`):
+#   - ruff lint with --fix
+#   - ruff format
+#
+# Pre-push (every `git push`):
+#   - pytest via the project venv
+# Emergency override: `git push --no-verify`.
+
+repos:
+  # Keep this rev IN LOCKSTEP with requirements-dev.txt's `ruff==X.Y.Z`.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest-pre-push
+        name: pytest (pre-push)
+        entry: ./venv/bin/python -m pytest
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

@@ -1,0 +1,27 @@
+# Pinned dependencies for the skill repo's dev workflow.
+#
+# Runtime deps for the bootstrap CLI itself:
+#   - jinja2: template rendering
+#   - pyyaml: parsing YAML in selftest / template assertions
+#
+# Dev-only deps:
+#   - ruff: lint + format
+#   - pytest: test runner
+#   - pre-commit: git hook framework (also required by generated projects'
+#                 `make install-hooks` target — same wire as Boxette)
+#
+# Keep ruff's pinned version IN LOCKSTEP with .pre-commit-config.yaml's rev
+# so pre-commit applies the same fixes as `make format` / CI.
+
+# Runtime (used by bootstrap.py / bootstrap_lib at apply time)
+jinja2>=3.1,<4
+pyyaml>=6.0,<7
+
+# Lint + format
+ruff==0.15.12
+
+# Test runner
+pytest>=8.0,<9
+
+# Git hooks
+pre-commit>=3.7,<5

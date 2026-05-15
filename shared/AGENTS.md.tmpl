@@ -1,0 +1,93 @@
+# AGENTS.md — guidance for AI reviewers
+
+Codex's GitHub review (and other AI reviewers) reads this file for repo-specific
+guidance. **Keep it concise** — too many rules dilute the signal each
+individual rule carries.
+
+This is `{{project_name}}`, a {{language}} project bootstrapped by the
+`dev-project-setup` skill.
+
+## What to flag with high confidence
+
+The skill ships a generic baseline. Add project-specific rules here as the
+project grows. Generic baseline:
+
+- **Security**: hard-coded secrets, command injection, SQL injection, XSS,
+  unsafe deserialisation, missing authentication on internal endpoints.
+- **Regressions**: changes that break documented behaviour, missing test
+  coverage for new helpers, defensive cases dropped.
+- **Test discipline**: a new helper without a defensive (negative) case;
+  missing test for a new public API; mocking what should be integration-tested
+  or vice versa.
+- **Documentation accuracy**: claims in README/CONTRIBUTING/CLAUDE that no
+  longer match the code.
+
+## What NOT to flag
+
+- Style nits — `make format` (ruff) handles those automatically.
+- Items explicitly parked in `BACKLOG.md`.
+- Wholesale rewrites — concise targeted suggestions are far more useful.
+
+## Local quality gate
+
+Code must pass `make check`. The same suite runs in CI. If a change wouldn't
+pass `make check`, that's a blocker.
+
+## Plan Review Guidance
+
+For files under `docs/plans/`, review the **plan itself**, not code style.
+Be skeptical — your job is to surface risks, not to validate the direction.
+
+Flag:
+
+- Unsafe sequencing (step N depends on step N+2)
+- Hidden assumptions (claims about repo state, third-party services, or
+  subscriptions that aren't verified)
+- Missing verification (no acceptance criteria, no test plan)
+- Missing rollback / adoption path
+- Phases that are too large to land safely
+- Unclear ownership or acceptance criteria
+- Manual steps that should be automated
+- Hidden dependency on subscriptions, API keys, GitHub permissions, or
+  local tooling not mentioned in setup
+- Contradictions between the plan and current repository state
+- Places where the plan says "later" but the dependency is actually
+  needed earlier
+
+Treat serious planning risks as **importance 3**.
+
+For each finding return:
+
+- importance score: 1 / 2 / 3 (3 = blocker, 2 = improvement, 1 = polish)
+- what is wrong or risky
+- why it matters
+- concrete suggested change
+
+End with a stop/go verdict: "ready after minor edits" / "needs another
+iteration" / "do not implement yet". If there are no importance-3
+findings, say so explicitly.
+
+Avoid ordinary code-review nits unless the plan contains code that's
+materially wrong. Style nits on plan text are noise.
+
+## Triaging review findings
+
+When you receive a Codex review (in Claude Code) or a Claude review (in Codex), do **NOT fold every finding by default**. The loop converges faster — and produces a tighter plan — when each finding is triaged. For each finding decide:
+
+- **(a) Fold now** — the plan is wrong, contradictory, or would produce a broken implementation without this change. Fold into the plan body. Document in the evidence table.
+- **(b) Park to BACKLOG** — the finding is real and worth fixing, but deferrable. Add an entry to `BACKLOG.md` with an explicit trigger (e.g. "fix when first user reports stale `.git/hooks/` after skill repo move"). Note in the evidence table as `parked: <reason>`.
+- **(c) Reject** — the finding is stylistic, out-of-scope for this PR, or implementation-review territory (will be caught during code review of the implementation PR, not now). Note in the evidence table as `rejected: <reason>` so the decision is documented even though no plan-text changes.
+- **(d) Surface to human (`ask me`) — use sparingly, only when the change is material** — pause folding and surface to the human ONLY when the finding would materially change the PR's user-facing surface: a documented CLI flag being removed/renamed/added, a deliverable being dropped or expanded, the safety/risk model shifting in a way the user might disagree with. **Default is NOT (d)** — for smaller UX choices, reasonable implementation defaults, scope-trim decisions that aren't surprising, decide as (a/b/c) using engineering judgment and surface ALL such autonomous decisions in the end-of-loop final-plan summary (the existing mandatory-human-approval gate). The bar for (d): *if you imagine showing the change to the user 30 seconds before merge, would they be surprised by the decision?* If yes, (d) now. If no, decide and surface in the final summary. Note (d) outcomes in the evidence table as `surfaced: <user's decision>`.
+
+Only (a) folds modify the plan body during the iteration. (b), (c), and (d) still produce evidence-table entries — the decision matters even when no plan text changes. (d) additionally pauses the loop for a human turn before the iteration proceeds. This makes engineering judgment visible to future reviewers and to the implementer.
+
+**Calibration**: imp-3 should mean "if we ship without this, the PR doesn't work" — not "if we shipped this, an adversarial test could fail." Imp-3 ≠ "would be more correct." When in doubt about whether a finding is a real blocker, ask: *can the PR ship with a working `make check` and a green smoke walk without this change?* If yes, it's at most imp-2, and probably (b) or (c).
+
+**No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
+
+## Tone
+
+Concise, evidence-based comments win. Avoid suggesting wholesale rewrites; small
+targeted fixes are far more useful. If a finding can't be expressed in 1-2
+sentences with a clear "do X" or "change Y to Z", consider whether it's
+actionable enough to be worth flagging.

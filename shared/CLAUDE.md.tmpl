@@ -1,0 +1,100 @@
+# {{project_name}} — Claude Instructions
+
+## Commands
+
+| Task | Command |
+|---|---|
+| Install dev deps into venv | `make install` |
+| Register git hooks | `make install-hooks` |
+| Run tests | `make test` |
+| Lint + format-check (CI-equivalent) | `make lint` |
+| Auto-fix lint + apply format | `make format` |
+| Run all local checks (= CI) | `make check` |
+| Run main entry point | `make run` |
+| Local Codex review of a plan | `make review-plan-by-codex PLAN_FILE=docs/plans/<file>.md` |
+| Local Claude review of a plan | `make review-plan-by-claude PLAN_FILE=docs/plans/<file>.md` |
+
+The full per-change workflow is in `CONTRIBUTING.md`. Pre-commit hooks (ruff
+on commit) and pre-push hooks (pytest on push) fire automatically once
+`make install-hooks` is run on a git-initialised clone.
+
+## Plan review loop
+
+For substantive plans (multi-day work, cross-cutting changes, high-risk),
+write the plan to `docs/plans/YYYY-MM-DD-<slug>.md` rather than chat. Then
+run a local bidirectional review:
+
+```bash
+make review-plan-by-codex  PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
+make review-plan-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
+```
+
+Filename convention: outputs land at
+`/tmp/plan-review-<slug>-by-codex-iter-N.md` and `-by-claude-iter-N.md` so
+per-reviewer iteration counters stay independent. Read both, revise the
+plan, and repeat with `ITERATION=2` / `3` as needed.
+
+**When to stop**:
+
+- No importance-3 findings remain, AND
+- Remaining 1/2 findings are either folded in or explicitly accepted as
+  trade-offs in the plan.
+
+**How many iterations** (default rule of thumb):
+
+- Small plan (1 day, single module) → 1 review
+- Medium plan (2–4 days, cross-cutting) → 2 reviews
+- Large / high-risk plan → 3 reviews
+- 4th iteration ONLY if iteration 3 still surfaces importance-3 issues
+
+Do NOT run iterations as a ritual; stop the moment the rule above is met.
+
+## Triaging review findings
+
+When you receive a Codex review (in Claude Code) or a Claude review (in Codex), do **NOT fold every finding by default**. The loop converges faster — and produces a tighter plan — when each finding is triaged. For each finding decide:
+
+- **(a) Fold now** — the plan is wrong, contradictory, or would produce a broken implementation without this change. Fold into the plan body. Document in the evidence table.
+- **(b) Park to BACKLOG** — the finding is real and worth fixing, but deferrable. Add an entry to `BACKLOG.md` with an explicit trigger (e.g. "fix when first user reports stale `.git/hooks/` after skill repo move"). Note in the evidence table as `parked: <reason>`.
+- **(c) Reject** — the finding is stylistic, out-of-scope for this PR, or implementation-review territory (will be caught during code review of the implementation PR, not now). Note in the evidence table as `rejected: <reason>` so the decision is documented even though no plan-text changes.
+- **(d) Surface to human (`ask me`) — use sparingly, only when the change is material** — pause folding and surface to the human ONLY when the finding would materially change the PR's user-facing surface: a documented CLI flag being removed/renamed/added, a deliverable being dropped or expanded, the safety/risk model shifting in a way the user might disagree with. **Default is NOT (d)** — for smaller UX choices, reasonable implementation defaults, scope-trim decisions that aren't surprising, decide as (a/b/c) using engineering judgment and surface ALL such autonomous decisions in the end-of-loop final-plan summary (the existing mandatory-human-approval gate). The bar for (d): *if you imagine showing the change to the user 30 seconds before merge, would they be surprised by the decision?* If yes, (d) now. If no, decide and surface in the final summary. Note (d) outcomes in the evidence table as `surfaced: <user's decision>`.
+
+Only (a) folds modify the plan body during the iteration. (b), (c), and (d) still produce evidence-table entries — the decision matters even when no plan text changes. (d) additionally pauses the loop for a human turn before the iteration proceeds. This makes engineering judgment visible to future reviewers and to the implementer.
+
+**Calibration**: imp-3 should mean "if we ship without this, the PR doesn't work" — not "if we shipped this, an adversarial test could fail." Imp-3 ≠ "would be more correct." When in doubt about whether a finding is a real blocker, ask: *can the PR ship with a working `make check` and a green smoke walk without this change?* If yes, it's at most imp-2, and probably (b) or (c).
+
+**No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
+
+## Mandatory human-approval gate
+
+After the loop converges and BEFORE any `git add` / `git commit`:
+
+1. Post a final-plan summary in chat: Scope, key decisions, anything the
+   user should push back on (especially decisions made autonomously during
+   folding).
+2. Wait for **approve** / **changes: …** / **read full file first**.
+3. If "changes": fold them, show the summary again.
+4. Only on **approve** proceed to commit + draft PR.
+
+See `docs/plans/README.md` step 3 for the canonical wording.
+
+## Focused commits
+
+Use **focused commits** — see `CONTRIBUTING.md` for the per-change workflow.
+Quick version:
+
+```bash
+git status
+git add path/to/file1 path/to/file2
+git commit -m "brief description of what changed"
+git push
+```
+
+**Do NOT** use `git add .` — it can stage unrelated edits (e.g. throwaway
+test files, debug prints) and produces unfocused commits. Always pick files
+explicitly.
+
+## Python version
+
+Always use `python{{python_version}}` for this project. The skill bootstraps
+a per-project `venv/` at the project root; all tool invocations go through
+`./venv/bin/python` (via `$(PYTHON)` in the Makefile).

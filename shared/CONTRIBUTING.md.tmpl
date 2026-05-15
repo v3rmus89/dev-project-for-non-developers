@@ -1,0 +1,136 @@
+# Contributing to {{project_name}}
+
+This is the per-change workflow. Local + CI gates are aligned, so a green
+local check normally predicts a green CI run.
+
+---
+
+## One-time setup (fresh clone)
+
+```bash
+cd /path/to/{{project_name}}
+make install        # creates venv if missing, installs deps
+make install-hooks  # registers pre-commit + pre-push git hooks
+```
+
+`make install-hooks` is separate so `make install` is safe in non-git
+tempdirs (CI runners, smoke tests). On a git-initialised clone, also run
+`make install-hooks` once to wire up:
+
+- **pre-commit** — runs `ruff check --fix` + `ruff format` on every commit.
+  If ruff modifies a file, the commit fails; `git add` the fixes and re-commit.
+- **pre-push** — runs the full `pytest` suite. Blocks pushes that would
+  fail CI on the same suite.
+
+Both hooks live in `.pre-commit-config.yaml` and are versioned, so other
+clones get the same hooks after `make install-hooks`.
+
+### Codex CLI (required for `make review-plan-by-codex`)
+
+```bash
+# Install (one-time; see https://developers.openai.com/codex):
+brew install --cask codex     # or per the official docs
+
+# Log in (one-time; opens browser):
+codex login
+
+# Verify:
+command -v codex && codex --version
+```
+
+### Claude CLI (required for `make review-plan-by-claude`)
+
+```bash
+# Install (one-time):
+npm install -g @anthropic-ai/claude-code   # or per the official docs
+
+# Log in:
+claude login
+
+# Verify:
+command -v claude && claude --version
+```
+
+If either CLI is unavailable on a contributor's machine, the corresponding
+`make review-plan-by-*` target exits cleanly with an install hint rather
+than failing silently.
+
+---
+
+## Per-change checklist
+
+1. **Plan**:
+   - **Substantive plan** (>2 days OR cross-cutting OR high-risk):
+     write to `docs/plans/YYYY-MM-DD-<slug>.md` and run the bidirectional
+     plan-review loop before opening an implementation PR.
+   - **Smaller plan** (medium change, single module): keep using plan mode
+     in your editor. No loop overhead.
+   - **Trivial fix** (typo, single-line): skip planning entirely; jump to
+     step 2.
+
+2. **Check the workspace**:
+   ```bash
+   git status --short
+   ```
+
+3. **Sync safely**:
+   ```bash
+   git pull --ff-only
+   ```
+
+4. **Verify clean baseline** — all must pass before you start:
+   ```bash
+   make check
+   ```
+
+5. **Branch**:
+   ```bash
+   git checkout -b feat/my-thing
+   ```
+
+6. **Implement.** While editing, add tests for any new helper, defensive
+   case for any new public API, etc.
+
+7. **Auto-fix lint + format**:
+   ```bash
+   make format
+   ```
+
+8. **Verify locally — same gate as CI**:
+   ```bash
+   make check
+   ```
+
+9. **Commit in focused units**:
+   - One commit per logical change.
+   - Imperative title + body explaining "why".
+   - Keep formatting-only commits separate from logic.
+
+10. **Push** and open a draft PR:
+    ```bash
+    git push -u origin <branch>
+    gh pr create --draft
+    ```
+
+11. **Watch CI** — merge only when CI is green.
+
+---
+
+## Branch naming
+
+```
+feat/<thing>
+fix/<thing>
+docs/<thing>
+refactor/<thing>
+```
+
+---
+
+## Emergency override
+
+`git push --no-verify` skips the pre-push pytest hook. Use only in a real
+emergency (broken environment that needs hot fixing in `main`). Add a note
+in the commit message explaining why.
+
+Routine "tests are slow / I'll fix it later" is not legitimate use.
