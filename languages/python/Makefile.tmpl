@@ -1,0 +1,37 @@
+PYTHON ?= ./venv/bin/python
+
+.PHONY: help venv install install-hooks test lint format check run \
+        review-plan-by-codex review-plan-by-claude preflight-review-tooling
+
+help:	## list all targets with descriptions
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-28s %s\n", $$1, $$2}'
+
+venv:	## create venv with python{{python_version}}
+	@test -d venv || python{{python_version}} -m venv venv
+
+install: venv	## install dev deps into venv (does NOT register hooks — see install-hooks)
+	$(PYTHON) -m pip install -r requirements-dev.txt
+	@echo "next step: 'make install-hooks' if this is a git repo"
+
+install-hooks:	## install pre-commit hooks (requires .git/; safe to skip in non-git tempdirs)
+	@test -d .git || { echo "skipping: not a git repo"; exit 0; }
+	./venv/bin/pre-commit install
+	./venv/bin/pre-commit install --hook-type pre-push
+
+test:	## run pytest via venv
+	$(PYTHON) -m pytest -v
+
+lint:	## ruff check + format-check via venv
+	$(PYTHON) -m ruff check .
+	$(PYTHON) -m ruff format --check .
+
+format:	## auto-fix lint + apply format via venv
+	$(PYTHON) -m ruff check --fix .
+	$(PYTHON) -m ruff format .
+
+check: lint test	## CI-equivalent — all tool invocations go through $(PYTHON)
+
+run:	## run src/main.py via venv
+	$(PYTHON) src/main.py
+
+{% include 'Makefile.review.tmpl' %}

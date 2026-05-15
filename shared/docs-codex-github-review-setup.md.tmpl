@@ -1,0 +1,39 @@
+# Enabling Codex GitHub auto-review on {{github_owner}}/{{github_repo}}
+
+Codex's GitHub integration auto-reviews PRs via the
+`chatgpt-codex-connector[bot]` account. Setup is per-repo, done via the
+Codex web UI rather than a workflow file.
+
+## One-time setup
+
+1. Open https://chat.openai.com/codex (or `chatgpt.com/codex`) — your
+   ChatGPT Plus / Pro / Team / Enterprise account.
+2. Settings → GitHub → "Add repository".
+3. Pick the org/owner (`{{github_owner}}`) and repo (`{{github_repo}}`).
+4. Set the trigger mode to **automatic on PR**. Optional: also enable on
+   draft → ready transitions and on `@codex review` comments.
+5. Confirm the bot account `chatgpt-codex-connector[bot]` has access.
+
+## Verifying
+
+- Open a test PR.
+- Within a few minutes you should see a review comment from
+  `chatgpt-codex-connector[bot]`.
+- If nothing happens after ~10 minutes, comment `@codex review` to
+  manually re-trigger.
+
+## Known issue: doc-only PR skip
+
+Codex's auto-review may skip PRs whose diff is entirely documentation
+(`.md`, `.yml`, etc., no code changes). The workaround is to either:
+
+- Tolerate Codex skipping plan-only PRs (Claude review still runs)
+- Add a tiny code-touching change to trigger Codex
+
+The PR template's reviewer checklist accommodates "waived (Codex
+auto-review didn't fire on doc-only PR)" as a legitimate reason.
+
+## Cost
+
+This uses your existing ChatGPT subscription quota — no per-PR API key
+required.

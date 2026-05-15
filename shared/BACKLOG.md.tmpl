@@ -1,0 +1,83 @@
+# Backlog — parked decisions and future work
+
+Items here are explicit "we will do this someday" decisions, recorded so they
+don't get lost between sessions. Each item lists **why it's parked**, **what
+triggers picking it up**, and **rough effort**.
+
+Newer items at the top.
+
+---
+
+## Plan-review hardening
+
+### Investigate `codex exec --ephemeral` for plan reviews
+
+**Status**: parked.
+
+**Why parked**: the `make review-plan-by-codex` target invokes `codex exec`
+without `--ephemeral`, so Codex persists session data to `~/.codex/` in
+addition to the per-iteration markdown that lands in `/tmp/`. For most
+generic project plan content this isn't a meaningful exposure. For plans
+containing PII, financial internals, real user data, or secrets, it would be.
+
+Adding `--ephemeral` is **not** a one-line change: confirm it composes
+correctly with `--output-last-message` first (the mechanic the bidirectional
+loop depends on).
+
+**Triggers to pick up**:
+- First substantive plan whose content includes any real customer PII,
+  financial provider internals, secrets, or external-service credentials.
+- Codex CLI release notes flag a privacy/data-handling change.
+
+**Rough effort**: ~30 minutes (run, verify, document).
+
+---
+
+### Investigate Claude `--print --permission-mode plan` session persistence
+
+**Status**: parked.
+
+**Why parked**: symmetric to the Codex `--ephemeral` question above. The
+`make review-plan-by-claude` target invokes `claude --print
+--permission-mode plan` — session persistence behaviour for that
+combination should be confirmed before any sensitive plan goes through
+the loop.
+
+**Triggers to pick up**: same triggers as the Codex `--ephemeral` entry.
+
+**Rough effort**: ~30 minutes.
+
+---
+
+### Claude / Codex CLI flag drift
+
+**Status**: parked.
+
+**Why parked**: `make preflight-review-tooling` invokes both CLIs with the
+exact flag shape the review targets use (`codex exec --sandbox read-only
+--color never --output-last-message`, `claude --print --permission-mode
+plan --add-dir --output-format text`). If a future CLI release renames or
+removes any of these flags, preflight will fail. The tested baselines are
+codex-cli 0.130.0 and Claude Code 2.1.139.
+
+**Triggers to pick up**:
+- `make preflight-review-tooling` fails on a developer machine.
+- A CLI release-note explicitly deprecates one of the flags above.
+
+**Rough effort**: ~15 minutes per flag (update Makefile + bump baseline
+version in preflight's WARN line).
+
+---
+
+## Example parked items (delete these if not relevant; keep the format)
+
+### Example: parked refactor
+
+**Status**: parked.
+
+**Why parked**: ___ (record the cost/risk of doing it now vs. later)
+
+**Triggers to pick up**: ___ (concrete signals — e.g. "a second contributor
+joins", "an issue is opened citing this")
+
+**Rough effort**: ___

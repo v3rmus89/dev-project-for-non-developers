@@ -1,0 +1,34 @@
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    "languages",
+    "shared",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort import sorting
+    "UP",  # pyupgrade (modernise for Python 3.12)
+    "B",   # flake8-bugbear
+    "RUF", # ruff-specific
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # let ruff format handle line length
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["RUF012"]
+"bootstrap.py" = ["UP"]
+
+[lint.isort]
+known-first-party = ["bootstrap_lib"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

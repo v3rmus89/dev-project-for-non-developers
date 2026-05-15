@@ -28,7 +28,7 @@ That plan converged through 3 Codex review iterations + an explicit human approv
 
 - Architecture (`bootstrap.py` + Jinja2 templates under `languages/<lang>/` and `shared/`)
 - Bidirectional plan-review mechanism (`review-plan-by-codex` / `review-plan-by-claude` Makefile fragments)
-- Adoption safety contract (`--dry-run` default, `--diff`, `--apply`, restore manifest, atomic per-file writes, `--install-hooks` opt-in)
+- Adoption safety contract (`--dry-run` default, `--diff`, `--apply`, restore manifest, atomic per-file writes). PR #1 ships hook adoption via the generated project's `make install-hooks` target (scoped to the target project's venv); a direct `--install-hooks` bootstrap flag is parked as follow-up — see `BACKLOG.md`.
 - `--github-review=none|claude|both-docs` mode flag (no orphan checklist text when GitHub auto-review isn't wired)
 - Per-PR deliverables table with per-subsystem acceptance gates
 - Tested-baseline CLI version strategy (Claude Code 2.1.139, codex-cli 0.130.0; `make preflight-review-tooling` for forward drift)
