@@ -82,6 +82,10 @@ def test_a_overwritten_files_restored(tmp_path):
     assert (n_r, n_rm, n_sk, n_rj) == (2, 0, 0, 0)
     assert (target / "a.txt").read_bytes() == pre_a
     assert (target / "b.txt").read_bytes() == pre_b
+    # Codex iter-21 P1: restore must be crash-safe (atomic_write); after a
+    # clean run there are no .bootstrap-tmp artifacts under target.
+    leftover = list(target.rglob("*.bootstrap-tmp"))
+    assert leftover == [], leftover
 
 
 def test_b_created_files_removed(tmp_path):

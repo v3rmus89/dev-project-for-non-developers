@@ -8,6 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from bootstrap_lib import io as bio
 from bootstrap_lib.paths import PathSafetyError, validate_target_path
 
 EXECUTABLE_TARGETS = {"scripts/run-with-clean-env.py"}
@@ -59,8 +60,16 @@ class Manifest:
 
 
 def manifest_path():
+    # mkstemp guarantees uniqueness even when two --apply runs land in the
+    # same second — closes Codex iter-21 P2. The timestamp prefix keeps
+    # the manifests human-sortable; the random suffix prevents collisions.
     timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
-    return Path(tempfile.gettempdir()) / f"dev-project-setup-restore-{timestamp}.json"
+    fd, path = tempfile.mkstemp(
+        prefix=f"dev-project-setup-restore-{timestamp}-",
+        suffix=".json",
+    )
+    os.close(fd)
+    return Path(path)
 
 
 def plan_entries(target_root, planned_files):
@@ -167,8 +176,13 @@ def restore_from_manifest(m, stderr=None):
                 current = target_path.read_bytes()
                 current_sha = _sha256(current)
                 if current_sha == entry["sha256_after"]:
+                    # Crash-safe write-back: closes Codex iter-21 P1. A bare
+                    # write_bytes truncates in place; if the restore is
+                    # interrupted, the user is left with an empty or partial
+                    # file. Route through atomic_write for the same tmp+rename
+                    # discipline as apply.
                     content = base64.b64decode(entry["content_before_b64"])
-                    target_path.write_bytes(content)
+                    bio.atomic_write(target_path, content)
                     os.chmod(target_path, entry["mode_before"])
                     n_restored += 1
                 elif current_sha == entry["sha256_before"]:

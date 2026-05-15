@@ -126,6 +126,17 @@ def test_manifest_path_honours_tmpdir(tmp_path, monkeypatch):
     assert p.suffix == ".json"
 
 
+def test_manifest_path_is_unique_under_rapid_calls(tmp_path, monkeypatch):
+    """Codex iter-21 P2: two --apply runs in the same second must NOT
+    collide on manifest path."""
+    import tempfile
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    paths = {manifest_mod.manifest_path() for _ in range(20)}
+    assert len(paths) == 20, "manifest paths collided under rapid calls"
+
+
 def test_pre_existing_directories_not_listed(tmp_path):
     target_root = tmp_path / "proj"
     target_root.mkdir()
