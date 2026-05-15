@@ -263,6 +263,40 @@ def test_restore_does_not_require_language_project_or_out(tmp_path):
     assert "not valid in restore mode" in result_bad.stderr
 
 
+def test_target_root_not_created_when_manifest_write_fails(tmp_path, monkeypatch):
+    """Codex iter-24 P1: a partial mkdir of `--out` without a durable
+    manifest violates the recoverability contract. The fix removes the
+    pre-manifest mkdir; this test asserts that if manifest_write raises,
+    target_root is NOT left on disk."""
+    from bootstrap_lib import manifest as manifest_module
+
+    def boom(_m):
+        raise OSError("simulated disk-full during manifest write")
+
+    monkeypatch.setattr(manifest_module, "write_manifest", boom)
+
+    target = tmp_path / "should-not-be-created"
+    assert not target.exists()
+    rc, _out, err = run_cli(
+        [
+            "--apply",
+            "--language",
+            "python",
+            "--project-name",
+            "test",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 1
+    assert "apply failed before manifest write" in err
+    # The whole point of the fix: target_root must NOT have been created
+    assert not target.exists(), (
+        "target_root should not be created if manifest write fails — "
+        "no rollback path was established"
+    )
+
+
 def test_partial_apply_failure_still_prints_restore_hint(tmp_path, monkeypatch):
     """Codex iter-22 P1: if _apply_writes raises mid-write, the user must
     still see the manifest path + restore hint so they can roll back the

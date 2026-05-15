@@ -173,10 +173,14 @@ def _prepare_apply(target_root, planned_files, args):
     manifest_path). Separated from the write phase so `main()` keeps the
     manifest path available even if writes fail mid-apply — closes Codex
     iter-22 P1 (restore hint must still print on partial-apply failure).
+
+    Does NOT create `target_root` here — closes Codex iter-24 P1: mkdir
+    before manifest_write would leave a partial side effect (orphan
+    target dir) with no rollback path. `atomic_write` lazily creates
+    parent dirs per file, so target_root is implicitly created on the
+    first write — AFTER the manifest is durable.
     """
     root = Path(target_root)
-    root.mkdir(parents=True, exist_ok=True)
-
     entries, created_directories = manifest.plan_entries(root, planned_files)
     m = manifest.Manifest(
         target_root=str(root.resolve()),
