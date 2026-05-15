@@ -203,6 +203,37 @@ def test_d_prime_user_modified_overwritten_file_preserved(tmp_path):
     assert (target / "y.txt").read_bytes() == user_edit
 
 
+def test_d_double_prime_user_deleted_overwritten_file_not_restored(tmp_path):
+    """Codex iter-20 P1: an overwritten file that's missing at restore time
+    falls into 'current SHA matches neither' — conservative rule says SKIP,
+    not restore. Prevents restore from undoing a user `rm`."""
+    target = tmp_path / "proj"
+    target.mkdir()
+    pre = b"# original\n"
+    apply_content = b"# bootstrap overwrote\n"
+    f = target / "y.txt"
+    # Simulate: existed before apply, was overwritten, then user deleted
+    # Don't write apply_content; just leave file absent.
+
+    entries = [
+        {
+            "path": "y.txt",
+            "existed_before": True,
+            "sha256_before": _sha256(pre),
+            "content_before_b64": _b64(pre),
+            "mode_before": 0o644,
+            "action_planned": "overwrite",
+            "sha256_after": _sha256(apply_content),
+            "mode_after": 0o644,
+        },
+    ]
+    m = _make_manifest(target, entries)
+    _r, _rm, n_sk, _rj = manifest_mod.restore_from_manifest(m)
+    assert n_sk == 1
+    # File MUST NOT come back — user's deletion is preserved
+    assert not f.exists()
+
+
 def test_e_path_safety_relative_traversal_rejected(tmp_path):
     target = tmp_path / "proj"
     target.mkdir()

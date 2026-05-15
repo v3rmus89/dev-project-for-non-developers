@@ -179,11 +179,15 @@ def restore_from_manifest(m, stderr=None):
                     )
                     n_skipped += 1
             else:
-                content = base64.b64decode(entry["content_before_b64"])
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                target_path.write_bytes(content)
-                os.chmod(target_path, entry["mode_before"])
-                n_restored += 1
+                # Overwritten file is missing at restore time. Current state
+                # matches neither sha256_after nor sha256_before — conservative
+                # rule says SKIP (Codex iter-20 P1: never undo a user deletion
+                # even if the apply might just have been interrupted).
+                stderr.write(
+                    "SKIP {}: file missing; left absent (user deletion or "
+                    "interrupted apply — restore is conservative)\n".format(entry["path"])
+                )
+                n_skipped += 1
         else:
             if target_path.exists():
                 current = target_path.read_bytes()
