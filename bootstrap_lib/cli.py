@@ -300,7 +300,7 @@ def main(argv):
         print("  2. run `claude setup-token` (one-time per user)")
         print(
             "  3. add the token as repo secret CLAUDE_CODE_OAUTH_TOKEN "
-            "via Settings → Secrets → Actions"
+            "via Settings → Secrets and variables → Actions"
         )
         print("  (same token works across multiple repos; see CONTRIBUTING.md for details)")
     return 0
