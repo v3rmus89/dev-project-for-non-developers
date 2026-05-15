@@ -20,7 +20,7 @@ Designed for non-developers using LLM-assisted workflows (Claude Code, Codex CLI
 
 ## Status
 
-**Plan stage.** The skill itself isn't built yet — only the plan exists. Read the plan in the Boxette repo (bootstrap exception — the plan was written there before this repo existed; future plans live in this repo's `docs/plans/` under the same convention the plan itself describes):
+**Python + Node-TS shipped.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 adds Node-TS (Biome + vitest + TypeScript + Husky). Go is parked for a future PR. The master plan still lives in the Boxette repo (bootstrap exception):
 
 📋 [`docs/plans/2026-05-15-dev-project-setup-skill.md`](https://github.com/v3rmus89/boxette-tgbot/blob/main/docs/plans/2026-05-15-dev-project-setup-skill.md)
 
@@ -37,8 +37,8 @@ That plan converged through 3 Codex review iterations + an explicit human approv
 
 Per the plan:
 
-- **PR #1** — minimal working Python bootstrap + all `shared/` templates (including both `review-plan-by-*` Makefile fragments) + safety primitives + skill's own `make check` green + per-subsystem acceptance gates (A–F)
-- **PR #2** — add `languages/nodejs/` (Biome + vitest)
+- **PR #1** ✅ minimal working Python bootstrap + all `shared/` templates (including both `review-plan-by-*` Makefile fragments) + safety primitives + skill's own `make check` green + per-subsystem acceptance gates (A–F)
+- **PR #2** ✅ add `languages/nodejs/` (Biome + vitest + TypeScript + Husky)
 - **PR #3** — add `languages/go/` (gofumpt + golangci-lint)
 - **PR #4** — real-project trial + `docs/lessons.md`
 

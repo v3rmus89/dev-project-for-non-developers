@@ -154,19 +154,29 @@ verify `pip install -e .` works in a fresh venv, document in `docs/usage.md`.
 
 ---
 
-### Add Node-TS language support (`languages/nodejs/`)
+### ✅ Add Node-TS language support (`languages/nodejs/`) — DONE in PR #2
 
-**Status**: parked for PR #2.
+**Status**: shipped 2026-05-15 via PR #2 (Plan PR #3 + the implementation PR).
 
-**Why parked**: PR #1 is Python only. PR #2 will add Node-TS (Biome +
-vitest) once PR #1's templates + bootstrap engine + safety primitives
-ship.
+**What landed**: Biome + vitest + TypeScript + Husky v9 + lint-staged, framework-agnostic Node-TS (no React/Vue/Svelte; those parked separately — see entry below).
 
-**Triggers to pick up**: PR #1 merged.
+**Loop convergence**: Codex 4 iters + Claude 1 iter; zero importance-3 findings at convergence; documented trade-offs and autonomous decisions in [`docs/plans/2026-05-15-skill-pr2-nodejs-language.md`](docs/plans/2026-05-15-skill-pr2-nodejs-language.md).
 
-**Rough effort**: ~1 day per the merged plan in
-`docs/plans/2026-05-15-skill-pr1-minimal-python-bootstrap.md`'s "What we
-are NOT doing" + the master plan in the Boxette repo.
+---
+
+### Add frontend variants to nodejs language template
+
+**Status**: parked.
+
+**Why parked**: PR #2 ships framework-agnostic Node-TS (Biome + vitest + TypeScript). A true browser frontend needs additional opinionated picks: a bundler (Vite is the obvious default), a framework (React / Vue / Svelte / SvelteKit / Next.js), DOM-testing setup (jsdom or happy-dom for vitest), a dev server config. PR #2 keeps nodejs framework-agnostic so the skill stays small.
+
+**Triggers to pick up**:
+- Sandeep starts his first frontend project (most likely trigger).
+- A second contributor needs a frontend variant.
+
+**Rough effort**: ~half a day per variant. Simplest adoption path: "scaffold with `npm create vite@latest my-app -- --template react-ts` FIRST, then apply the skill on top to add Makefile / Husky / CI / plan-review-loop". The skill's nodejs scaffold composes additively. If we want a one-shot bootstrap: add `--frontend=react-vite|sveltekit|none` to `bootstrap.py` invoking the appropriate `npm create` underneath, then layering the universal scaffolds on top.
+
+**Rough order of preference**: React+Vite first (most demand), SvelteKit second (Sandeep's stated curiosity), Vue third only if requested.
 
 ---
 
@@ -174,9 +184,9 @@ are NOT doing" + the master plan in the Boxette repo.
 
 **Status**: parked for PR #3.
 
-**Triggers to pick up**: PR #2 merged.
+**Triggers to pick up**: PR #2 merged (now true — PR #2 lands as of 2026-05-15).
 
-**Rough effort**: ~1 day.
+**Rough effort**: ~1 day. Mirror PR #2's structure: engine dispatch extension in `bootstrap_lib/{_flags,render,cli}.py`, `languages/go/` templates (Makefile, `go.mod.tmpl`, `.golangci.yml.tmpl`, `ci.yml.tmpl`, `tests-main_test.go.tmpl`, `src-main.go.tmpl`), language-conditional Jinja for shared templates' Go phrasing, new test files. Hook framework: TBD — `pre-commit` framework supports Go via `lefthook`-style entries, or Go-native via a custom Makefile target.
 
 ---
 

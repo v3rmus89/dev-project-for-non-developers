@@ -31,8 +31,8 @@ def add_flags(parser):
 
     parser.add_argument(
         "--language",
-        choices=["python"],
-        help="target language (PR #1 supports python only)",
+        choices=["python", "nodejs"],
+        help="target language (python or nodejs)",
     )
     parser.add_argument(
         "--project-name",

@@ -5,10 +5,11 @@
 Before running `make install` or invoking the skill, ensure these are on PATH:
 
 - `make` — POSIX `make`. BSD make on macOS works; GNU make works on Linux. (Hard prereq: you can't `make doctor` to diagnose missing `make`.)
-- `python3.12` — required. `python3` on macOS may be 3.9.x; the skill repo's `Makefile` invokes `python3.12 -m venv` explicitly.
+- `python3.12` — required for the skill itself. `python3` on macOS may be 3.9.x; the skill repo's `Makefile` invokes `python3.12 -m venv` explicitly.
 - venv support — `python3.12 -m venv` must work. On Linux you may need `apt install python3.12-venv`.
 - `pip` + network access to PyPI — for installing pinned `jinja2`, `pyyaml`, `pytest`, `ruff`, `pre-commit`.
-- `git` — required by the GENERATED project's `make install-hooks` (runs `pre-commit install`, guarded by `test -d .git`).
+- `git` — required by every generated project's `make install-hooks` (guarded by `test -d .git`).
+- `node` + `npm` — required if you'll bootstrap **nodejs** projects (`--language nodejs`). The skill repo's own `make check` smoke-tests the Node walk; without `node` on PATH locally it skips cleanly, but CI must have Node 24 via `actions/setup-node`.
 
 Optional:
 
@@ -36,7 +37,7 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 
 | Flag | Description |
 |---|---|
-| `--language python` | target language. PR #1 supports `python` only |
+| `--language {python,nodejs}` | target language. PR #1 shipped Python; PR #2 adds Node-TS (Biome + vitest + TypeScript + Husky). Go is parked for a future PR |
 | `--project-name <slug>` | must match `^[a-z][a-z0-9-]*$` (lowercase ASCII + digits + hyphens, leading letter, no path separators) |
 | `--out <dir>` | target directory; created ONLY during `--apply` |
 | `--github-review {none,claude,both-docs}` | default `none` — no Claude workflow / OAuth secret dependency unless explicitly opted in |
@@ -66,15 +67,26 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 
 ## Post-bootstrap hook adoption
 
-The bootstrap process itself never installs git hooks. To wire up pre-commit + pre-push hooks in the generated project, the user runs:
+The bootstrap process itself never installs git hooks. To wire up the pre-commit + pre-push hooks in the generated project:
 
 ```bash
 cd <out>
-make install         # creates per-project venv + installs dev deps
-make install-hooks   # registers hooks via the target project's venv/bin/pre-commit
+make install        # python: creates venv + pip; nodejs: npm install + arms husky
+make install-hooks  # registers / re-arms git hooks (requires .git/)
 ```
 
-`make install-hooks` is a target IN THE GENERATED PROJECT, NOT a bootstrap CLI flag. Hooks live in the target project's `.git/hooks/` and reference the target project's `./venv/bin/python` — they survive moves or rebuilds of the skill repo.
+`make install-hooks` is a target IN THE GENERATED PROJECT, NOT a bootstrap CLI flag. The Makefile-target surface is identical across languages; the underlying tool differs:
+
+- **Python**: hooks via `pre-commit` framework. `make install-hooks` runs `./venv/bin/pre-commit install` (commit-side) + `./venv/bin/pre-commit install --hook-type pre-push`.
+- **Node-TS**: hooks via Husky v9 + lint-staged. Hooks are armed automatically during `npm install` (via `package.json`'s `"prepare": "husky"` script); `make install-hooks` is a defensive idempotent re-arm path (e.g. for users who ran `npm install --ignore-scripts`).
+
+Hooks live in `.git/hooks/` (Python) or `.husky/` (Node) and survive moves or rebuilds of the skill repo.
+
+### Node-TS specifics
+
+- **First-install flow**: after `git init && git add . && git commit -m "initial bootstrap"`, run `make install`. The first `npm install` generates `package-lock.json` — commit it as a follow-up commit so CI's `npm ci` is reproducible.
+- **Node version**: pinned to 24 (Active LTS as of 2026-05). Override at the renderer level if needed — `node_version` is a substitution variable that flows through the context (no `--node-version` CLI flag in PR #2; parked).
+- **Hook framework**: Husky v9 (no `husky install` / `husky add` subcommands — those were removed). The `.husky/pre-commit` + `.husky/pre-push` files are checked into the repo; `.husky/_/` is gitignored runtime output.
 
 ## GitHub setup checklist (when emitting opt-in review modes)
 

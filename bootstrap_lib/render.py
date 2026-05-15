@@ -33,6 +33,25 @@ PYTHON_TEMPLATE_MAP = {
     "src/main.py": "src-main.py.tmpl",
 }
 
+NODEJS_TEMPLATE_MAP = {
+    "Makefile": "Makefile.tmpl",
+    "package.json": "package.json.tmpl",
+    "tsconfig.json": "tsconfig.json.tmpl",
+    "biome.json": "biome.json.tmpl",
+    "vitest.config.ts": "vitest.config.ts.tmpl",
+    ".gitignore": ".gitignore.tmpl",
+    ".github/workflows/ci.yml": "ci.yml.tmpl",
+    ".husky/pre-commit": ".husky-pre-commit.tmpl",
+    ".husky/pre-push": ".husky-pre-push.tmpl",
+    "tests/test_smoke.test.ts": "tests-test_smoke.test.ts.tmpl",
+    "src/main.ts": "src-main.ts.tmpl",
+}
+
+LANGUAGE_TEMPLATE_MAPS = {
+    "python": PYTHON_TEMPLATE_MAP,
+    "nodejs": NODEJS_TEMPLATE_MAP,
+}
+
 
 def build_env(language):
     loader = jinja2.FileSystemLoader(
@@ -69,10 +88,10 @@ def render_all(context, language="python"):
             continue
         output[rel_out] = env.get_template(tmpl_name).render(**context).encode("utf-8")
 
-    if language == "python":
-        lang_map = PYTHON_TEMPLATE_MAP
-    else:  # pragma: no cover — PR #1 supports python only
-        raise ValueError(f"unsupported language: {language!r}")
+    try:
+        lang_map = LANGUAGE_TEMPLATE_MAPS[language]
+    except KeyError:
+        raise ValueError(f"unsupported language: {language!r}") from None
 
     for rel_out, tmpl_name in lang_map.items():
         output[rel_out] = env.get_template(tmpl_name).render(**context).encode("utf-8")

@@ -37,6 +37,7 @@ def _context(**overrides):
         "project_import_name": "test_proj",
         "language": "python",
         "python_version": "3.12",
+        "node_version": "24",
         "enable_smoke": False,
         "github_owner": "test-owner",
         "github_repo": "test-repo",
@@ -122,6 +123,50 @@ def test_triage_rule_present(tmpl):
 def test_editorconfig_renders_root_true():
     rendered = _render("editorconfig.tmpl", _context())
     assert "root = true" in rendered
+
+
+def test_claude_md_nodejs_render_mentions_node_not_python_tooling():
+    """Closes Codex iter-1 #4 / iter-2 #4 / Claude iter-4: language-conditional
+    sections in shared templates must produce language-appropriate content."""
+    rendered = _render("CLAUDE.md.tmpl", _context(language="nodejs"))
+    # Node-specific phrases must appear
+    assert "Biome" in rendered or "biome" in rendered
+    assert "vitest" in rendered
+    assert "npm" in rendered or "Husky" in rendered
+    # Python-specific phrases must NOT appear in the Commands table area
+    # (they may appear elsewhere in the doc that's still language-neutral)
+    # Specifically: the commands table should NOT mention ruff/pytest
+    commands_section_start = rendered.index("## Commands")
+    commands_section_end = rendered.index("## ", commands_section_start + 1)
+    commands_section = rendered[commands_section_start:commands_section_end]
+    assert "ruff" not in commands_section, (
+        f"Node CLAUDE.md should not mention ruff in Commands:\n{commands_section}"
+    )
+    assert "pytest" not in commands_section, (
+        f"Node CLAUDE.md should not mention pytest in Commands:\n{commands_section}"
+    )
+
+
+def test_claude_md_python_render_mentions_python_not_node_tooling():
+    rendered = _render("CLAUDE.md.tmpl", _context(language="python"))
+    commands_section_start = rendered.index("## Commands")
+    commands_section_end = rendered.index("## ", commands_section_start + 1)
+    commands_section = rendered[commands_section_start:commands_section_end]
+    assert "ruff" in commands_section
+    assert "pytest" in commands_section
+    assert "Biome" not in commands_section
+    assert "vitest" not in commands_section
+
+
+@pytest.mark.parametrize("language", ["python", "nodejs"])
+def test_agents_md_format_tool_is_language_appropriate(language):
+    rendered = _render("AGENTS.md.tmpl", _context(language=language))
+    expected_tool = "ruff" if language == "python" else "Biome"
+    other_tool = "Biome" if language == "python" else "ruff"
+    assert f"`make format` ({expected_tool})" in rendered, (
+        f"AGENTS.md.tmpl should mention {expected_tool}"
+    )
+    assert f"`make format` ({other_tool})" not in rendered
 
 
 @pytest.mark.parametrize("mode", ["claude", "both-docs"])

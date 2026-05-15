@@ -9,10 +9,15 @@ local check normally predicts a green CI run.
 
 ```bash
 cd /path/to/{{project_name}}
-make install        # creates venv if missing, installs deps
-make install-hooks  # registers pre-commit + pre-push git hooks
+make install        {% if language == 'python' %}# creates venv if missing, installs deps
+{% elif language == 'nodejs' %}# runs `npm install`; Husky's prepare script arms hooks
+{% endif -%}
+make install-hooks  # {% if language == 'python' %}registers pre-commit + pre-push git hooks
+{% elif language == 'nodejs' %}re-arms Husky hooks idempotently (defensive)
+{% endif %}
 ```
 
+{% if language == 'python' -%}
 `make install-hooks` is separate so `make install` is safe in non-git
 tempdirs (CI runners, smoke tests). On a git-initialised clone, also run
 `make install-hooks` once to wire up:
@@ -24,6 +29,24 @@ tempdirs (CI runners, smoke tests). On a git-initialised clone, also run
 
 Both hooks live in `.pre-commit-config.yaml` and are versioned, so other
 clones get the same hooks after `make install-hooks`.
+{% elif language == 'nodejs' -%}
+Husky's `"prepare": "husky"` script in `package.json` runs during
+`npm install` and arms hooks via `core.hooksPath = .husky`. So
+`make install` alone usually suffices. `make install-hooks` is the
+defensive idempotent re-arm path for users who ran
+`npm install --ignore-scripts` (which some CI configs do for security).
+
+Two hooks land in `.husky/` and are versioned (checked into the repo):
+
+- **pre-commit** — runs `lint-staged`, which invokes `biome check --write`
+  on staged `.ts` / `.tsx` / `.json` files. Auto-fix triggers a failed
+  commit; `git add` the fixed files and re-commit.
+- **pre-push** — runs the full vitest suite. Blocks pushes that would
+  fail CI on the same suite.
+
+The `.husky/_/` directory Husky creates at runtime is gitignored
+(third-party output; not user-edited).
+{%- endif %}
 
 ### Codex CLI (required for `make review-plan-by-codex`)
 
@@ -156,8 +179,7 @@ refactor/<thing>
 
 ## Emergency override
 
-`git push --no-verify` skips the pre-push pytest hook. Use only in a real
-emergency (broken environment that needs hot fixing in `main`). Add a note
+`git push --no-verify` skips the pre-push test hook ({% if language == 'python' %}pytest{% elif language == 'nodejs' %}vitest{% endif %}). Use only in a real emergency (broken environment that needs hot fixing in `main`). Add a note
 in the commit message explaining why.
 
 Routine "tests are slow / I'll fix it later" is not legitimate use.

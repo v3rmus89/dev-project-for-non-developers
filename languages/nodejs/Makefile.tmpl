@@ -1,0 +1,32 @@
+.PHONY: help install install-hooks test lint format check run \
+        review-plan-by-codex review-plan-by-claude preflight-review-tooling
+
+help:	## list all targets with descriptions
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-28s %s\n", $$1, $$2}'
+
+install:	## install deps (runs `npm install`; first run generates package-lock.json which you should commit)
+	npm install
+	@echo "next step: 'make install-hooks' if this is a git repo"
+	@echo "and: commit package-lock.json so CI's `npm ci` works"
+
+install-hooks:	## arm Husky hooks (defensive — `npm install` already runs `prepare`; idempotent re-arm for --ignore-scripts users)
+	@test -d .git || { echo "skipping: not a git repo"; exit 0; }
+	npx husky
+
+test:	## run vitest
+	npm test
+
+lint:	## biome check (lint + format-check)
+	npx biome check .
+
+format:	## biome check --write (auto-fix lint + format)
+	npx biome check --write .
+
+check: lint	## CI-equivalent — biome + typecheck + vitest
+	npx tsc --noEmit
+	npm test
+
+run:	## run src/main.ts via tsx
+	npx tsx src/main.ts
+
+{% include 'Makefile.review.tmpl' %}
