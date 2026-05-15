@@ -76,6 +76,22 @@ make install-hooks   # registers hooks via the target project's venv/bin/pre-com
 
 `make install-hooks` is a target IN THE GENERATED PROJECT, NOT a bootstrap CLI flag. Hooks live in the target project's `.git/hooks/` and reference the target project's `./venv/bin/python` — they survive moves or rebuilds of the skill repo.
 
+## GitHub setup checklist (when emitting opt-in review modes)
+
+When bootstrapping with `--github-review=claude` or `--github-review=both-docs`, the generated project ships `.github/workflows/claude-review.yml`. That workflow needs an OAuth token to post reviews as `claude[bot]`. **Without the secret, the workflow runs but the action fails the auth step and no review is posted.**
+
+One-time setup right after pushing the new repo to GitHub:
+
+1. Install the Claude Code GitHub App on your account (one-time per user): https://github.com/apps/claude
+2. Generate the OAuth token: `claude setup-token` (one-time per user; opens browser)
+3. Add it as a repo secret via `Settings → Secrets and variables → Actions → New repository secret`:
+   - Name: `CLAUDE_CODE_OAUTH_TOKEN`
+   - Value: the token Claude printed
+
+The same token value works across multiple repos (per-user, not per-repo). Generating a new token does NOT invalidate older ones.
+
+For `--github-review=both-docs` you also need to enable Codex's GitHub auto-review per-repo via the Codex web UI — see the generated project's `docs/codex-github-review-setup.md`.
+
 ## `--restore` walkthrough
 
 ```bash

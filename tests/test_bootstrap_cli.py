@@ -373,6 +373,54 @@ def test_restore_returns_nonzero_when_path_safety_rejects(tmp_path, monkeypatch)
     _ = base64  # keep import alive in case base64 referenced from sibling tests
 
 
+def test_apply_prints_oauth_token_hint_for_opt_in_modes(tmp_path):
+    """When --github-review is claude or both-docs, the next-steps printout
+    must surface the CLAUDE_CODE_OAUTH_TOKEN secret-setup step. Without
+    that hint, users push the project to GitHub without the secret and
+    silently get no claude[bot] reviews."""
+    target = tmp_path / "proj"
+    rc, out, _err = run_cli(
+        [
+            "--apply",
+            "--language",
+            "python",
+            "--project-name",
+            "test",
+            "--out",
+            str(target),
+            "--github-review",
+            "claude",
+            "--github-owner",
+            "x",
+            "--github-repo",
+            "y",
+        ]
+    )
+    assert rc == 0
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in out
+    assert "claude setup-token" in out
+
+
+def test_apply_omits_oauth_token_hint_in_none_mode(tmp_path):
+    """In default --github-review=none, no claude-review workflow is
+    emitted, so the secret-setup hint must NOT appear (would only confuse
+    the user about a workflow they don't have)."""
+    target = tmp_path / "proj"
+    rc, out, _err = run_cli(
+        [
+            "--apply",
+            "--language",
+            "python",
+            "--project-name",
+            "test",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 0
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in out
+
+
 def test_overwrite_existing_alone_is_fine_on_empty_target(tmp_path):
     target = tmp_path / "empty"
     rc, _out, _err = run_cli(

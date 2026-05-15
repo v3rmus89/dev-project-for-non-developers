@@ -46,6 +46,28 @@ command -v claude && claude --version
 If either CLI is unavailable, the corresponding `make review-plan-by-*`
 target exits cleanly with an install hint.
 
+### GitHub Actions secret for `claude[bot]` PR review (required)
+
+This repo emits `claude-review.yml` (`--github-review=claude` mode). The
+workflow needs an OAuth token to post reviews — without the secret, the
+workflow runs but the action exits with an auth failure.
+
+One-time setup:
+
+1. **Install the Claude Code GitHub App** on your account:
+   https://github.com/apps/claude
+2. **Generate the OAuth token** (opens browser):
+   ```bash
+   claude setup-token
+   ```
+3. **Add it as a repo secret**:
+   `Settings → Secrets and variables → Actions → New repository secret`
+   - Name: `CLAUDE_CODE_OAUTH_TOKEN`
+   - Value: paste the token
+
+The same token works across multiple repos (per-user, not per-repo).
+Generating a new token does not invalidate older ones.
+
 ---
 
 ## Per-change checklist
