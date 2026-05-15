@@ -4,19 +4,34 @@
 
 | Task | Command |
 |---|---|
+{% if language == 'python' -%}
 | Install dev deps into venv | `make install` |
 | Register git hooks | `make install-hooks` |
-| Run tests | `make test` |
-| Lint + format-check (CI-equivalent) | `make lint` |
-| Auto-fix lint + apply format | `make format` |
+| Run tests (pytest) | `make test` |
+| Lint + format-check via ruff | `make lint` |
+| Auto-fix lint + apply ruff format | `make format` |
+{% elif language == 'nodejs' -%}
+| Install npm deps + arm Husky | `make install` |
+| Re-arm Husky hooks (idempotent) | `make install-hooks` |
+| Run tests (vitest) | `make test` |
+| Lint + format-check via Biome | `make lint` |
+| Auto-fix lint + apply Biome format | `make format` |
+{%- endif %}
 | Run all local checks (= CI) | `make check` |
 | Run main entry point | `make run` |
 | Local Codex review of a plan | `make review-plan-by-codex PLAN_FILE=docs/plans/<file>.md` |
 | Local Claude review of a plan | `make review-plan-by-claude PLAN_FILE=docs/plans/<file>.md` |
 
-The full per-change workflow is in `CONTRIBUTING.md`. Pre-commit hooks (ruff
-on commit) and pre-push hooks (pytest on push) fire automatically once
-`make install-hooks` is run on a git-initialised clone.
+The full per-change workflow is in `CONTRIBUTING.md`.
+{% if language == 'python' -%}
+Pre-commit hooks (ruff on commit) and pre-push hooks (pytest on push) fire
+automatically once `make install-hooks` is run on a git-initialised clone.
+{% elif language == 'nodejs' -%}
+Pre-commit hooks (Biome via lint-staged on commit) and pre-push hooks
+(vitest on push) fire automatically. Husky's `prepare` script in `package.json`
+arms them during `npm install`; `make install-hooks` re-arms idempotently
+for cases like `npm install --ignore-scripts`.
+{%- endif %}
 
 ## Plan review loop
 
@@ -93,8 +108,17 @@ git push
 test files, debug prints) and produces unfocused commits. Always pick files
 explicitly.
 
+{% if language == 'python' -%}
 ## Python version
 
 Always use `python{{python_version}}` for this project. The skill bootstraps
 a per-project `venv/` at the project root; all tool invocations go through
 `./venv/bin/python` (via `$(PYTHON)` in the Makefile).
+{% elif language == 'nodejs' -%}
+## Node version
+
+This project pins Node {{node_version}} (Active LTS). CI uses `actions/setup-node@v4`
+with the same version. Tools resolve via `./node_modules/.bin/` (TypeScript,
+Biome, vitest, tsx). The first `npm install` generates `package-lock.json`
+— commit it so CI's `npm ci` is reproducible.
+{%- endif %}

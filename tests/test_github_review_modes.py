@@ -23,6 +23,7 @@ def run_apply(argv):
     return rc
 
 
+@pytest.mark.parametrize("language", ["python", "nodejs"])
 @pytest.mark.parametrize(
     "mode,expected_workflow_exists,expected_extra_doc_exists,expected_pr_mentions",
     [
@@ -33,6 +34,7 @@ def run_apply(argv):
 )
 def test_github_review_mode(
     tmp_path,
+    language,
     mode,
     expected_workflow_exists,
     expected_extra_doc_exists,
@@ -41,7 +43,7 @@ def test_github_review_mode(
     args = [
         "--apply",
         "--language",
-        "python",
+        language,
         "--project-name",
         "test",
         "--out",

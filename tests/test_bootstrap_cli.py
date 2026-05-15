@@ -62,6 +62,7 @@ def test_every_flag_appears_in_help():
         assert flag in help_text, f"{flag} missing from --help"
 
 
+@pytest.mark.parametrize("language", ["python", "nodejs"])
 @pytest.mark.parametrize(
     "slug,valid",
     [
@@ -78,9 +79,9 @@ def test_every_flag_appears_in_help():
         ("_underscore", False),
     ],
 )
-def test_project_name_validation(tmp_path, slug, valid):
+def test_project_name_validation(tmp_path, slug, valid, language):
     rc, _out, err = run_cli(
-        ["--apply", "--language", "python", "--project-name", slug, "--out", str(tmp_path)]
+        ["--apply", "--language", language, "--project-name", slug, "--out", str(tmp_path)]
     )
     if valid:
         assert rc == 0, err

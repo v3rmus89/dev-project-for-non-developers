@@ -11,7 +11,11 @@ from pathlib import Path
 from bootstrap_lib import io as bio
 from bootstrap_lib.paths import PathSafetyError, validate_target_path
 
-EXECUTABLE_TARGETS = {"scripts/run-with-clean-env.py"}
+EXECUTABLE_TARGETS = {
+    "scripts/run-with-clean-env.py",
+    ".husky/pre-commit",
+    ".husky/pre-push",
+}
 
 
 def _sha256(data: bytes) -> str:

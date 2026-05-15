@@ -1,6 +1,6 @@
 # dev-project-setup
 
-> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 ships **Python only**.
+> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 adds **Node-TS** (Biome + vitest + TypeScript + Husky); Go is still parked.
 
 ## When to invoke
 
@@ -19,7 +19,7 @@ Invoke via the skill repo's per-project venv (never the system Python, never the
 ```bash
 cd ~/.claude/skills/dev-project-setup
 ./venv/bin/python bootstrap.py [--dry-run | --diff | --apply | --restore MANIFEST] \
-    --language python \
+    --language {python,nodejs} \
     --project-name <slug> \
     --out <target-dir> \
     [--github-review {none,claude,both-docs}] \
@@ -57,12 +57,15 @@ The same token works across all their repos. The bootstrap's post-apply printout
 
 ## Post-bootstrap hook adoption
 
-The generated project ships a `make install-hooks` target. Bootstrap itself never installs git hooks; the user runs them in the target project's venv:
+The generated project ships a `make install-hooks` target. Bootstrap itself never installs git hooks; the user runs them in the target project. The Makefile target is identical across languages; the underlying hook framework differs:
+
+- **Python projects**: `pre-commit` framework (Python tool). `make install-hooks` runs `./venv/bin/pre-commit install` + the pre-push variant.
+- **Node-TS projects**: Husky v9 + lint-staged. `make install` already arms hooks via `package.json`'s `"prepare": "husky"` script; `make install-hooks` is a defensive idempotent re-arm (e.g. for users who ran `npm install --ignore-scripts`).
 
 ```bash
 cd <out>
-make install         # creates per-project venv + installs dev deps
-make install-hooks   # registers pre-commit + pre-push hooks (requires .git/)
+make install        # python: venv + pip; node: npm install + arms husky
+make install-hooks  # registers / re-arms git hooks (requires .git/)
 ```
 
 See [docs/usage.md](docs/usage.md) for the full CLI surface and walkthroughs.
