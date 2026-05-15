@@ -168,7 +168,12 @@ def _cli_layer_path_safety(target_root, planned_files):
         paths.validate_target_path(root, rel_path)
 
 
-def _apply(target_root, planned_files, args):
+def _prepare_apply(target_root, planned_files, args):
+    """Plan entries, build + fsync the manifest. Returns (root, entries,
+    manifest_path). Separated from the write phase so `main()` keeps the
+    manifest path available even if writes fail mid-apply — closes Codex
+    iter-22 P1 (restore hint must still print on partial-apply failure).
+    """
     root = Path(target_root)
     root.mkdir(parents=True, exist_ok=True)
 
@@ -180,7 +185,13 @@ def _apply(target_root, planned_files, args):
         created_directories=created_directories,
     )
     manifest_p = manifest.write_manifest(m)
+    return root, entries, manifest_p
 
+
+def _apply_writes(root, planned_files, entries):
+    """Do the actual atomic writes. May raise mid-way; the caller is
+    responsible for preserving the manifest path so the failure path can
+    print a working restore hint."""
     io.install_signal_handlers()
 
     entry_by_path = {e["path"]: e for e in entries}
@@ -192,8 +203,6 @@ def _apply(target_root, planned_files, args):
         if first:
             _maybe_pause_after_first_write()
             first = False
-
-    return manifest_p
 
 
 def main(argv):
@@ -208,8 +217,11 @@ def main(argv):
 
     if mode == "restore":
         m = manifest.load_manifest(args.restore)
-        manifest.restore_from_manifest(m)
-        return 0
+        # Codex iter-22 P2: surface the rejected count as a non-zero exit so
+        # scripted rollback flows don't silently report success when the
+        # manifest contained a path-safety violation and no work was done.
+        _r, _rm, _sk, n_rj = manifest.restore_from_manifest(m)
+        return 1 if n_rj > 0 else 0
 
     context = _build_context(args)
     try:
@@ -246,10 +258,24 @@ def main(argv):
                 sys.stderr.write("  EXISTS: {}\n".format(entry["path"]))
         return 2
 
+    # Split prepare from writes so the manifest path is preserved if a write
+    # raises mid-apply (closes Codex iter-22 P1).
     try:
-        manifest_p = _apply(target_root, planned_files, args)
+        root, entries, manifest_p = _prepare_apply(target_root, planned_files, args)
     except Exception as e:
-        sys.stderr.write(f"apply failed: {e}\n")
+        sys.stderr.write(f"apply failed before manifest write: {e}\n")
+        return 1
+
+    try:
+        _apply_writes(root, planned_files, entries)
+    except Exception as e:
+        sys.stderr.write(f"apply failed mid-write: {e}\n")
+        sys.stderr.write(
+            "target tree may be in a partial state. To roll back the writes\n"
+            "that did complete, run the restore command below.\n"
+        )
+        sys.stderr.write(f"restore manifest: {manifest_p}\n")
+        sys.stderr.write(f"to rollback: {_format_restore_hint(manifest_p)}\n")
         return 1
 
     print(f"apply successful: wrote {len(planned_files)} files to {target_root}")

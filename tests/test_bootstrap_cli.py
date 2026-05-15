@@ -263,6 +263,82 @@ def test_restore_does_not_require_language_project_or_out(tmp_path):
     assert "not valid in restore mode" in result_bad.stderr
 
 
+def test_partial_apply_failure_still_prints_restore_hint(tmp_path, monkeypatch):
+    """Codex iter-22 P1: if _apply_writes raises mid-write, the user must
+    still see the manifest path + restore hint so they can roll back the
+    partial state."""
+    from bootstrap_lib import io as bio_module
+
+    call_count = {"n": 0}
+    original_atomic_write = bio_module.atomic_write
+
+    def flaky_write(target_path, content_bytes):
+        call_count["n"] += 1
+        if call_count["n"] >= 3:
+            raise OSError("simulated mid-apply disk failure")
+        return original_atomic_write(target_path, content_bytes)
+
+    monkeypatch.setattr(bio_module, "atomic_write", flaky_write)
+
+    target = tmp_path / "partial"
+    rc, _out, err = run_cli(
+        [
+            "--apply",
+            "--language",
+            "python",
+            "--project-name",
+            "partial",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 1
+    assert "apply failed mid-write" in err
+    assert "restore manifest:" in err
+    assert "to rollback:" in err
+
+
+def test_restore_returns_nonzero_when_path_safety_rejects(tmp_path, monkeypatch):
+    """Codex iter-22 P2: a manifest that aborts in restore_from_manifest
+    (e.g. path-safety violation) must surface as a non-zero CLI exit."""
+    import tempfile as _tempfile
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(_tempfile, "tempdir", str(tmp_path))
+
+    # Hand-craft a manifest with an absolute-path entry (path-safety violation)
+    import base64
+    import hashlib
+    import json as _json
+
+    target = tmp_path / "proj"
+    target.mkdir()
+    manifest_path = tmp_path / "evil-manifest.json"
+    payload = {
+        "created_at": "2026-05-15T00:00:00Z",
+        "target_root": str(target),
+        "github_review_mode": "none",
+        "entries": [
+            {
+                "path": "/tmp/outside.txt",
+                "existed_before": False,
+                "sha256_before": None,
+                "content_before_b64": None,
+                "mode_before": None,
+                "action_planned": "create",
+                "sha256_after": hashlib.sha256(b"x").hexdigest(),
+                "mode_after": 0o644,
+            }
+        ],
+        "created_directories": [],
+    }
+    manifest_path.write_text(_json.dumps(payload))
+    rc, _out, err = run_cli(["--restore", str(manifest_path)])
+    assert rc != 0
+    assert "REJECT" in err or "rejected" in err
+    _ = base64  # keep import alive in case base64 referenced from sibling tests
+
+
 def test_overwrite_existing_alone_is_fine_on_empty_target(tmp_path):
     target = tmp_path / "empty"
     rc, _out, _err = run_cli(
