@@ -45,6 +45,9 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 	command -v npm >/dev/null 2>&1 \
 	  && echo "  ok       npm" \
 	  || echo "  advisory npm not on PATH (only needed when bootstrapping --language nodejs)"; \
+	command -v go >/dev/null 2>&1 \
+	  && echo "  ok       go" \
+	  || echo "  advisory go not on PATH (only needed when bootstrapping --language go OR running make check's go smoke walk)"; \
 	command -v claude >/dev/null 2>&1 \
 	  && echo "  ok       claude" \
 	  || echo "  advisory claude CLI not on PATH (only needed for make review-plan-by-claude)"; \

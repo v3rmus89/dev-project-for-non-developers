@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '{{go_version}}'
+          # cache: keys on go.sum per GitHub Actions docs. Smoke project
+          # has stdlib-only deps (no go.sum); user re-enables cache: true
+          # after adding deps + committing go.sum.
+          cache: false
+      - name: make install
+        run: make install
+      - name: make check
+        run: make check

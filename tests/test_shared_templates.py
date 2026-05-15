@@ -38,6 +38,7 @@ def _context(**overrides):
         "language": "python",
         "python_version": "3.12",
         "node_version": "24",
+        "go_version": "1.26",
         "enable_smoke": False,
         "github_owner": "test-owner",
         "github_repo": "test-repo",
@@ -158,15 +159,37 @@ def test_claude_md_python_render_mentions_python_not_node_tooling():
     assert "vitest" not in commands_section
 
 
-@pytest.mark.parametrize("language", ["python", "nodejs"])
+@pytest.mark.parametrize("language", ["python", "nodejs", "go"])
 def test_agents_md_format_tool_is_language_appropriate(language):
     rendered = _render("AGENTS.md.tmpl", _context(language=language))
-    expected_tool = "ruff" if language == "python" else "Biome"
-    other_tool = "Biome" if language == "python" else "ruff"
+    expected = {"python": "ruff", "nodejs": "Biome", "go": "gofumpt"}
+    expected_tool = expected[language]
+    other_tools = [t for lang, t in expected.items() if lang != language]
     assert f"`make format` ({expected_tool})" in rendered, (
         f"AGENTS.md.tmpl should mention {expected_tool}"
     )
-    assert f"`make format` ({other_tool})" not in rendered
+    for other_tool in other_tools:
+        assert f"`make format` ({other_tool})" not in rendered
+
+
+def test_claude_md_go_render_mentions_go_not_other_tooling():
+    """Closes Codex iter-5 #5 verification: Go render shouldn't leak
+    Python or Node tooling terms in commands/setup/hook sections."""
+    rendered = _render("CLAUDE.md.tmpl", _context(language="go"))
+    commands_section_start = rendered.index("## Commands")
+    commands_section_end = rendered.index("## ", commands_section_start + 1)
+    commands_section = rendered[commands_section_start:commands_section_end]
+    # Go-specific phrases must appear
+    assert "gofumpt" in commands_section or "golangci-lint" in commands_section
+    assert "go test" in commands_section.lower() or "Go" in commands_section
+    # Python tooling must NOT appear
+    assert "ruff" not in commands_section
+    assert "pytest" not in commands_section
+    assert "venv" not in commands_section.lower()
+    # Node tooling must NOT appear
+    assert "Biome" not in commands_section
+    assert "vitest" not in commands_section
+    assert "npm " not in commands_section
 
 
 @pytest.mark.parametrize("mode", ["claude", "both-docs"])

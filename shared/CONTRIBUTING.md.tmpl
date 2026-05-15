@@ -11,9 +11,11 @@ local check normally predicts a green CI run.
 cd /path/to/{{project_name}}
 make install        {% if language == 'python' %}# creates venv if missing, installs deps
 {% elif language == 'nodejs' %}# runs `npm install`; Husky's prepare script arms hooks
+{% elif language == 'go' %}# go mod download + installs gofumpt + golangci-lint into ./bin/
 {% endif -%}
 make install-hooks  # {% if language == 'python' %}registers pre-commit + pre-push git hooks
 {% elif language == 'nodejs' %}re-arms Husky hooks idempotently (defensive)
+{% elif language == 'go' %}sets core.hooksPath = hooks (native git hooks)
 {% endif %}
 ```
 
@@ -46,6 +48,23 @@ Two hooks land in `.husky/` and are versioned (checked into the repo):
 
 The `.husky/_/` directory Husky creates at runtime is gitignored
 (third-party output; not user-edited).
+{% elif language == 'go' -%}
+Native git hooks via `core.hooksPath`. `make install-hooks` runs
+`git config core.hooksPath hooks`; the hook scripts at `hooks/pre-commit`
+and `hooks/pre-push` are versioned in the repo.
+
+- **pre-commit** — runs `./bin/gofumpt` (detects unformatted files,
+  rewrites them, and exits non-zero so the commit is blocked; `git add`
+  the fixes and re-commit) + `./bin/golangci-lint run` (incremental on
+  existing HEAD, full on greenfield).
+- **pre-push** — runs `go test ./...`.
+
+Hook framework choice: native git, no `pre-commit` framework, no Husky.
+No Python or Node dependency for Go install/check/hooks paths. (The
+plan-review Makefile targets `review-plan-by-codex` /
+`review-plan-by-claude` still need `python3` because the env scrubber
+is a Python script — that's a cross-language dep documented in
+`docs/usage.md`.)
 {%- endif %}
 
 ### Codex CLI (required for `make review-plan-by-codex`)
@@ -179,7 +198,7 @@ refactor/<thing>
 
 ## Emergency override
 
-`git push --no-verify` skips the pre-push test hook ({% if language == 'python' %}pytest{% elif language == 'nodejs' %}vitest{% endif %}). Use only in a real emergency (broken environment that needs hot fixing in `main`). Add a note
+`git push --no-verify` skips the pre-push test hook ({% if language == 'python' %}pytest{% elif language == 'nodejs' %}vitest{% elif language == 'go' %}go test{% endif %}). Use only in a real emergency (broken environment that needs hot fixing in `main`). Add a note
 in the commit message explaining why.
 
 Routine "tests are slow / I'll fix it later" is not legitimate use.

@@ -23,7 +23,7 @@ def run_apply(argv):
     return rc
 
 
-@pytest.mark.parametrize("language", ["python", "nodejs"])
+@pytest.mark.parametrize("language", ["python", "nodejs", "go"])
 @pytest.mark.parametrize(
     "mode,expected_workflow_exists,expected_extra_doc_exists,expected_pr_mentions",
     [

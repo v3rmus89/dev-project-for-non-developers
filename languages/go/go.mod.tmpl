@@ -1,0 +1,3 @@
+module {% if github_owner and github_repo %}github.com/{{github_owner}}/{{github_repo}}{% else %}{{project_name}}{% endif %}
+
+go {{go_version}}

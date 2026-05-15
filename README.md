@@ -20,7 +20,7 @@ Designed for non-developers using LLM-assisted workflows (Claude Code, Codex CLI
 
 ## Status
 
-**Python + Node-TS shipped.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 adds Node-TS (Biome + vitest + TypeScript + Husky). Go is parked for a future PR. The master plan still lives in the Boxette repo (bootstrap exception):
+**Python + Node-TS + Go shipped.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 added Node-TS (Biome + vitest + TypeScript + Husky). PR #3 adds Go (gofumpt + golangci-lint + native git hooks). All three v1 languages now supported. The master plan still lives in the Boxette repo (bootstrap exception):
 
 📋 [`docs/plans/2026-05-15-dev-project-setup-skill.md`](https://github.com/v3rmus89/boxette-tgbot/blob/main/docs/plans/2026-05-15-dev-project-setup-skill.md)
 
@@ -39,7 +39,7 @@ Per the plan:
 
 - **PR #1** ✅ minimal working Python bootstrap + all `shared/` templates (including both `review-plan-by-*` Makefile fragments) + safety primitives + skill's own `make check` green + per-subsystem acceptance gates (A–F)
 - **PR #2** ✅ add `languages/nodejs/` (Biome + vitest + TypeScript + Husky)
-- **PR #3** — add `languages/go/` (gofumpt + golangci-lint)
+- **PR #3** ✅ add `languages/go/` (gofumpt + golangci-lint + native git hooks)
 - **PR #4** — real-project trial + `docs/lessons.md`
 
 Each PR uses the bidirectional plan-review loop on its own plan. PR #1 is the bootstrap exception: its plan is reviewed with Boxette's existing `make review-plan` (Codex direction only) since the skill doesn't self-host the loop yet.

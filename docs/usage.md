@@ -37,7 +37,7 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 
 | Flag | Description |
 |---|---|
-| `--language {python,nodejs}` | target language. PR #1 shipped Python; PR #2 adds Node-TS (Biome + vitest + TypeScript + Husky). Go is parked for a future PR |
+| `--language {python,nodejs,go}` | target language. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 adds Go (gofumpt + golangci-lint + native git hooks). All three v1 languages supported |
 | `--project-name <slug>` | must match `^[a-z][a-z0-9-]*$` (lowercase ASCII + digits + hyphens, leading letter, no path separators) |
 | `--out <dir>` | target directory; created ONLY during `--apply` |
 | `--github-review {none,claude,both-docs}` | default `none` — no Claude workflow / OAuth secret dependency unless explicitly opted in |
@@ -80,13 +80,22 @@ make install-hooks  # registers / re-arms git hooks (requires .git/)
 - **Python**: hooks via `pre-commit` framework. `make install-hooks` runs `./venv/bin/pre-commit install` (commit-side) + `./venv/bin/pre-commit install --hook-type pre-push`.
 - **Node-TS**: hooks via Husky v9 + lint-staged. Hooks are armed automatically during `npm install` (via `package.json`'s `"prepare": "husky"` script); `make install-hooks` is a defensive idempotent re-arm path (e.g. for users who ran `npm install --ignore-scripts`).
 
-Hooks live in `.git/hooks/` (Python) or `.husky/` (Node) and survive moves or rebuilds of the skill repo.
+Hooks live in `.git/hooks/` (Python), `.husky/` (Node), or `hooks/` via `core.hooksPath` (Go) and survive moves or rebuilds of the skill repo.
 
 ### Node-TS specifics
 
 - **First-install flow**: after `git init && git add . && git commit -m "initial bootstrap"`, run `make install`. The first `npm install` generates `package-lock.json` — commit it as a follow-up commit so CI's `npm ci` is reproducible.
 - **Node version**: pinned to 24 (Active LTS as of 2026-05). Override at the renderer level if needed — `node_version` is a substitution variable that flows through the context (no `--node-version` CLI flag in PR #2; parked).
 - **Hook framework**: Husky v9 (no `husky install` / `husky add` subcommands — those were removed). The `.husky/pre-commit` + `.husky/pre-push` files are checked into the repo; `.husky/_/` is gitignored runtime output.
+
+### Go specifics
+
+- **First-install flow**: after `git init && git add . && git commit -m "initial bootstrap"`, run `make install` (does `go mod download` + project-local `go install` of pinned gofumpt + golangci-lint into `./bin/`). **`go.sum` is generated only when you add non-stdlib dependencies** — the stdlib-only smoke project has none.
+- **Go version**: pinned to 1.26 (current Active LTS as of 2026-05). Override at the renderer level if needed — `go_version` is a substitution variable; no `--go-version` CLI flag in PR #3 (parked).
+- **Module path**: `github.com/{github_owner}/{github_repo}` when `--github-owner` + `--github-repo` are passed; falls back to bare `{project_name}` otherwise. Auto-derived; no separate `--module-path` flag.
+- **Hook framework**: Native git hooks. `make install-hooks` runs `git config core.hooksPath hooks`. No `pre-commit` framework, no Husky. **Rollback**: `git config --unset core.hooksPath` restores the default `.git/hooks/` directory. If you had a previous `core.hooksPath` value set, `make install-hooks` prints an explicit restore command (e.g. `git config core.hooksPath "your-previous-value"`).
+- **Tool versions**: gofumpt + golangci-lint pinned in Makefile vars (`GOFUMPT_VERSION`, `GOLANGCI_LINT_VERSION`). Bump in the Makefile + re-run `make install`.
+- **CI cache**: `setup-go@v5` keys cache on `go.sum`. Since the smoke project has none, generated `ci.yml` ships `cache: false`; you re-enable `cache: true` once `go.sum` exists.
 
 ## GitHub setup checklist (when emitting opt-in review modes)
 

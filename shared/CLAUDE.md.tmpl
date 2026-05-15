@@ -16,6 +16,12 @@
 | Run tests (vitest) | `make test` |
 | Lint + format-check via Biome | `make lint` |
 | Auto-fix lint + apply Biome format | `make format` |
+{% elif language == 'go' -%}
+| go mod download + install tools to ./bin/ | `make install` |
+| Arm native git hooks via core.hooksPath | `make install-hooks` |
+| Run tests (`go test ./...`) | `make test` |
+| Lint via gofumpt + golangci-lint | `make lint` |
+| Auto-fix formatting via gofumpt | `make format` |
 {%- endif %}
 | Run all local checks (= CI) | `make check` |
 | Run main entry point | `make run` |
@@ -31,6 +37,12 @@ Pre-commit hooks (Biome via lint-staged on commit) and pre-push hooks
 (vitest on push) fire automatically. Husky's `prepare` script in `package.json`
 arms them during `npm install`; `make install-hooks` re-arms idempotently
 for cases like `npm install --ignore-scripts`.
+{% elif language == 'go' -%}
+Pre-commit (gofumpt + golangci-lint) and pre-push (`go test ./...`) hooks
+live in `hooks/` and are armed by `make install-hooks` (sets
+`core.hooksPath = hooks`). Native git hooks — no framework dependency.
+Rollback: `git config --unset core.hooksPath` (or restore the previous
+value the `make install-hooks` output printed).
 {%- endif %}
 
 ## Plan review loop
@@ -121,4 +133,13 @@ This project pins Node {{node_version}} (Active LTS). CI uses `actions/setup-nod
 with the same version. Tools resolve via `./node_modules/.bin/` (TypeScript,
 Biome, vitest, tsx). The first `npm install` generates `package-lock.json`
 — commit it so CI's `npm ci` is reproducible.
+{% elif language == 'go' -%}
+## Go version
+
+This project pins Go {{go_version}}. CI uses `actions/setup-go@v5` with the
+same version. Tools (gofumpt, golangci-lint) install project-local to
+`./bin/` via `GOBIN="$(CURDIR)/bin" go install ...` — no PATH dependency.
+**`go.sum` is generated only when you add non-stdlib dependencies** (the
+stdlib-only smoke project has none); when it appears, commit it for
+reproducible CI.
 {%- endif %}

@@ -1,0 +1,56 @@
+GOFUMPT_VERSION    ?= v0.9.2
+GOLANGCI_LINT_VERSION ?= v2.12.2
+
+.PHONY: help install install-hooks test lint format check run \
+        review-plan-by-codex review-plan-by-claude preflight-review-tooling
+
+help:	## list all targets with descriptions
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-28s %s\n", $$1, $$2}'
+
+install:	## go mod download + project-local install of gofumpt + golangci-lint into ./bin/
+	go mod download
+	GOBIN="$(CURDIR)/bin" go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
+	GOBIN="$(CURDIR)/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@echo "next step: 'make install-hooks' if this is a git repo"
+
+install-hooks:	## arm native git hooks via core.hooksPath; warns about bypassed default .git/hooks
+	@if [ ! -d .git ]; then \
+	  echo "skipping: not a git repo"; \
+	  exit 0; \
+	fi; \
+	previous=$$(git config --get core.hooksPath 2>/dev/null || true); \
+	if [ -z "$$previous" ]; then \
+	  if [ -f .git/hooks/pre-commit ] || [ -f .git/hooks/pre-push ]; then \
+	    echo "WARN: existing .git/hooks/pre-commit or pre-push will be bypassed"; \
+	    echo "      after setting core.hooksPath to 'hooks'. Migrate them manually"; \
+	    echo "      if you need their behaviour to continue."; \
+	  fi; \
+	  echo "previous core.hooksPath: <unset>"; \
+	  echo "rollback: git config --unset core.hooksPath"; \
+	else \
+	  echo "previous core.hooksPath: $$previous"; \
+	  echo "rollback: git config core.hooksPath \"$$previous\""; \
+	fi; \
+	git config core.hooksPath hooks; \
+	echo "set core.hooksPath = hooks"
+
+test:	## run go test ./...
+	go test ./...
+
+lint:	## gofumpt list (exit non-zero on dirty) + golangci-lint run
+	@out=$$(./bin/gofumpt -l .); if [ -n "$$out" ]; then \
+	  echo "gofumpt found unformatted files:"; \
+	  echo "$$out"; \
+	  exit 1; \
+	fi
+	./bin/golangci-lint run
+
+format:	## gofumpt -w .
+	./bin/gofumpt -w .
+
+check: lint test	## CI-equivalent
+
+run:	## go run .
+	go run .
+
+{% include 'Makefile.review.tmpl' %}
