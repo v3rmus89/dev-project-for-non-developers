@@ -122,3 +122,23 @@ def test_triage_rule_present(tmpl):
 def test_editorconfig_renders_root_true():
     rendered = _render("editorconfig.tmpl", _context())
     assert "root = true" in rendered
+
+
+@pytest.mark.parametrize("mode", ["claude", "both-docs"])
+def test_contributing_template_mentions_oauth_token_in_opt_in_modes(mode):
+    """When the skill emits a claude-review workflow (opt-in modes), the
+    generated CONTRIBUTING.md must tell users to set the
+    CLAUDE_CODE_OAUTH_TOKEN repo secret — otherwise the workflow runs but
+    the action fails auth."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context(github_review_mode=mode))
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in rendered
+    assert "claude setup-token" in rendered
+    assert "github.com/apps/claude" in rendered
+
+
+def test_contributing_template_omits_oauth_token_in_none_mode():
+    """In default mode=none, no claude-review.yml is emitted, so we MUST NOT
+    burden the user with secret-setup instructions for a workflow they
+    don't have."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context(github_review_mode="none"))
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in rendered

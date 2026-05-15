@@ -88,6 +88,16 @@ def test_no_boxette_in_dogfood_overlays(rel_path):
         )
 
 
+def test_skill_repo_contributing_documents_oauth_token():
+    """The skill repo's own CONTRIBUTING.md is in `claude` review mode (it
+    emits its own claude-review.yml). It MUST instruct contributors to set
+    the CLAUDE_CODE_OAUTH_TOKEN secret — otherwise newcomers won't know
+    why claude[bot] never comments on their PRs."""
+    text = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in text
+    assert "claude setup-token" in text
+
+
 @pytest.mark.parametrize("rel_path", ["AGENTS.md", "CLAUDE.md"])
 def test_triage_rule_present_in_dogfood(rel_path):
     """Drift check: triage rule must be byte-identical-ish across templates
