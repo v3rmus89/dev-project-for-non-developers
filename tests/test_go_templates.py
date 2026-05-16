@@ -81,11 +81,15 @@ def test_makefile_uses_v2_golangci_lint_module_path():
 
 
 def test_makefile_install_hooks_has_git_guard():
-    """Codex iter-4 #4: install-hooks must guard on .git/ presence first."""
+    """Codex iter-4 #4 + iter-7: install-hooks must guard on git-repo presence first.
+    Uses `git rev-parse --is-inside-work-tree` (closes iter-7 worktree finding)
+    so that git worktrees (where `.git` is a file, not a directory) are detected
+    correctly — `test -d .git` would skip them and silently bypass the hooks."""
     rendered = _render("Makefile.tmpl", _context())
-    # Recipe combines all steps into one shell with `\` continuation so
-    # the early `exit 0` actually halts the whole thing. Guard text: `[ ! -d .git ]`.
-    assert "[ ! -d .git ]" in rendered or "test -d .git" in rendered
+    assert "git rev-parse --is-inside-work-tree" in rendered
+    # And uses the git-dir lookup for the existing-hooks warning (since
+    # worktrees have hooks at .git/worktrees/<name>/hooks, not .git/hooks).
+    assert "git rev-parse --git-dir" in rendered
 
 
 def test_go_mod_uses_github_path_when_coords_set():

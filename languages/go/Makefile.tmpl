@@ -14,14 +14,15 @@ install:	## go mod download + project-local install of gofumpt + golangci-lint i
 	@echo "next step: 'make install-hooks' if this is a git repo"
 
 install-hooks:	## arm native git hooks via core.hooksPath; warns about bypassed default .git/hooks
-	@if [ ! -d .git ]; then \
+	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
 	  echo "skipping: not a git repo"; \
 	  exit 0; \
 	fi; \
+	git_dir=$$(git rev-parse --git-dir); \
 	previous=$$(git config --get core.hooksPath 2>/dev/null || true); \
 	if [ -z "$$previous" ]; then \
-	  if [ -f .git/hooks/pre-commit ] || [ -f .git/hooks/pre-push ]; then \
-	    echo "WARN: existing .git/hooks/pre-commit or pre-push will be bypassed"; \
+	  if [ -f "$$git_dir/hooks/pre-commit" ] || [ -f "$$git_dir/hooks/pre-push" ]; then \
+	    echo "WARN: existing $$git_dir/hooks/pre-commit or pre-push will be bypassed"; \
 	    echo "      after setting core.hooksPath to 'hooks'. Migrate them manually"; \
 	    echo "      if you need their behaviour to continue."; \
 	  fi; \

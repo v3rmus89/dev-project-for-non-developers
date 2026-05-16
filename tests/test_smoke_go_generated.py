@@ -185,9 +185,14 @@ def test_smoke_go_generated(tmp_path):
     # gofumpt rewrites `fmt.Println( "x")` (extra space) to `fmt.Println("x")`.
     # The hook DETECTS the dirty file, REWRITES it, and EXITS NON-ZERO so
     # the commit fails. We then re-add + re-commit to capture the formatted version.
+    # Use a TestXxx function in a _test.go file so golangci-lint's `unused`
+    # linter recognizes it as a test entry point and doesn't flag it as unused.
     fresh = target / "hook_test.go"
     fresh.write_text(
-        'package main\n\nimport "fmt"\n\nfunc demoHook() {\n\tfmt.Println( "dirty")\n}\n'
+        'package main\n\nimport (\n\t"fmt"\n\t"testing"\n)\n\n'
+        'func TestHookFormatting(t *testing.T) {\n'
+        '\tfmt.Println( "dirty")\n'
+        '\t_ = t\n}\n'
     )
     subprocess.run(["git", "add", str(fresh)], cwd=str(target), check=True)
 
