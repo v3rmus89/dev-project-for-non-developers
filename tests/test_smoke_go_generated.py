@@ -190,9 +190,9 @@ def test_smoke_go_generated(tmp_path):
     fresh = target / "hook_test.go"
     fresh.write_text(
         'package main\n\nimport (\n\t"fmt"\n\t"testing"\n)\n\n'
-        'func TestHookFormatting(t *testing.T) {\n'
+        "func TestHookFormatting(t *testing.T) {\n"
         '\tfmt.Println( "dirty")\n'
-        '\t_ = t\n}\n'
+        "\t_ = t\n}\n"
     )
     subprocess.run(["git", "add", str(fresh)], cwd=str(target), check=True)
 
