@@ -101,6 +101,7 @@ def _build_context(args):
         "language": args.language,
         "python_version": "3.12",
         "node_version": "24",
+        "go_version": "1.26",
         "enable_smoke": bool(args.enable_smoke),
         "github_owner": args.github_owner or "",
         "github_repo": args.github_repo or "",
@@ -286,7 +287,7 @@ def main(argv):
     print(f"apply successful: wrote {len(planned_files)} files to {target_root}")
     print(f"restore manifest: {manifest_p}")
     print(f"to rollback: {_format_restore_hint(manifest_p)}")
-    if args.language in ("python", "nodejs"):
+    if args.language in ("python", "nodejs", "go"):
         print("next steps:")
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")

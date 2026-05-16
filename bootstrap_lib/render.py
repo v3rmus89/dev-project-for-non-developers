@@ -47,9 +47,22 @@ NODEJS_TEMPLATE_MAP = {
     "src/main.ts": "src-main.ts.tmpl",
 }
 
+GO_TEMPLATE_MAP = {
+    "Makefile": "Makefile.tmpl",
+    "go.mod": "go.mod.tmpl",
+    ".golangci.yml": ".golangci.yml.tmpl",
+    ".gitignore": ".gitignore.tmpl",
+    ".github/workflows/ci.yml": "ci.yml.tmpl",
+    "hooks/pre-commit": "hooks-pre-commit.tmpl",
+    "hooks/pre-push": "hooks-pre-push.tmpl",
+    "main.go": "main.go.tmpl",
+    "main_test.go": "main_test.go.tmpl",
+}
+
 LANGUAGE_TEMPLATE_MAPS = {
     "python": PYTHON_TEMPLATE_MAP,
     "nodejs": NODEJS_TEMPLATE_MAP,
+    "go": GO_TEMPLATE_MAP,
 }
 
 

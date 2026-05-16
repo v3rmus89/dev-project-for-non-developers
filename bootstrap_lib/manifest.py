@@ -15,6 +15,8 @@ EXECUTABLE_TARGETS = {
     "scripts/run-with-clean-env.py",
     ".husky/pre-commit",
     ".husky/pre-push",
+    "hooks/pre-commit",
+    "hooks/pre-push",
 }
 
 

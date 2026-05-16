@@ -1,6 +1,6 @@
 # dev-project-setup
 
-> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 adds **Node-TS** (Biome + vitest + TypeScript + Husky); Go is still parked.
+> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 adds **Go** (gofumpt + golangci-lint + native git hooks). All three v1 languages now supported.
 
 ## When to invoke
 
@@ -19,7 +19,7 @@ Invoke via the skill repo's per-project venv (never the system Python, never the
 ```bash
 cd ~/.claude/skills/dev-project-setup
 ./venv/bin/python bootstrap.py [--dry-run | --diff | --apply | --restore MANIFEST] \
-    --language {python,nodejs} \
+    --language {python,nodejs,go} \
     --project-name <slug> \
     --out <target-dir> \
     [--github-review {none,claude,both-docs}] \

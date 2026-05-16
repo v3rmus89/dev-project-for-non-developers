@@ -24,7 +24,7 @@ project grows. Generic baseline:
 
 ## What NOT to flag
 
-- Style nits — `make format` ({% if language == 'python' %}ruff{% elif language == 'nodejs' %}Biome{% endif %}) handles those automatically.
+- Style nits — `make format` ({% if language == 'python' %}ruff{% elif language == 'nodejs' %}Biome{% elif language == 'go' %}gofumpt{% endif %}) handles those automatically.
 - Items explicitly parked in `BACKLOG.md`.
 - Wholesale rewrites — concise targeted suggestions are far more useful.
 

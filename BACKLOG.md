@@ -180,13 +180,52 @@ verify `pip install -e .` works in a fresh venv, document in `docs/usage.md`.
 
 ---
 
-### Add Go language support (`languages/go/`)
+### ✅ Add Go language support (`languages/go/`) — DONE in PR #3
 
-**Status**: parked for PR #3.
+**Status**: shipped 2026-05-16 via PR #3 (Plan PR + implementation PR).
 
-**Triggers to pick up**: PR #2 merged (now true — PR #2 lands as of 2026-05-15).
+**What landed**: gofumpt + golangci-lint v2 + native git hooks via `core.hooksPath` (no pre-commit framework, no Husky — fully Native Go). Tools install project-local via `GOBIN="$(CURDIR)/bin"`. Module path auto-derived: `github.com/{owner}/{repo}` when `--github-*` set, else bare `{project_name}`. Pinned `gofumpt v0.9.2` + `golangci-lint v2.12.2`.
 
-**Rough effort**: ~1 day. Mirror PR #2's structure: engine dispatch extension in `bootstrap_lib/{_flags,render,cli}.py`, `languages/go/` templates (Makefile, `go.mod.tmpl`, `.golangci.yml.tmpl`, `ci.yml.tmpl`, `tests-main_test.go.tmpl`, `src-main.go.tmpl`), language-conditional Jinja for shared templates' Go phrasing, new test files. Hook framework: TBD — `pre-commit` framework supports Go via `lefthook`-style entries, or Go-native via a custom Makefile target.
+**Loop convergence**: Codex 5 iterations (trajectory 3→4→1→1→0 imp-3); stopping rule met at iter-5. See [`docs/plans/2026-05-15-skill-pr3-go-language.md`](docs/plans/2026-05-15-skill-pr3-go-language.md).
+
+---
+
+### Go project layout option (cmd/<name>/ vs root-level main.go)
+
+**Status**: parked.
+
+**Why parked**: PR #3 ships top-level `main.go` + `main_test.go` (Go's idiomatic single-binary layout). Multi-binary projects use `cmd/<name>/main.go`; library projects use no `main.go` at all. A future option flag (`--go-layout=root|cmd|library`) could let the user pick at bootstrap time.
+
+**Triggers to pick up**: first user needs a multi-binary Go scaffold, or a Go library template.
+
+**Rough effort**: ~half a day.
+
+---
+
+### Bump pinned Go tool versions (gofumpt, golangci-lint)
+
+**Status**: parked.
+
+**Why parked**: PR #3 pinned `GOFUMPT_VERSION ?= v0.9.2` and `GOLANGCI_LINT_VERSION ?= v2.12.2` (verified upstream as of 2026-05). The Go ecosystem moves quickly; rather than chase the latest at every plan iteration, PR #3 freezes the verified pin.
+
+**Triggers to pick up**:
+- ~6 months elapsed since the last pin.
+- A user reports gofumpt v0.9.2 doesn't handle a Go 1.26+ syntax feature.
+- golangci-lint upstream deprecates v2.12.x.
+
+**Rough effort**: ~15 min. Update the two Makefile vars in `languages/go/Makefile.tmpl`, re-run smoke walk.
+
+---
+
+### Switch generated CI to `actions/cache` for Go tool binaries
+
+**Status**: parked.
+
+**Why parked**: PR #3 ships `setup-go@v5` with `cache: false` (because stdlib-only smoke project has no `go.sum`, and `setup-go`'s cache keys on `go.sum`). Tool binaries (gofumpt, golangci-lint) get re-installed on every CI run via `make install` — fast enough for current scope (~10-15s).
+
+**Triggers to pick up**: first project where CI time on tool installs becomes a real concern.
+
+**Rough effort**: ~half a day. Explicit `actions/cache@v4` step in `ci.yml.tmpl` keyed on Makefile vars, restore `./bin/` from cache.
 
 ---
 

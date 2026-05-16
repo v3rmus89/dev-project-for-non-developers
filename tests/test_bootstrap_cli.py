@@ -62,7 +62,7 @@ def test_every_flag_appears_in_help():
         assert flag in help_text, f"{flag} missing from --help"
 
 
-@pytest.mark.parametrize("language", ["python", "nodejs"])
+@pytest.mark.parametrize("language", ["python", "nodejs", "go"])
 @pytest.mark.parametrize(
     "slug,valid",
     [

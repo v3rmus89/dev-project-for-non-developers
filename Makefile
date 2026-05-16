@@ -45,6 +45,18 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 	command -v npm >/dev/null 2>&1 \
 	  && echo "  ok       npm" \
 	  || echo "  advisory npm not on PATH (only needed when bootstrapping --language nodejs)"; \
+	if command -v go >/dev/null 2>&1; then \
+	  go_ver=$$(go version 2>/dev/null | awk '{print $$3}' | sed 's/^go//'); \
+	  go_major=$$(echo "$$go_ver" | cut -d. -f1); \
+	  go_minor=$$(echo "$$go_ver" | cut -d. -f2); \
+	  if [ -n "$$go_major" ] && [ -n "$$go_minor" ] && { [ "$$go_major" -gt 1 ] || { [ "$$go_major" -eq 1 ] && [ "$$go_minor" -ge 26 ]; }; }; then \
+	    echo "  ok       go ($$go_ver)"; \
+	  else \
+	    echo "  advisory go $$go_ver is older than the pinned 1.26 (generated go.mod requires 1.26+; older toolchains either auto-download or fail under GOTOOLCHAIN=local)"; \
+	  fi; \
+	else \
+	  echo "  advisory go not on PATH (only needed when bootstrapping --language go OR running make check's go smoke walk)"; \
+	fi; \
 	command -v claude >/dev/null 2>&1 \
 	  && echo "  ok       claude" \
 	  || echo "  advisory claude CLI not on PATH (only needed for make review-plan-by-claude)"; \

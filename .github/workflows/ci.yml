@@ -19,9 +19,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      # setup-go is needed for the Go smoke walk; cache: false because
+      # the stdlib-only smoke project has no go.sum.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: false
       - name: make install
         run: make install
       - name: make check
         run: make check
         env:
-          CI: "true"  # make the nodejs smoke walk fail hard on missing node, not skip
+          CI: "true"  # make the nodejs + go smoke walks fail hard on missing tools, not skip

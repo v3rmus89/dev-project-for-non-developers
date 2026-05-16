@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# pre-commit: gofumpt format-or-block + golangci-lint
+# (whole-tree mutation — matches Python's ruff hook UX)
+
+set -e
+
+# Robust format gate: gofumpt -l doesn't exit non-zero on dirty, so we
+# detect explicitly. If anything is unformatted, rewrite and block the
+# commit so the user re-adds.
+out=$(./bin/gofumpt -l .)
+if [ -n "$out" ]; then
+  ./bin/gofumpt -w .
+  echo "gofumpt rewrote:"
+  echo "$out"
+  echo "re-add and re-commit"
+  exit 1
+fi
+
+# Lint: incremental on existing HEAD; full on greenfield (no-HEAD repos)
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  ./bin/golangci-lint run --new-from-rev=HEAD
+else
+  ./bin/golangci-lint run
+fi

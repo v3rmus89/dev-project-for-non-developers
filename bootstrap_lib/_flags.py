@@ -31,8 +31,8 @@ def add_flags(parser):
 
     parser.add_argument(
         "--language",
-        choices=["python", "nodejs"],
-        help="target language (python or nodejs)",
+        choices=["python", "nodejs", "go"],
+        help="target language (python, nodejs, or go)",
     )
     parser.add_argument(
         "--project-name",
@@ -56,12 +56,18 @@ def add_flags(parser):
     parser.add_argument(
         "--github-owner",
         dest="github_owner",
-        help="GitHub owner (required when --github-review != none)",
+        help=(
+            "GitHub owner (required when --github-review != none; "
+            "also used as the Go module-path prefix when --language=go)"
+        ),
     )
     parser.add_argument(
         "--github-repo",
         dest="github_repo",
-        help="GitHub repo (required when --github-review != none)",
+        help=(
+            "GitHub repo (required when --github-review != none; "
+            "also used as the Go module-path suffix when --language=go)"
+        ),
     )
     parser.add_argument(
         "--overwrite-existing",
