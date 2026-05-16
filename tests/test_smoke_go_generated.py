@@ -7,6 +7,7 @@ PATH locally; FAILS HARD in CI (when `CI=true` env var is set).
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -17,12 +18,52 @@ import pytest
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP_PY = SKILL_ROOT / "bootstrap.py"
 
+# Must match the `go_version` value in bootstrap_lib/cli.py — the generated
+# go.mod pins this version, so anything older on PATH will either trigger
+# GOTOOLCHAIN auto-download (slow / non-deterministic) or fail outright
+# under GOTOOLCHAIN=local with `go.mod requires go >= X.Y`. Bump together.
+REQUIRED_GO_VERSION = (1, 26)
+
+_GO_VERSION_RE = re.compile(r"\bgo(\d+)\.(\d+)(?:\.\d+)?\b")
+
+
+def _parse_go_version(output):
+    """Parse `go version` stdout → (major, minor) tuple, or None if unparseable."""
+    m = _GO_VERSION_RE.search(output)
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)))
+
 
 def _require_go():
     if shutil.which("go") is None:
         if os.environ.get("CI") == "true":
             pytest.fail("go is not on PATH but CI=true — CI must have actions/setup-go")
         pytest.skip("go not on PATH (local dev environment)")
+    # Version check: generated go.mod pins go REQUIRED_GO_VERSION; older
+    # toolchains on PATH would fail confusingly mid-`make install` under
+    # GOTOOLCHAIN=local, or silently auto-download under default settings.
+    try:
+        proc = subprocess.run(
+            ["go", "version"], capture_output=True, text=True, check=True, timeout=10
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        if os.environ.get("CI") == "true":
+            pytest.fail(f"`go version` failed under CI: {exc}")
+        pytest.skip(f"`go version` failed locally: {exc}")
+    parsed = _parse_go_version(proc.stdout)
+    if parsed is None:
+        if os.environ.get("CI") == "true":
+            pytest.fail(f"could not parse `go version` output under CI: {proc.stdout!r}")
+        pytest.skip(f"could not parse `go version` output: {proc.stdout!r}")
+    if parsed < REQUIRED_GO_VERSION:
+        msg = (
+            f"go {parsed[0]}.{parsed[1]} on PATH, but generated go.mod "
+            f"requires >= {REQUIRED_GO_VERSION[0]}.{REQUIRED_GO_VERSION[1]}"
+        )
+        if os.environ.get("CI") == "true":
+            pytest.fail(msg)
+        pytest.skip(msg)
 
 
 def test_smoke_go_generated(tmp_path):
