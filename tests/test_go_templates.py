@@ -81,15 +81,18 @@ def test_makefile_uses_v2_golangci_lint_module_path():
 
 
 def test_makefile_install_hooks_has_git_guard():
-    """Codex iter-4 #4 + iter-7: install-hooks must guard on git-repo presence first.
-    Uses `git rev-parse --is-inside-work-tree` (closes iter-7 worktree finding)
-    so that git worktrees (where `.git` is a file, not a directory) are detected
-    correctly — `test -d .git` would skip them and silently bypass the hooks."""
+    """Codex iter-4 #4 + iter-7 + iter-7-followup: install-hooks must guard on
+    git-repo presence first via `git rev-parse --is-inside-work-tree` (so git
+    worktrees with `.git` file are detected — `test -d .git` would skip them).
+    AND uses `git rev-parse --git-path hooks/...` for the existing-hooks warning
+    so that in a worktree we check the COMMON repo's hooks/ (where Git actually
+    resolves default hooks from per the docs for `--git-path`), not the
+    worktree-specific `.git/worktrees/<name>/hooks/` which Git does not consult
+    for defaults."""
     rendered = _render("Makefile.tmpl", _context())
     assert "git rev-parse --is-inside-work-tree" in rendered
-    # And uses the git-dir lookup for the existing-hooks warning (since
-    # worktrees have hooks at .git/worktrees/<name>/hooks, not .git/hooks).
-    assert "git rev-parse --git-dir" in rendered
+    assert "git rev-parse --git-path hooks/pre-commit" in rendered
+    assert "git rev-parse --git-path hooks/pre-push" in rendered
 
 
 def test_go_mod_uses_github_path_when_coords_set():

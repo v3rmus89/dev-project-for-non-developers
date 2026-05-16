@@ -18,11 +18,12 @@ install-hooks:	## arm native git hooks via core.hooksPath; warns about bypassed 
 	  echo "skipping: not a git repo"; \
 	  exit 0; \
 	fi; \
-	git_dir=$$(git rev-parse --git-dir); \
+	hook_pc=$$(git rev-parse --git-path hooks/pre-commit); \
+	hook_pp=$$(git rev-parse --git-path hooks/pre-push); \
 	previous=$$(git config --get core.hooksPath 2>/dev/null || true); \
 	if [ -z "$$previous" ]; then \
-	  if [ -f "$$git_dir/hooks/pre-commit" ] || [ -f "$$git_dir/hooks/pre-push" ]; then \
-	    echo "WARN: existing $$git_dir/hooks/pre-commit or pre-push will be bypassed"; \
+	  if [ -f "$$hook_pc" ] || [ -f "$$hook_pp" ]; then \
+	    echo "WARN: existing $$hook_pc or pre-push hook will be bypassed"; \
 	    echo "      after setting core.hooksPath to 'hooks'. Migrate them manually"; \
 	    echo "      if you need their behaviour to continue."; \
 	  fi; \
