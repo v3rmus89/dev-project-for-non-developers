@@ -59,10 +59,10 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 	fi; \
 	command -v claude >/dev/null 2>&1 \
 	  && echo "  ok       claude" \
-	  || echo "  advisory claude CLI not on PATH (only needed for make review-plan-by-claude)"; \
+	  || echo "  advisory claude CLI not on PATH (needed for make review-{plan,commit,plan-consistency}-by-claude)"; \
 	command -v codex >/dev/null 2>&1 \
 	  && echo "  ok       codex" \
-	  || echo "  advisory codex CLI not on PATH (only needed for make review-plan-by-codex)"; \
+	  || echo "  advisory codex CLI not on PATH (needed for make review-{plan,commit}-by-codex)"; \
 	if [ $$missing -ne 0 ]; then echo ""; echo "missing core prereqs — see README.md"; exit 1; fi
 
 # ── Plan-review automation ──────────────────────────────────────────────────
@@ -77,7 +77,7 @@ PLAN_FILE                ?=
 ITERATION                ?= 1
 PLAN_REVIEW_OUT_CODEX    ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-codex-iter-$(ITERATION).md
 PLAN_REVIEW_OUT_CLAUDE   ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-claude-iter-$(ITERATION).md
-REVIEW_COMMIT_SHA        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
+REVIEW_COMMIT_SHA        ?= $(shell git -C $(CURDIR) rev-parse --short HEAD 2>/dev/null || echo nogit)
 REVIEW_COMMIT_OUT_CODEX  ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-codex.md
 REVIEW_COMMIT_OUT_CLAUDE ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-claude.md
 PLAN_CONSISTENCY_OUT     ?= /tmp/review-plan-consistency-$(notdir $(basename $(PLAN_FILE)))-iter-$(ITERATION).md

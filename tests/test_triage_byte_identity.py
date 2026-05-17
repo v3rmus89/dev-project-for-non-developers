@@ -101,11 +101,14 @@ def test_triage_block_byte_identical_across_six_surfaces():
         "shared/CLAUDE.md.tmpl",
         "shared/AGENTS.md.tmpl",
         "shared/docs-plans-README.md.tmpl",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "docs/plans/README.md",
     ],
 )
 def test_four_questions_extension_present(surface):
     """The four 'before deciding' questions added by PR #4 must appear in every
-    surface that carries the triage rule."""
+    surface that carries the triage rule (3 templates + 3 dogfood docs)."""
     if surface.startswith("shared/"):
         text = _rendered(surface.replace("shared/", ""))
     else:

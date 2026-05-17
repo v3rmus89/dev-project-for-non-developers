@@ -1,3 +1,4 @@
+{% from 'Makefile.review.tmpl' import tier1_prompt -%}
 # Contributing to {{project_name}}
 
 This is the per-change workflow. Local + CI gates are aligned, so a green
@@ -67,7 +68,7 @@ is a Python script — that's a cross-language dep documented in
 `docs/usage.md`.)
 {%- endif %}
 
-### Codex CLI (required for `make review-plan-by-codex`)
+### Codex CLI (required for `make review-plan-by-codex` and `make review-commit-by-codex`)
 
 ```bash
 # Install (one-time; see https://developers.openai.com/codex):
@@ -80,7 +81,7 @@ codex login
 command -v codex && codex --version
 ```
 
-### Claude CLI (required for `make review-plan-by-claude`)
+### Claude CLI (required for `make review-plan-by-claude`, `make review-commit-by-claude`, and `make review-plan-consistency-by-claude`)
 
 ```bash
 # Install (one-time):
@@ -94,7 +95,7 @@ command -v claude && claude --version
 ```
 
 If either CLI is unavailable on a contributor's machine, the corresponding
-`make review-plan-by-*` target exits cleanly with an install hint rather
+`make review-*-by-*` target exits cleanly with an install hint rather
 than failing silently.
 {% if github_review_mode in ['claude', 'both-docs'] %}
 ### After your first push to GitHub (required for `claude[bot]` PR review)
@@ -216,7 +217,7 @@ Routine "tests are slow / I'll fix it later" is not legitimate use.
 
 Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Pass the subagent this prompt verbatim (substituting your commit SHA for `<SHA>`; get it from `git log -1 --pretty=%H`):
 
-> "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly."
+> "{{ tier1_prompt('<SHA>') }}"
 
 (For non-Claude-Code sessions, just run `make review-commit-by-claude` or `make review-commit-by-codex` — the same prompt fires, rendered with `HEAD` instead of `<SHA>`.)
 

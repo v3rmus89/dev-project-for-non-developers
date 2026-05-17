@@ -118,21 +118,23 @@ manifest scope).
 
 ---
 
-### Retroactively add triage rule to Boxette's plan-review docs
+### Retroactively add triage rule + two-tier review docs to Boxette
 
-**Status**: parked (PR #1 in-repo scope only; Boxette is a separate repo).
+**Status**: now actionable as a follow-up side-task (post-PR-#4).
 
 **Why parked**: the "Don't fold by default — triage" rule was developed
-during this skill's plan-review loop (it cut iteration count from
-diverging to converging in ~3 iters). Boxette (the source repo this skill
-extracts patterns from) doesn't have it yet. Adding it would expand PR #1
-across two repos.
+during this skill's plan-review loop, and PR #4 added the four-questions
+extension + Two-tier code review section. Boxette (the source repo this
+skill extracts patterns from) doesn't have any of these yet. PR #4 ships
+the relevant `shared/CLAUDE.md.tmpl` / `shared/AGENTS.md.tmpl` /
+`shared/CONTRIBUTING.md.tmpl` sections; Boxette can adopt by copying.
 
-**Triggers to pick up**: after PR #1 of this skill lands AND the next
-substantive Boxette plan-review starts.
+**Triggers to pick up**: anyone working on Boxette's plan-review workflow,
+OR the next substantive Boxette plan-review starts.
 
-**Rough effort**: ~30 min — copy the rule verbatim into Boxette's
-`CLAUDE.md`, `AGENTS.md`, `docs/plans/README.md`.
+**Rough effort**: ~1 hour — copy the triage block (with four-questions
+extension) + the Two-tier code review section verbatim into Boxette's
+`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/plans/README.md`.
 
 ---
 
@@ -395,16 +397,3 @@ Codex finds) before Codex does.
 plan-vs-repo factual mismatches.
 
 **Rough effort**: ~half a day.
-
-### Retroactively add triage rule + two-tier review docs to Boxette (imp-1)
-
-**Status**: now actionable as a side-task.
-
-**Why parked**: PR #4 ships the byte-identical Triaging-review-findings
-block + the Two-tier code review section. Boxette can adopt by copying
-the relevant `shared/CLAUDE.md.tmpl` / `shared/AGENTS.md.tmpl` /
-`shared/CONTRIBUTING.md.tmpl` sections.
-
-**Triggers to pick up**: anyone working on Boxette's plan-review workflow.
-
-**Rough effort**: ~1 hour (copy + adapt).

@@ -473,6 +473,102 @@ def test_review_commit_by_codex_propagates_cli_failure(tmp_path):
     )
 
 
+def test_review_commit_by_claude_propagates_cli_failure(tmp_path):
+    """PR #4 Tier-1 review #3: failure-preservation must hold for claude target too."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, _ = _shim_dir_capturing_argv(tmp_path, claude_exit=42)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=str(target),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    stale = tmp_path / f"stale-claude-{sha}.md"
+    stale.write_text("STALE PRE-EXISTING OUTPUT")
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-commit-by-claude",
+            f"REVIEW_COMMIT_OUT_CLAUDE={stale}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, (
+        "review-commit-by-claude swallowed CLI failure — `;` vs `&&` regression"
+    )
+
+
+def test_review_plan_consistency_by_claude_propagates_cli_failure(tmp_path):
+    """PR #4 Tier-1 review #3: failure-preservation must hold for consistency target too."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="consistency_fail")
+    shim_dir, _ = _shim_dir_capturing_argv(tmp_path, claude_exit=42)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    stale = tmp_path / "stale-consistency.md"
+    stale.write_text("STALE PRE-EXISTING OUTPUT")
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-consistency-by-claude",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=1",
+            f"PLAN_CONSISTENCY_OUT={stale}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, (
+        "review-plan-consistency-by-claude swallowed CLI failure — `;` vs `&&` regression"
+    )
+
+
+def test_review_commit_warns_on_dirty_worktree(tmp_path):
+    """PR #4 Tier-1 review #4: dirty-worktree WARN must fire AND CLI must still invoke."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    # Make the worktree dirty (unstaged change to an existing tracked file)
+    mkf = target / "Makefile"
+    mkf.write_text(mkf.read_text() + "\n# dirty-marker\n")
+
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    out_file = tmp_path / "out-dirty.md"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-commit-by-codex",
+            f"REVIEW_COMMIT_OUT_CODEX={out_file}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "WARN: worktree has uncommitted changes" in result.stderr, (
+        "dirty-worktree WARN missing from stderr"
+    )
+    # The CLI must still have been invoked (not blocked)
+    assert argv_log.exists(), "shim was not invoked despite WARN-not-block contract"
+
+
 def test_review_plan_consistency_by_claude_writes_iter_keyed_output(tmp_path):
     target = _bootstrap_fixture(tmp_path)
     plan = _make_plan_file(target, slug="consistency_smoke")

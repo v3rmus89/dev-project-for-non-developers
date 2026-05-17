@@ -17,7 +17,7 @@ Prereqs are documented in [docs/usage.md](docs/usage.md) — `python3.12`,
 `make`, `git`, network access to PyPI; optional `claude` / `codex` CLIs
 for the local review targets.
 
-### Codex CLI (required for `make review-plan-by-codex`)
+### Codex CLI (required for `make review-plan-by-codex` and `make review-commit-by-codex`)
 
 ```bash
 # Install (see https://developers.openai.com/codex):
@@ -30,7 +30,7 @@ codex login
 command -v codex && codex --version
 ```
 
-### Claude CLI (required for `make review-plan-by-claude`)
+### Claude CLI (required for `make review-plan-by-claude`, `make review-commit-by-claude`, and `make review-plan-consistency-by-claude`)
 
 ```bash
 # Install:
@@ -43,7 +43,7 @@ claude login
 command -v claude && claude --version
 ```
 
-If either CLI is unavailable, the corresponding `make review-plan-by-*`
+If either CLI is unavailable, the corresponding `make review-*-by-*`
 target exits cleanly with an install hint.
 
 ### GitHub Actions secret for `claude[bot]` PR review (required)
