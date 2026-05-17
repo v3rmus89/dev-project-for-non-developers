@@ -113,18 +113,27 @@ These four questions add ~30 seconds per finding. They catch the failure mode wh
 
 ## Two-tier code review
 
+{% if github_review_mode == 'both-docs' -%}
 For substantive implementation PRs (multi-commit / cross-cutting), use BOTH tiers; neither catches what the other does.
 
 - **Tier-1 (after each focused commit, before push)**: `make review-commit-by-claude` or `make review-commit-by-codex`. Catches plan-impl drift, tests-passing-for-wrong-reason, contracts the author missed.
-{% if github_review_mode == 'both-docs' -%}
 - **Tier-2 (after push)**: `claude[bot]` auto-fires on PR open / draft→ready via `.github/workflows/claude-review.yml`. Codex (configured via web UI per `docs/codex-github-review-setup.md`) reviews on PR open + draft→ready; re-trigger after subsequent pushes with `@codex review`. Catches "could only be discovered by running" class.
-{% elif github_review_mode == 'claude' -%}
-- **Tier-2 (after push)**: `claude[bot]` auto-fires on PR open / draft→ready via `.github/workflows/claude-review.yml`. Re-trigger after subsequent pushes by commenting `@claude review this` on the PR. Catches "could only be discovered by running" class. (Codex GitHub bot is NOT configured in this project. Retroactively adding it is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag.)
-{% else -%}
-- **Tier-2**: NOT configured in this project (`--github-review=none` at bootstrap). Adding Tier-2 retroactively is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag.
-{%- endif %}
 
-Both feed the same (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
+Both tiers feed the same (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
+{% elif github_review_mode == 'claude' -%}
+For substantive implementation PRs (multi-commit / cross-cutting), use BOTH tiers; neither catches what the other does.
+
+- **Tier-1 (after each focused commit, before push)**: `make review-commit-by-claude` or `make review-commit-by-codex`. Catches plan-impl drift, tests-passing-for-wrong-reason, contracts the author missed.
+- **Tier-2 (after push)**: `claude[bot]` auto-fires on PR open / draft→ready via `.github/workflows/claude-review.yml`. Re-trigger after subsequent pushes by commenting `@claude review this` on the PR. Catches "could only be discovered by running" class. (Codex GitHub bot is NOT configured in this project. Retroactively adding it is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag.)
+
+Both tiers feed the same (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
+{% else -%}
+For substantive implementation PRs (multi-commit / cross-cutting), run **Tier-1 review** after each focused commit, before push: `make review-commit-by-claude` or `make review-commit-by-codex`. Catches plan-impl drift, tests-passing-for-wrong-reason, contracts the author missed.
+
+Tier-2 (GitHub auto-review) is NOT configured in this project (`--github-review=none` at bootstrap). Adding it retroactively is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag. Until then, this project relies on Tier-1 + `make check` only.
+
+Tier-1 findings feed the (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
+{%- endif %}
 
 ## Mandatory human-approval gate
 

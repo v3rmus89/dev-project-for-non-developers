@@ -299,18 +299,20 @@ def test_makefile_tier1_prompt_contains_key_phrases():
     [
         (
             "claude",
-            ["claude[bot]", "@claude review"],
+            ["claude[bot]", "@claude review", "BOTH tiers"],
             ["@codex review", "chatgpt-codex-connector"],
         ),
         (
             "both-docs",
-            ["claude[bot]", "@codex review"],
+            ["claude[bot]", "@codex review", "BOTH tiers"],
             [],
         ),
         (
             "none",
-            [],
-            ["claude[bot]", "@codex review", "chatgpt-codex-connector"],
+            ["Tier-1"],
+            # Closes Codex iter-1 Tier-2 #1: none-mode must NOT say "BOTH tiers"
+            # (contradicts the conditional Tier-2-not-configured line that follows)
+            ["claude[bot]", "@codex review", "chatgpt-codex-connector", "BOTH tiers"],
         ),
     ],
 )
