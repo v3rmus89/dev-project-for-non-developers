@@ -41,3 +41,6 @@ yarn-error.log*
 
 # Plan-review tmp output (lives in /tmp/ but in case anything leaks)
 plan-review-*.md
+
+# Claude Code session state (lock files etc.)
+.claude/
