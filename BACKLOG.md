@@ -309,3 +309,102 @@ area beyond PR #1's scope.
 files theirs, some files generated) who can't use the all-or-nothing flag.
 
 **Rough effort**: ~half a day.
+
+---
+
+## PR #4 follow-ups
+
+### `bootstrap.py --enable-github-review={claude,both-docs}` for retroactive Tier-2 (imp-2)
+
+**Status**: parked.
+
+**Why parked**: A `--github-review=none` user who later wants to add bots
+must currently re-run `bootstrap.py --apply` with ALL required args
+(`--language`, `--project-name`, `--out`, `--github-owner`, `--github-repo`)
+plus `--overwrite-existing`. Too clunky for user-facing docs. A single
+`--enable-github-review` flag would write ONLY the github-review-conditional
+files (`.github/workflows/claude-review.yml`, `docs/codex-github-review-setup.md`
+overlay, PR template's reviewer checklist) with `--overwrite-existing`
+semantics on those specific files.
+
+**Triggers to pick up**: first `--github-review=none` user wants to add
+bots later.
+
+**Rough effort**: ~half a day.
+
+### Codex/Claude reviewer alternation per iteration (imp-1)
+
+**Status**: parked.
+
+**Why parked**: PR #4's plan-review loop ran 6 Codex iterations + 1 Claude
+iter (Claude direction returned only a summary — known `--permission-mode plan`
+quirk). Could alternate reviewers to halve loop cost, but risks losing
+complementary catches that each reviewer surfaces.
+
+**Triggers to pick up**: subscription limits hit again on PR #5 or beyond,
+AND idea-(a)/(b) prompt improvements don't reduce loop count enough.
+
+**Rough effort**: ~1 day to design + measure on a real PR.
+
+### Cross-session / post-compaction state recovery (imp-2)
+
+**Status**: parked.
+
+**Why parked**: `TodoWrite` is session-ephemeral; on conversation compaction
+the agent retains partial memory but loses the explicit task list, which
+has empirically produced confident-but-wrong suggestions (suggesting work
+that's already done, or adding to plans that are half-implemented). This
+is the harder failure mode compared to a cold new-session start, because
+the agent doesn't know it's operating on stale state.
+
+**Triggers to pick up**:
+- Compaction-confusion incident happens on this skill repo (or another
+  similar workflow project).
+- After PR #4 + PR #5 land — the workflow is more complex post-PR-#4 and
+  the post-compaction risk grows.
+
+**Rough effort**: ~half a day. Two components:
+1. A `make status` target that synthesizes current state from git
+   (`git log -20 main`, `gh pr list --state open`, `gh pr view <N>` for
+   each open PR), plus latest plan file's iteration log and evidence table.
+2. A `CLAUDE.md` / `AGENTS.md` instruction: "When uncertain whether work
+   X is done, run `make status` BEFORE proposing changes." Lands in the
+   byte-identical triage-block area.
+
+Optional third component (heavier, defer further): a tracked `STATUS.md`
+file auto-updated by a post-commit hook so the agent has a single read
+for ground truth instead of synthesizing on demand.
+
+**Related parked item**: `sync-plan-to-ui` Makefile target — the same
+workflow gap where the plan-mode UI shows stale plan content while the
+repo file is current. Same `make status` infra could include a
+"plan-mode UI vs repo plan file" drift detector. Bundle when both are
+done.
+
+### `review-plan-fact-check-by-{claude,codex}` subagent target (imp-2)
+
+**Status**: parked.
+
+**Why parked**: separate from idea-(b) consistency check. A narrow subagent
+that reads the plan + the current repo, and for every file path / test name /
+line number / module reference in the plan, verifies it matches reality.
+Catches the plan-vs-repo factual-mismatch class of findings (~25% of what
+Codex finds) before Codex does.
+
+**Triggers to pick up**: if iter-N reviews on upcoming PRs keep finding
+plan-vs-repo factual mismatches.
+
+**Rough effort**: ~half a day.
+
+### Retroactively add triage rule + two-tier review docs to Boxette (imp-1)
+
+**Status**: now actionable as a side-task.
+
+**Why parked**: PR #4 ships the byte-identical Triaging-review-findings
+block + the Two-tier code review section. Boxette can adopt by copying
+the relevant `shared/CLAUDE.md.tmpl` / `shared/AGENTS.md.tmpl` /
+`shared/CONTRIBUTING.md.tmpl` sections.
+
+**Triggers to pick up**: anyone working on Boxette's plan-review workflow.
+
+**Rough effort**: ~1 hour (copy + adapt).

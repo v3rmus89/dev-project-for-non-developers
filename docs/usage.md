@@ -13,8 +13,8 @@ Before running `make install` or invoking the skill, ensure these are on PATH:
 
 Optional:
 
-- `claude` CLI — only for the **local** `make review-plan-by-claude` target. Not needed for `make check` or the GitHub Actions workflow.
-- `codex` CLI — only for the **local** `make review-plan-by-codex` target. Same scoping as above.
+- `claude` CLI — needed for the **local** `make review-plan-by-claude`, `make review-commit-by-claude`, and `make review-plan-consistency-by-claude` targets. Not needed for `make check` or the GitHub Actions workflow.
+- `codex` CLI — needed for the **local** `make review-plan-by-codex` and `make review-commit-by-codex` targets. Same scoping as above.
 
 Run `make doctor` after `make install` to verify the core prereqs are present.
 

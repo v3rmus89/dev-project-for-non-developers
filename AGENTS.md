@@ -103,6 +103,15 @@ When you receive a Codex review (in Claude Code) or a Claude review (in Codex), 
 
 Only (a) folds modify the plan body during the iteration. (b), (c), and (d) still produce evidence-table entries — the decision matters even when no plan text changes. (d) additionally pauses the loop for a human turn before the iteration proceeds. This makes engineering judgment visible to future reviewers and to the implementer.
 
+**Before deciding (a/b/c/d), ask these four questions** — addresses the failure mode where the driver applies the reviewer's suggested fix verbatim without checking whether the fix is the right one:
+
+1. **Is the premise correct?** Does the reviewer actually understand the current state of the code/plan, or is it inferring from incomplete info? Spot-check the reviewer's claim against the file it cites. If wrong → (c) reject the imp-3 framing.
+2. **Is the suggested fix the best fix, or just *a* fix?** What else solves the same problem? Often there's a smaller / more localized fix the reviewer didn't see. If the reviewer's fix introduces complexity the alternative doesn't → use the alternative.
+3. **What else does this finding imply?** If the bug is X, are there *other* instances of X in the plan you should audit while you're here? Same shape as the reviewer's own "where else does this affect" instruction — apply it to yourself.
+4. **Does folding introduce a contradiction with another section of the plan?** Re-read the sections the fold touches before saving. (The `make review-plan-consistency-by-claude` target does this systematically — run it after every fold.)
+
+These four questions add ~30 seconds per finding. They catch the failure mode where the driver folds in the suggested fix only to find the reviewer was extrapolating, OR the fix introduces a new contradiction the next iter has to catch.
+
 **Calibration**: imp-3 should mean "if we ship without this, the PR doesn't work" — not "if we shipped this, an adversarial test could fail." Imp-3 ≠ "would be more correct." When in doubt about whether a finding is a real blocker, ask: *can the PR ship with a working `make check` and a green smoke walk without this change?* If yes, it's at most imp-2, and probably (b) or (c).
 
 **No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
