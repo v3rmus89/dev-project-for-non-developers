@@ -24,6 +24,10 @@ def _env_with_prefix_vars():
     env["UNRELATED_VAR"] = "kept"
     env["MAKEFLAGS"] = "should-also-be-dropped"
     env["PLAN_FILE"] = "docs/plans/x.md"
+    env["REVIEW_COMMIT_SHA"] = "abc1234"
+    env["REVIEW_COMMIT_OUT_CODEX"] = "/tmp/x-codex.md"
+    env["REVIEW_COMMIT_OUT_CLAUDE"] = "/tmp/x-claude.md"
+    env["PLAN_CONSISTENCY_OUT"] = "/tmp/x-consistency.md"
     return env
 
 
@@ -48,6 +52,10 @@ def test_strips_claude_code_and_codex_prefixes(tmp_path):
         "CODEX_USER_ID",
         "MAKEFLAGS",
         "PLAN_FILE",
+        "REVIEW_COMMIT_SHA",
+        "REVIEW_COMMIT_OUT_CODEX",
+        "REVIEW_COMMIT_OUT_CLAUDE",
+        "PLAN_CONSISTENCY_OUT",
     ]:
         assert stripped not in child_env, f"{stripped} survived scrubbing"
     assert child_env.get("UNRELATED_VAR") == "kept"

@@ -17,7 +17,7 @@ Prereqs are documented in [docs/usage.md](docs/usage.md) — `python3.12`,
 `make`, `git`, network access to PyPI; optional `claude` / `codex` CLIs
 for the local review targets.
 
-### Codex CLI (required for `make review-plan-by-codex`)
+### Codex CLI (required for `make review-plan-by-codex` and `make review-commit-by-codex`)
 
 ```bash
 # Install (see https://developers.openai.com/codex):
@@ -30,7 +30,7 @@ codex login
 command -v codex && codex --version
 ```
 
-### Claude CLI (required for `make review-plan-by-claude`)
+### Claude CLI (required for `make review-plan-by-claude`, `make review-commit-by-claude`, and `make review-plan-consistency-by-claude`)
 
 ```bash
 # Install:
@@ -43,7 +43,7 @@ claude login
 command -v claude && claude --version
 ```
 
-If either CLI is unavailable, the corresponding `make review-plan-by-*`
+If either CLI is unavailable, the corresponding `make review-*-by-*`
 target exits cleanly with an install hint.
 
 ### GitHub Actions secret for `claude[bot]` PR review (required)
@@ -106,6 +106,13 @@ Generating a new token does not invalidate older ones.
 8. **Commit focused units**:
    - One logical change per commit. Imperative title, body explaining "why".
    - **Do NOT** `git add .` — pick files explicitly.
+   - **For substantive PRs, run Tier-1 review on the commit you just made (before push)**:
+     ```bash
+     make review-commit-by-claude    # or review-commit-by-codex
+     ```
+     Triage findings per the (a/b/c/d) framework in `CLAUDE.md` (with the four-questions check).
+     - **Blockers**: fix and either `git commit --amend` (if not yet pushed) or create a follow-up focused commit. Then **rerun `make review-commit-by-*`** on the corrected commit until no importance-3 findings remain. Then `make check`. THEN push.
+     - For trivial diffs (typo, single-line refactor): skip Tier-1; rely on Tier-2 + `make check`.
 
 9. **Push** and open a draft PR:
    ```bash
@@ -158,3 +165,13 @@ When editing the skill itself, mind these invariants:
   Makefile review-section block) diff rendered templates against the
   committed dogfood copies. If you change a selftested template, the
   dogfood file must update in lockstep — and vice versa.
+
+---
+
+## Tier-1 review — prompt template for in-session subagents
+
+Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Pass the subagent this prompt verbatim (substituting your commit SHA for `<SHA>`; get it from `git log -1 --pretty=%H`):
+
+> "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly."
+
+(For non-Claude-Code sessions, just run `make review-commit-by-claude` or `make review-commit-by-codex` — the same prompt fires, rendered with `HEAD` instead of `<SHA>`.)

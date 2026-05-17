@@ -59,10 +59,10 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 	fi; \
 	command -v claude >/dev/null 2>&1 \
 	  && echo "  ok       claude" \
-	  || echo "  advisory claude CLI not on PATH (only needed for make review-plan-by-claude)"; \
+	  || echo "  advisory claude CLI not on PATH (needed for make review-{plan,commit,plan-consistency}-by-claude)"; \
 	command -v codex >/dev/null 2>&1 \
 	  && echo "  ok       codex" \
-	  || echo "  advisory codex CLI not on PATH (only needed for make review-plan-by-codex)"; \
+	  || echo "  advisory codex CLI not on PATH (needed for make review-{plan,commit}-by-codex)"; \
 	if [ $$missing -ne 0 ]; then echo ""; echo "missing core prereqs — see README.md"; exit 1; fi
 
 # ── Plan-review automation ──────────────────────────────────────────────────
@@ -73,10 +73,19 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 # the rendered template, the selftest fails.
 
 # SELFTEST-OVERLAP-BEGIN: shared/Makefile.review.tmpl
-PLAN_FILE              ?=
-ITERATION              ?= 1
-PLAN_REVIEW_OUT_CODEX  ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-codex-iter-$(ITERATION).md
-PLAN_REVIEW_OUT_CLAUDE ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-claude-iter-$(ITERATION).md
+PLAN_FILE                ?=
+ITERATION                ?= 1
+PLAN_REVIEW_OUT_CODEX    ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-codex-iter-$(ITERATION).md
+PLAN_REVIEW_OUT_CLAUDE   ?= /tmp/plan-review-$(notdir $(basename $(PLAN_FILE)))-by-claude-iter-$(ITERATION).md
+REVIEW_COMMIT_SHA        ?= $(shell git -C $(CURDIR) rev-parse --short HEAD 2>/dev/null || echo nogit)
+REVIEW_COMMIT_OUT_CODEX  ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-codex.md
+REVIEW_COMMIT_OUT_CLAUDE ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-claude.md
+PLAN_CONSISTENCY_OUT     ?= /tmp/review-plan-consistency-$(notdir $(basename $(PLAN_FILE)))-iter-$(ITERATION).md
+
+.PHONY: review-plan-by-codex review-plan-by-claude \
+        review-commit-by-codex review-commit-by-claude \
+        review-plan-consistency-by-claude \
+        preflight-review-tooling
 
 review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/plans/foo.md [ITERATION=N])
 	@test -n "$(PLAN_FILE)" || \
@@ -90,7 +99,7 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	    --sandbox read-only \
 	    --color never \
 	    --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" \
-	    "Review the plan file at $(PLAN_FILE). This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly."
+	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly."
 	@echo "──────────────────────────────────────────"
 	@echo "Codex review written to: $(PLAN_REVIEW_OUT_CODEX)"
 	@echo "──────────────────────────────────────────"
@@ -108,12 +117,67 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	    --permission-mode plan \
 	    --add-dir "$(CURDIR)" \
 	    --output-format text \
-	    "Review the plan file at $(PLAN_FILE). This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly." \
+	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly." \
 	  > "$(PLAN_REVIEW_OUT_CLAUDE)"
 	@echo "──────────────────────────────────────────"
 	@echo "Claude review written to: $(PLAN_REVIEW_OUT_CLAUDE)"
 	@echo "──────────────────────────────────────────"
 	@cat "$(PLAN_REVIEW_OUT_CLAUDE)"
+
+review-commit-by-codex:	## Codex review of the most recent commit (Tier-1)
+	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  echo "skipping: not a git repo"; exit 0; \
+	fi; \
+	if ! git rev-parse --verify HEAD >/dev/null 2>&1; then \
+	  echo "skipping: no commits yet — Tier-1 reviews a specific commit; make one first"; exit 0; \
+	fi; \
+	if ! command -v codex >/dev/null 2>&1; then \
+	  echo "codex CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; \
+	fi; \
+	if ! git diff --quiet || ! git diff --cached --quiet; then \
+	  echo "WARN: worktree has uncommitted changes; reviewer will see the dirty state, not just HEAD" >&2; \
+	fi; \
+	$(CURDIR)/scripts/run-with-clean-env.py -- \
+	  codex exec \
+	    -C "$(CURDIR)" \
+	    --sandbox read-only \
+	    --color never \
+	    --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
+	    "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly." \
+	  && cat "$(REVIEW_COMMIT_OUT_CODEX)"
+
+review-commit-by-claude:	## Claude review of the most recent commit (Tier-1)
+	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  echo "skipping: not a git repo"; exit 0; \
+	fi; \
+	if ! git rev-parse --verify HEAD >/dev/null 2>&1; then \
+	  echo "skipping: no commits yet — Tier-1 reviews a specific commit; make one first"; exit 0; \
+	fi; \
+	if ! command -v claude >/dev/null 2>&1; then \
+	  echo "claude CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; \
+	fi; \
+	if ! git diff --quiet || ! git diff --cached --quiet; then \
+	  echo "WARN: worktree has uncommitted changes; reviewer will see the dirty state, not just HEAD" >&2; \
+	fi; \
+	$(CURDIR)/scripts/run-with-clean-env.py -- \
+	  claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	    --output-format text \
+	    "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly." \
+	  > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
+	  && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"
+
+review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradictions after a fold (PLAN_FILE=... [ITERATION=N])
+	@test -n "$(PLAN_FILE)" || \
+	  { echo "Usage: make review-plan-consistency-by-claude PLAN_FILE=docs/plans/<file>.md [ITERATION=N]"; exit 1; }
+	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
+	@command -v claude >/dev/null 2>&1 || \
+	  { echo "claude CLI not found."; exit 1; }
+	$(CURDIR)/scripts/run-with-clean-env.py -- \
+	  claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	    --output-format text \
+	    "Read the plan file at '$(PLAN_FILE)' in full. Your ONLY job: find internal contradictions, doc-drift between sections, and places where the latest fold's wording is inconsistent with adjacent rows / tables / sections. Do NOT critique the design, scope, completeness, or correctness — that is the Codex/Claude full-review job. Just identify pairs: 'Section X says A, Section Y says B, they disagree because Z'. If the plan is internally consistent, say so explicitly. Output as a numbered list. Be terse." \
+	  > "$(PLAN_CONSISTENCY_OUT)" \
+	  && cat "$(PLAN_CONSISTENCY_OUT)"
 
 preflight-review-tooling:	## verify claude+codex CLIs work with the flag shape review targets expect
 	@command -v codex >/dev/null 2>&1 || { echo "codex CLI not found"; exit 1; }

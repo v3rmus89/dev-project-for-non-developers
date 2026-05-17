@@ -50,6 +50,9 @@ def test_makefile_renders_and_lists_targets(tmp_path):
         "run",
         "review-plan-by-codex",
         "review-plan-by-claude",
+        "review-commit-by-codex",
+        "review-commit-by-claude",
+        "review-plan-consistency-by-claude",
         "preflight-review-tooling",
     ]:
         assert target in result.stdout, f"{target!r} missing from `make help`"

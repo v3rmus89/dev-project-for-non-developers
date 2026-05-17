@@ -101,8 +101,39 @@ def test_skill_repo_contributing_documents_oauth_token():
 @pytest.mark.parametrize("rel_path", ["AGENTS.md", "CLAUDE.md"])
 def test_triage_rule_present_in_dogfood(rel_path):
     """Drift check: triage rule must be byte-identical-ish across templates
-    AND dogfood. Minimal assertion: heading + 4 bullets present."""
+    AND dogfood. Minimal assertion: heading + 4 bullets present.
+
+    (Full byte-identity across all 6 surfaces is enforced separately by
+    `tests/test_triage_byte_identity.py`.)"""
     text = (SKILL_ROOT / rel_path).read_text()
     assert TRIAGE_HEADING in text, f"missing triage heading in {rel_path}"
     for bullet in TRIAGE_BULLETS:
         assert bullet in text, f"missing bullet {bullet!r} in {rel_path}"
+
+
+def test_two_tier_section_present_in_dogfood_claude_md():
+    """PR #4 Tier-1 review #6: skill-repo's root `CLAUDE.md` is in `claude`
+    mode and must carry the Two-tier code review section. The selftest
+    (`tests/test_selftest_overlap.py`) doesn't cover root CLAUDE.md, so this
+    test catches drift between shared/CLAUDE.md.tmpl and the dogfood mirror."""
+    text = (SKILL_ROOT / "CLAUDE.md").read_text()
+    assert "## Two-tier code review" in text, "Two-tier section missing from root CLAUDE.md"
+    # `claude` mode signals
+    assert "claude[bot]" in text, "claude-mode dogfood missing claude[bot] reference"
+    assert "@claude review" in text, "claude-mode dogfood missing @claude trigger"
+    # Should NOT mention Codex bot (skill repo is `claude` mode, not `both-docs`)
+    assert "@codex review" not in text, (
+        "root CLAUDE.md should not reference @codex review (skill repo is claude-mode, not both-docs)"
+    )
+    # Pointer to Tier-1 targets
+    assert "review-commit-by-claude" in text or "review-commit-by-codex" in text
+
+
+def test_plan_review_consistency_line_present_in_dogfood():
+    """PR #4: the pre-next-iter consistency self-check instruction must
+    appear in root CLAUDE.md + docs/plans/README.md."""
+    for rel_path in ["CLAUDE.md", "docs/plans/README.md"]:
+        text = (SKILL_ROOT / rel_path).read_text()
+        assert "review-plan-consistency-by-claude" in text, (
+            f"consistency-self-check reference missing in {rel_path}"
+        )

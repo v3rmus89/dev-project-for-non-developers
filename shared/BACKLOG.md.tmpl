@@ -69,6 +69,24 @@ version in preflight's WARN line).
 
 ---
 
+### `bootstrap.py --enable-github-review={claude,both-docs}` for retroactive Tier-2
+
+**Status**: parked.
+
+**Why parked**: A `--github-review=none` user who later wants to add bots
+must currently re-run `bootstrap.py --apply` with ALL required args
+(`--language`, `--project-name`, `--out`, `--github-owner`, `--github-repo`)
+plus `--overwrite-existing`. Too clunky for user-facing docs. A single
+`--enable-github-review` flag would write ONLY the github-review-conditional
+files with `--overwrite-existing` semantics on those specific files.
+
+**Triggers to pick up**: first user wants to add bots after bootstrapping
+with `--github-review=none`.
+
+**Rough effort**: ~half a day.
+
+---
+
 ## Example parked items (delete these if not relevant; keep the format)
 
 ### Example: parked refactor

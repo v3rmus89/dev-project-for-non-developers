@@ -1,3 +1,4 @@
+{% from 'Makefile.review.tmpl' import tier1_prompt -%}
 # Contributing to {{project_name}}
 
 This is the per-change workflow. Local + CI gates are aligned, so a green
@@ -67,7 +68,7 @@ is a Python script — that's a cross-language dep documented in
 `docs/usage.md`.)
 {%- endif %}
 
-### Codex CLI (required for `make review-plan-by-codex`)
+### Codex CLI (required for `make review-plan-by-codex` and `make review-commit-by-codex`)
 
 ```bash
 # Install (one-time; see https://developers.openai.com/codex):
@@ -80,7 +81,7 @@ codex login
 command -v codex && codex --version
 ```
 
-### Claude CLI (required for `make review-plan-by-claude`)
+### Claude CLI (required for `make review-plan-by-claude`, `make review-commit-by-claude`, and `make review-plan-consistency-by-claude`)
 
 ```bash
 # Install (one-time):
@@ -94,7 +95,7 @@ command -v claude && claude --version
 ```
 
 If either CLI is unavailable on a contributor's machine, the corresponding
-`make review-plan-by-*` target exits cleanly with an install hint rather
+`make review-*-by-*` target exits cleanly with an install hint rather
 than failing silently.
 {% if github_review_mode in ['claude', 'both-docs'] %}
 ### After your first push to GitHub (required for `claude[bot]` PR review)
@@ -174,6 +175,13 @@ within ~1 minute.
    - One commit per logical change.
    - Imperative title + body explaining "why".
    - Keep formatting-only commits separate from logic.
+   - **For substantive PRs, run Tier-1 review on the commit you just made (before push)**:
+     ```bash
+     make review-commit-by-claude    # or review-commit-by-codex
+     ```
+     Triage findings per the (a/b/c/d) framework in `CLAUDE.md` (with the four-questions check).
+     - **Blockers**: fix and either `git commit --amend` (if not yet pushed) or create a follow-up focused commit. Then **rerun `make review-commit-by-*`** on the corrected commit until no importance-3 findings remain. Then `make check`. THEN push.
+     - For trivial diffs (typo, single-line refactor): skip Tier-1; rely on {% if github_review_mode in ['claude', 'both-docs'] %}Tier-2 + `make check`{% else %}`make check`{% endif %}.
 
 10. **Push** and open a draft PR:
     ```bash
@@ -202,3 +210,14 @@ refactor/<thing>
 in the commit message explaining why.
 
 Routine "tests are slow / I'll fix it later" is not legitimate use.
+
+---
+
+## Tier-1 review — prompt template for in-session subagents
+
+Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Pass the subagent this prompt verbatim (substituting your commit SHA for `<SHA>`; get it from `git log -1 --pretty=%H`):
+
+> "{{ tier1_prompt('<SHA>') }}"
+
+(For non-Claude-Code sessions, just run `make review-commit-by-claude` or `make review-commit-by-codex` — the same prompt fires, rendered with `HEAD` instead of `<SHA>`.)
+

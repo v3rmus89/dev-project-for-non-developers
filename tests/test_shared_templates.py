@@ -204,6 +204,134 @@ def test_contributing_template_mentions_oauth_token_in_opt_in_modes(mode):
     assert "github.com/apps/claude" in rendered
 
 
+def test_makefile_review_renders_new_targets():
+    """PR #4 adds 3 new Makefile targets and 4 new variables to
+    shared/Makefile.review.tmpl."""
+    rendered = _render("Makefile.review.tmpl", _context())
+    for target in [
+        "review-commit-by-codex:",
+        "review-commit-by-claude:",
+        "review-plan-consistency-by-claude:",
+    ]:
+        assert target in rendered, f"missing target {target!r}"
+    for var in [
+        "REVIEW_COMMIT_SHA",
+        "REVIEW_COMMIT_OUT_CODEX",
+        "REVIEW_COMMIT_OUT_CLAUDE",
+        "PLAN_CONSISTENCY_OUT",
+    ]:
+        assert var in rendered, f"missing variable {var!r}"
+    # .PHONY must include all new targets
+    assert ".PHONY:" in rendered
+    phony_line_start = rendered.index(".PHONY:")
+    # Match until first blank line after PHONY
+    phony_end = rendered.index("\n\n", phony_line_start)
+    phony_block = rendered[phony_line_start:phony_end]
+    for target_name in [
+        "review-commit-by-codex",
+        "review-commit-by-claude",
+        "review-plan-consistency-by-claude",
+    ]:
+        assert target_name in phony_block, f"{target_name} not declared phony"
+
+
+def test_makefile_review_plan_prompt_contains_cross_section_instruction():
+    """PR #4 idea-(a): both review-plan-by-{codex,claude} prompts must include
+    the 'where else in the plan' cross-section impact instruction."""
+    rendered = _render("Makefile.review.tmpl", _context())
+    assert "OTHER sections of the same plan" in rendered, "idea-(a) prompt extension missing"
+
+
+def test_makefile_tier1_prompt_byte_identical_between_makefile_and_contributing():
+    """PR #4 idea-(b) macro design: the Tier-1 prompt must be byte-identical
+    between the Makefile recipe's rendered prompt (commit_ref=HEAD) and the
+    CONTRIBUTING.md template's subagent prompt (commit_ref=<SHA>).
+    Macro construction makes drift impossible, but this test locks it down."""
+    makefile = _render("Makefile.review.tmpl", _context())
+    contributing = _render("CONTRIBUTING.md.tmpl", _context())
+
+    # Extract the prompt from the Makefile (look for the review-commit-by-codex recipe)
+    # The prompt starts after `--output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \` and
+    # is on a line beginning with whitespace+quote.
+    rec_start = makefile.index("review-commit-by-codex:")
+    rec_end = makefile.index("review-commit-by-claude:")
+    rec_block = makefile[rec_start:rec_end]
+    # Extract prompt string between first `"Review commit HEAD` ... up to closing `\"`
+    p_start = rec_block.index('"Review commit HEAD')
+    # The prompt is a single line; find the closing quote at end of that line
+    line_end = rec_block.index("\n", p_start)
+    makefile_prompt = rec_block[p_start + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
+
+    # Extract from CONTRIBUTING.md the prompt with <SHA>
+    p_start_c = contributing.index('"Review commit <SHA>')
+    # The prompt is everything until the closing `"` at end of paragraph
+    line_end_c = contributing.index('"\n', p_start_c)
+    contributing_prompt = contributing[p_start_c + 1 : line_end_c]
+
+    # Normalize: substitute commit_ref placeholder both ways
+    normalized_makefile = makefile_prompt.replace("HEAD", "<COMMIT>")
+    normalized_contributing = contributing_prompt.replace("<SHA>", "<COMMIT>")
+    assert normalized_makefile == normalized_contributing, (
+        f"Tier-1 prompt drift between Makefile recipe and CONTRIBUTING.md:\n"
+        f"Makefile:    {normalized_makefile!r}\n"
+        f"CONTRIBUTING: {normalized_contributing!r}"
+    )
+
+
+def test_makefile_tier1_prompt_contains_key_phrases():
+    """Defensive smoke check: known-good phrases must appear in the rendered
+    Tier-1 prompt regardless of macro construction."""
+    rendered = _render("Makefile.review.tmpl", _context())
+    rec_start = rendered.index("review-commit-by-codex:")
+    rec_end = rendered.index("review-commit-by-claude:")
+    rec_block = rendered[rec_start:rec_end]
+    for phrase in [
+        "tests that pass for the wrong reason",
+        "Tier-1",
+        "plan-impl drift",
+        "Do NOT edit files",
+    ]:
+        assert phrase in rec_block, f"Tier-1 prompt missing phrase: {phrase!r}"
+
+
+@pytest.mark.parametrize(
+    "mode,expected_present,expected_absent",
+    [
+        (
+            "claude",
+            ["claude[bot]", "@claude review", "BOTH tiers"],
+            ["@codex review", "chatgpt-codex-connector"],
+        ),
+        (
+            "both-docs",
+            ["claude[bot]", "@codex review", "BOTH tiers"],
+            [],
+        ),
+        (
+            "none",
+            ["Tier-1"],
+            # Closes Codex iter-1 Tier-2 #1: none-mode must NOT say "BOTH tiers"
+            # (contradicts the conditional Tier-2-not-configured line that follows)
+            ["claude[bot]", "@codex review", "chatgpt-codex-connector", "BOTH tiers"],
+        ),
+    ],
+)
+def test_claude_md_two_tier_section_variants(mode, expected_present, expected_absent):
+    """The CLAUDE.md Two-tier section has 3 Jinja variants — assert each renders
+    with the appropriate bot/non-bot mentions."""
+    rendered = _render("CLAUDE.md.tmpl", _context(github_review_mode=mode))
+    two_tier_start = rendered.index("## Two-tier code review")
+    # Find the end of the section (next ## heading)
+    section_end_idx = rendered.index("\n## ", two_tier_start + 1)
+    section = rendered[two_tier_start:section_end_idx]
+    for phrase in expected_present:
+        assert phrase in section, f"Two-tier section in mode={mode!r} should mention {phrase!r}"
+    for phrase in expected_absent:
+        assert phrase not in section, (
+            f"Two-tier section in mode={mode!r} should NOT mention {phrase!r}"
+        )
+
+
 def test_contributing_template_omits_oauth_token_in_none_mode():
     """In default mode=none, no claude-review.yml is emitted, so we MUST NOT
     burden the user with secret-setup instructions for a workflow they
