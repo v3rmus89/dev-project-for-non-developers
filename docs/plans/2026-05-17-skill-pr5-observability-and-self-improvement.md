@@ -509,10 +509,6 @@ Each impl PR runs its own Tier-1 + Tier-2 review loop. The Plan PR (this documen
 
 (Other lessons captured directly in `LESSONS.md` per the writable-session-only append rule.)
 
-## Lessons surfaced (this PR)
-
-(Empty until impl PR finds something new.)
-
 ## Critical files to read before each iter's review
 
 For Codex / Claude:

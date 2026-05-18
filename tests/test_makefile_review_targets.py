@@ -605,6 +605,10 @@ def test_review_commit_by_codex_with_plan_file_includes_plan_in_prompt(tmp_path)
     passthrough (closes the deferred iter-5 P2 + iter-6 #2)."""
     target = _bootstrap_fixture(tmp_path)
     _hermetic_git_setup(target)
+    # Plan file must exist — the Tier-1 recipe guards on `test -f`
+    plan = target / "docs" / "plans" / "UNIQUE_PLAN_PATH.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text("# plan body\n")
     shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
     env = os.environ.copy()
     env["PATH"] = f"{shim_dir}:{env['PATH']}"
@@ -676,6 +680,9 @@ def test_review_commit_by_claude_plan_file_passthrough(tmp_path):
     """PR #5b: same PLAN_FILE binding contract for the claude target."""
     target = _bootstrap_fixture(tmp_path)
     _hermetic_git_setup(target)
+    plan = target / "docs" / "plans" / "CLAUDE_TEST_PLAN.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text("# plan\n")
     shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
     env = os.environ.copy()
     env["PATH"] = f"{shim_dir}:{env['PATH']}"
@@ -703,6 +710,41 @@ def test_review_commit_by_claude_plan_file_passthrough(tmp_path):
     assert "CLAUDE_TEST_PLAN.md" in prompt
     assert "Check this commit against" in prompt
     assert "No plan binding" not in prompt
+
+
+def test_review_commit_rejects_missing_plan_file(tmp_path):
+    """Closes Tier-2 P1 (Codex on PR #11): if PLAN_FILE is set but the file
+    doesn't exist, the target must fail before invoking the CLI — otherwise
+    Tier-1 reviewers get told to check drift against a nonexistent plan."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    for which_target in ["review-commit-by-codex", "review-commit-by-claude"]:
+        result = subprocess.run(
+            [
+                "make",
+                "-C",
+                str(target),
+                which_target,
+                "PLAN_FILE=docs/plans/THIS_DOES_NOT_EXIST.md",
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, (
+            f"{which_target} with missing PLAN_FILE must fail; got success"
+        )
+        assert "PLAN_FILE not found" in result.stdout, (
+            f"{which_target} must print 'PLAN_FILE not found' on bad path"
+        )
+    # And the shim must never have been invoked for either target
+    assert not argv_log.exists(), (
+        "shim was invoked despite PLAN_FILE existence check failure — guard ineffective"
+    )
 
 
 def test_review_commit_by_claude_without_plan_file_uses_unbound_prompt(tmp_path):
