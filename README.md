@@ -40,8 +40,9 @@ Per the plan:
 - **PR #1** ✅ minimal working Python bootstrap + all `shared/` templates (including both `review-plan-by-*` Makefile fragments) + safety primitives + skill's own `make check` green + per-subsystem acceptance gates (A–F)
 - **PR #2** ✅ add `languages/nodejs/` (Biome + vitest + TypeScript + Husky)
 - **PR #3** ✅ add `languages/go/` (gofumpt + golangci-lint + native git hooks)
-- **PR #4** — two-tier code review + plan-loop improvements (Tier-1 `make review-commit-by-*` targets, plan-review prompt cross-section instruction, `make review-plan-consistency-by-claude` self-check target, four-questions triage extension)
-- **PR #5** — real-project trial + `docs/lessons.md`
+- **PR #4** ✅ two-tier code review + plan-loop improvements (Tier-1 `make review-commit-by-*` targets, plan-review prompt cross-section instruction, `make review-plan-consistency-by-claude` self-check target, four-questions triage extension)
+- **PR #5** ✅ observability + self-improvement layer (`make status` for cross-session/post-compaction recovery; `LESSONS.md` append-only log with writable-session-only rule; plan-file Implementation log convention + Tier-1 `PLAN_FILE=` binding; `/simplify` as optional Tier-1 step). Shipped across 3 sequential impl PRs (#5a foundation, #5b Tier-1+impl-log, #5c `/simplify`+docs+BACKLOG)
+- **PR #6** — real-project trial; exercises `LESSONS.md` self-improvement loop on a real project and accumulates lessons from that trial
 
 Each PR uses the bidirectional plan-review loop on its own plan. PR #1 is the bootstrap exception: its plan is reviewed with Boxette's existing `make review-plan` (Codex direction only) since the skill doesn't self-host the loop yet.
 

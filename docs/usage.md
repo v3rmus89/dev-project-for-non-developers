@@ -129,6 +129,45 @@ $ /Users/me/skill/venv/bin/python /Users/me/skill/bootstrap.py --restore /var/fo
 0 files restored, 18 files removed, 0 skipped due to modification, 0 rejected for path-safety
 ```
 
+## Observability (`make status`)
+
+After bootstrap, the generated project ships a `make status` target that synthesizes recovery information for cross-session / post-compaction continuity:
+
+- **Current branch activity** — current branch name + last 10 commits on `HEAD`
+- **Recent main activity** — last 10 commits on `origin/main` → `main` → `HEAD` (fallback chain)
+- **Open PRs** — `gh pr list --state open` (graceful fallback if `gh` missing/unauthed)
+- **Active plan** — `PLAN_FILE=` override OR mtime-sorted `docs/plans/*.md` (README filtered, multi-plan WARN listing top-3); tails the Iteration log + Implementation log sections (fence-aware extraction skips fenced examples)
+- **Active lessons** — `LESSONS.md` "Active" section (up to ~50 lines)
+- **Local repo state** — `git status --short`
+- **Health checks** — `command -v git gh claude codex` (inlined; never fails the target)
+
+Run at session start, or any time the agent is uncertain whether work X is already done. The instruction is also in `CLAUDE.md` + `AGENTS.md` ("Cross-session state recovery" section).
+
+```bash
+$ cd generated-project
+$ make status
+── Current branch activity ──
+(branch: main)
+abc1234 Latest commit
+...
+```
+
+Use `make status PLAN_FILE=docs/plans/<active>.md` when the mtime auto-detect might pick the wrong file.
+
+## Tier-2 reviewer triggers
+
+The `claude-review.yml` workflow (when emitted via `--github-review={claude,both-docs}`) auto-fires `claude[bot]` on PR open / draft→ready transitions. Re-trigger on subsequent pushes by commenting `@claude review this` on the PR.
+
+The Codex GitHub bot (when configured via the web UI per `docs/codex-github-review-setup.md`) auto-fires on PR open / draft→ready / `@codex review` comments. **Observed reliability caveat**: in some cases the Codex bot does NOT auto-fire on `gh pr ready` (timing-dependent; cause unclear). Workaround: if Codex Tier-2 hasn't fired within ~5 min of marking a PR ready, comment `@codex review` explicitly. See BACKLOG entry "Investigate Codex GitHub bot's ready-state auto-fire reliability".
+
+## Self-improvement loop (`LESSONS.md`)
+
+The generated project also ships `LESSONS.md` (empty by default; the skill-repo's own ships with seed entries).
+
+**Writable-session-only append rule**: a writable implementation session appends lessons directly after a user push-back or a Tier-1/2 finding that surfaces a new mistake-class. A read-only review session (Codex GitHub bot, `make review-plan-by-codex`, etc.) proposes lessons in its output instead — the driver triages later.
+
+See `CLAUDE.md` / `AGENTS.md` "Self-improvement loop" section for the full protocol.
+
 ## Bootstrap-exception note (PR #1)
 
 PR #1 of the skill itself uses Boxette's `make review-plan` (Codex direction only) for its plan-review because the skill's own bidirectional review loop is part of what PR #1 ships. From PR #2 onward the skill self-hosts the loop. The CI workflow, `claude[bot]` review, and Codex auto-review may skip on PR #1's own PR for the same bootstrap reason — the workflow files themselves are part of what PR #1 ships.
