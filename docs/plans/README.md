@@ -78,7 +78,7 @@ to bottom:
 1. `# <Title>` and `## Context` (the immutable scope/rationale)
 2. `## Scope` (IN-scope + NOT-in-scope tables)
 3. `## Subsystem breakdown` (Buckets A, B, C, …)
-4. `## Architecture decisions` / `## Risks + mitigations` / `## Verification`
+4. `## Architecture decisions` / `## Risks + mitigations` / `## Verification` (plus any PR-specific notes such as `## Implementation rollout` for plans that split implementation across multiple impl PRs)
 5. `## Iteration log (this plan)` — one row per Codex/Claude review iter
    (and per consistency self-check; e.g. iter 1.5, 2.5, …)
 6. `## Evidence table — what was folded and where` — one row per finding
