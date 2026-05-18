@@ -495,11 +495,20 @@ Each impl PR runs its own Tier-1 + Tier-2 review loop. The Plan PR (this documen
 
 ## Implementation log (this PR)
 
-(Empty until impl PR starts — Tier-1 will propose entries as commits land.)
+| Commit | What landed | Deviations from plan | Issues faced |
+|---|---|---|---|
+| f04624d | PR #5a impl: `make status` + LESSONS scaffold + renderer wiring + cross-session-recovery & self-improvement-loop docs in CLAUDE.md+AGENTS.md (Buckets A, D-partial, E-pre, F-subset) | none (Bucket F's smoke-test "post-apply path" deferred to Tier-1 fold) | none |
+| f62feb9 | PR #5a Tier-1 self-review fold: 6 findings — smoke-test post-apply LESSONS assertions; real-plan-coexists-with-README test; "(no open PRs)" message; LESSONS in DOGFOOD_FILES_TO_SCAN; awk anchor; seed-entry assertion tightened | none | none |
+| 4689d0b | PR #5a merged to main | none | Codex Tier-2 didn't auto-fire on ready-state (pattern: needed explicit @codex review). Worth a BACKLOG entry in PR #5c |
+| 318bc71 | PR #5b impl: tier1_prompt(commit_ref, plan_file=None) macro + Makefile shell-IF passthrough + CONTRIBUTING dual-variant subagent template + step-9 MANDATED impl-log row append + plan-file structural convention (Buckets B, C, F-subset) | none | none |
+| 39d9f6c | PR #5b Tier-1 self-review fold: 5 findings — claude without-PLAN_FILE test; apostrophe-s canonical phrasing; convention permits PR-specific subsections; tightened p_starts assertion; step-9 dogfood mirror test | none | Tier-1 reviewer noted PR #5b is the first commit to actually dogfood the impl-log-append workflow it ships — this very row is the proof |
+| 61f0101 | PR #5b Codex Tier-2 fold: validate PLAN_FILE existence before plan-bound Tier-1 (was missing the `test -f` guard that review-plan-by-* already had); also dropped stale empty "Lessons surfaced" duplicate section from this plan file | none | Codex Tier-2 caught the missing guard 5 min after marking PR ready (auto-fire DID work this time — but the lesson still stands; behavior remains inconsistent) |
 
 ## Lessons surfaced (this PR)
 
-(Empty until impl PR finds something new.)
+- **Codex Tier-2 auto-fire on ready-state is unreliable** — twice in PR #5 / #5a we marked a PR ready and waited 15+ min before triggering Codex explicitly with `@codex review`. Either (a) document the pattern (always `@codex review` post-ready) or (b) investigate the GitHub-app trigger config. Going into the BACKLOG in PR #5c.
+
+(Other lessons captured directly in `LESSONS.md` per the writable-session-only append rule.)
 
 ## Critical files to read before each iter's review
 

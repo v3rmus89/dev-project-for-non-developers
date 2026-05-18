@@ -125,7 +125,7 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	@echo "──────────────────────────────────────────"
 	@cat "$(PLAN_REVIEW_OUT_CLAUDE)"
 
-review-commit-by-codex:	## Codex review of the most recent commit (Tier-1)
+review-commit-by-codex:	## Codex review of the most recent commit (Tier-1). PLAN_FILE=docs/plans/<active>.md to bind plan-drift check.
 	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
 	  echo "skipping: not a git repo"; exit 0; \
 	fi; \
@@ -138,16 +138,30 @@ review-commit-by-codex:	## Codex review of the most recent commit (Tier-1)
 	if ! git diff --quiet || ! git diff --cached --quiet; then \
 	  echo "WARN: worktree has uncommitted changes; reviewer will see the dirty state, not just HEAD" >&2; \
 	fi; \
-	$(CURDIR)/scripts/run-with-clean-env.py -- \
-	  codex exec \
-	    -C "$(CURDIR)" \
-	    --sandbox read-only \
-	    --color never \
-	    --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
-	    "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly." \
-	  && cat "$(REVIEW_COMMIT_OUT_CODEX)"
+	if [ -n "$(PLAN_FILE)" ]; then \
+	  if [ ! -f "$(PLAN_FILE)" ]; then \
+	    echo "PLAN_FILE not found: $(PLAN_FILE)"; exit 1; \
+	  fi; \
+	  $(CURDIR)/scripts/run-with-clean-env.py -- \
+	    codex exec \
+	      -C "$(CURDIR)" \
+	      --sandbox read-only \
+	      --color never \
+	      --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
+	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Check this commit against $(PLAN_FILE)'s plan body; flag any deviation as plan-impl drift findings. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
+	    && cat "$(REVIEW_COMMIT_OUT_CODEX)"; \
+	else \
+	  $(CURDIR)/scripts/run-with-clean-env.py -- \
+	    codex exec \
+	      -C "$(CURDIR)" \
+	      --sandbox read-only \
+	      --color never \
+	      --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
+	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
+	    && cat "$(REVIEW_COMMIT_OUT_CODEX)"; \
+	fi
 
-review-commit-by-claude:	## Claude review of the most recent commit (Tier-1)
+review-commit-by-claude:	## Claude review of the most recent commit (Tier-1). PLAN_FILE=docs/plans/<active>.md to bind plan-drift check.
 	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
 	  echo "skipping: not a git repo"; exit 0; \
 	fi; \
@@ -160,12 +174,24 @@ review-commit-by-claude:	## Claude review of the most recent commit (Tier-1)
 	if ! git diff --quiet || ! git diff --cached --quiet; then \
 	  echo "WARN: worktree has uncommitted changes; reviewer will see the dirty state, not just HEAD" >&2; \
 	fi; \
-	$(CURDIR)/scripts/run-with-clean-env.py -- \
-	  claude --print --permission-mode plan --add-dir "$(CURDIR)" \
-	    --output-format text \
-	    "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly." \
-	  > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
-	  && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"
+	if [ -n "$(PLAN_FILE)" ]; then \
+	  if [ ! -f "$(PLAN_FILE)" ]; then \
+	    echo "PLAN_FILE not found: $(PLAN_FILE)"; exit 1; \
+	  fi; \
+	  $(CURDIR)/scripts/run-with-clean-env.py -- \
+	    claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	      --output-format text \
+	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Check this commit against $(PLAN_FILE)'s plan body; flag any deviation as plan-impl drift findings. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
+	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
+	    && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"; \
+	else \
+	  $(CURDIR)/scripts/run-with-clean-env.py -- \
+	    claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	      --output-format text \
+	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
+	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
+	    && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"; \
+	fi
 
 review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradictions after a fold (PLAN_FILE=... [ITERATION=N])
 	@test -n "$(PLAN_FILE)" || \
