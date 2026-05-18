@@ -29,6 +29,7 @@ EXPECTED_PATHS_NONE_MODE = {
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "BACKLOG.md",
+    "LESSONS.md",
     "docs/plans/README.md",
     "scripts/run-with-clean-env.py",
     "tests/test_smoke.py",
@@ -78,6 +79,16 @@ def test_smoke_python_generated(tmp_path):
         check=True,
     )
     assert target.is_dir()
+
+    # PR #5a post-apply assertion: LESSONS.md is emitted with the expected
+    # schema headings. Closes Tier-1 P1 — Plan Bucket F asked for this in
+    # the smoke tests' post-apply blocks specifically (not just dry-run).
+    lessons_path = target / "LESSONS.md"
+    assert lessons_path.exists(), "LESSONS.md must be written by --apply"
+    lessons_text = lessons_path.read_text()
+    assert lessons_text.startswith("# Lessons"), "LESSONS.md must start with top heading"
+    assert "## Active" in lessons_text, "LESSONS.md must have Active section"
+    assert "## Archived" in lessons_text, "LESSONS.md must have Archived section"
 
     # Step 3: make install (creates per-project venv + installs deps)
     install = subprocess.run(["make", "install"], cwd=str(target), capture_output=True, text=True)

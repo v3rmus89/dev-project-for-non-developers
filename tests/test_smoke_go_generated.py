@@ -97,6 +97,7 @@ def test_smoke_go_generated(tmp_path):
         "hooks/pre-push",
         "main.go",
         "main_test.go",
+        "LESSONS.md",
     ]:
         assert expected in dry.stdout, f"dry-run missing {expected}"
 
@@ -115,6 +116,15 @@ def test_smoke_go_generated(tmp_path):
         ],
         check=True,
     )
+
+    # PR #5a post-apply assertion: LESSONS.md is emitted with the expected
+    # schema headings. Closes Tier-1 P1.
+    lessons_path = target / "LESSONS.md"
+    assert lessons_path.exists(), "LESSONS.md must be written by --apply"
+    lessons_text = lessons_path.read_text()
+    assert lessons_text.startswith("# Lessons"), "LESSONS.md must start with top heading"
+    assert "## Active" in lessons_text, "LESSONS.md must have Active section"
+    assert "## Archived" in lessons_text, "LESSONS.md must have Archived section"
 
     # Step 3: git init + initial commit (so install-hooks's git-guard passes)
     subprocess.run(["git", "init", "-q"], cwd=str(target), check=True)

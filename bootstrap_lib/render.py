@@ -11,6 +11,7 @@ SHARED_TEMPLATE_MAP = {
     "CLAUDE.md": "CLAUDE.md.tmpl",
     "CONTRIBUTING.md": "CONTRIBUTING.md.tmpl",
     "BACKLOG.md": "BACKLOG.md.tmpl",
+    "LESSONS.md": "LESSONS.md.tmpl",
     ".github/pull_request_template.md": "pull_request_template.md.tmpl",
     ".github/workflows/claude-review.yml": "claude-review.yml.tmpl",
     "docs/plans/README.md": "docs-plans-README.md.tmpl",

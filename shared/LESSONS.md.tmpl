@@ -1,0 +1,32 @@
+# Lessons
+
+Append-only log of mistakes + the rules that prevent recurrence. Read the
+"Active" section at session start. Move solved/obsolete entries to "Archived"
+once the pattern hasn't fired for 3+ sessions OR the underlying problem is
+solved structurally.
+
+## How to use this file
+
+- **At session start**: read the "Active" section. Apply the rules during this session.
+- **After ANY user push-back that changes your approach**, OR any Tier-1/2 finding that surfaced a new mistake-class:
+  - **In a writable implementation session**: append a new entry to "Active" directly. Commit alongside the implementation.
+  - **In a read-only review session** (e.g. `make review-plan-by-codex`, `make review-commit-by-claude`, or any session told "Do NOT edit files"): do NOT append. Propose the lesson in the review output instead. Driver triages reviewer-proposed lessons in a later writable session.
+- **Entry format**:
+  ```
+  ### YYYY-MM-DD: <one-line mistake>
+
+  **Trigger**: <what happened that surfaced this>
+
+  **Rule**: <what to do differently>
+
+  **Status**: Active
+  ```
+- **Promotion to CLAUDE.md** is rare and only via plan-review (for fundamental shifts). Default path: solved → archive in this file.
+
+## Active
+
+(No active lessons yet. Append entries here as they surface.)
+
+## Archived
+
+(No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)
