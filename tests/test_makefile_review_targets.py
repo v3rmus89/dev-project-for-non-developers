@@ -594,3 +594,183 @@ def test_review_plan_consistency_by_claude_writes_iter_keyed_output(tmp_path):
     assert result.returncode == 0, result.stderr
     assert out_file.exists()
     assert "CANNED CLAUDE OUTPUT" in out_file.read_text()
+
+
+# ── PR #5b: PLAN_FILE runtime passthrough tests ─────────────────────────────
+
+
+def test_review_commit_by_codex_with_plan_file_includes_plan_in_prompt(tmp_path):
+    """PR #5b: when PLAN_FILE=docs/plans/x.md is passed at Make runtime, the
+    rendered prompt must contain the plan path. Locks down the Make→prompt
+    passthrough (closes the deferred iter-5 P2 + iter-6 #2)."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-commit-by-codex",
+            "PLAN_FILE=docs/plans/UNIQUE_PLAN_PATH.md",
+            f"REVIEW_COMMIT_OUT_CODEX={tmp_path}/out.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    log = json.loads(argv_log.read_text())
+    codex_argv = [e["argv"] for e in log if e["cli"] == "codex" if e["argv"] != ["--version"]]
+    # find the actual exec invocation (excludes version check)
+    exec_argv = [a for a in codex_argv if "exec" in a]
+    assert exec_argv, "codex exec never invoked"
+    prompt = " ".join(exec_argv[-1])
+    assert "UNIQUE_PLAN_PATH.md" in prompt, (
+        "PLAN_FILE runtime value must appear in rendered prompt;"
+        " Make-level $(PLAN_FILE) passthrough broken"
+    )
+    assert "Check this commit against" in prompt, (
+        "with-plan-binding prompt phrase must fire when PLAN_FILE set"
+    )
+    assert "No plan binding" not in prompt, (
+        "unbound prompt phrase must NOT appear when PLAN_FILE set"
+    )
+
+
+def test_review_commit_by_codex_without_plan_file_uses_unbound_prompt(tmp_path):
+    """PR #5b: without PLAN_FILE, the unbound prompt fires (`No plan binding`)."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-commit-by-codex",
+            f"REVIEW_COMMIT_OUT_CODEX={tmp_path}/out.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    log = json.loads(argv_log.read_text())
+    codex_argv = [e["argv"] for e in log if e["cli"] == "codex"]
+    exec_argv = [a for a in codex_argv if "exec" in a]
+    prompt = " ".join(exec_argv[-1])
+    assert "No plan binding" in prompt, "unbound prompt phrase must fire when PLAN_FILE empty"
+    assert "Check this commit against" not in prompt, (
+        "with-plan-binding phrase must NOT fire when PLAN_FILE empty"
+    )
+
+
+def test_review_commit_by_claude_plan_file_passthrough(tmp_path):
+    """PR #5b: same PLAN_FILE binding contract for the claude target."""
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    # With PLAN_FILE
+    subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-commit-by-claude",
+            "PLAN_FILE=docs/plans/CLAUDE_TEST_PLAN.md",
+            f"REVIEW_COMMIT_OUT_CLAUDE={tmp_path}/out-with.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    log = json.loads(argv_log.read_text())
+    claude_argv = [e["argv"] for e in log if e["cli"] == "claude" and e["argv"] != ["--version"]]
+    assert claude_argv, "claude was never invoked"
+    prompt = " ".join(claude_argv[-1])
+    assert "CLAUDE_TEST_PLAN.md" in prompt
+    assert "Check this commit against" in prompt
+    assert "No plan binding" not in prompt
+
+
+def test_tier1_prompt_has_no_backticks_in_rendered_recipe(tmp_path):
+    """PR #5 Tier-2 regression test: the rendered Tier-1 prompt (both branches)
+    must not contain backticks or `$(` — they'd trigger shell command
+    substitution when passed as a double-quoted shell arg."""
+    target = _bootstrap_fixture(tmp_path)
+    makefile_text = (target / "Makefile").read_text()
+    # Locate review-commit-by-codex recipe block
+    rec_start = makefile_text.index("review-commit-by-codex:")
+    rec_end = makefile_text.index("preflight-review-tooling:")
+    rec_block = makefile_text[rec_start:rec_end]
+    # Extract everything inside the quoted prompts (after "Review commit ...)
+    p_starts = []
+    cursor = 0
+    while True:
+        try:
+            idx = rec_block.index('"Review commit', cursor)
+            p_starts.append(idx)
+            cursor = idx + 10
+        except ValueError:
+            break
+    assert len(p_starts) >= 2, "expected at least 2 quoted prompts in recipe block"
+    for ps in p_starts:
+        line_end = rec_block.index("\n", ps)
+        prompt = rec_block[ps + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
+        # Exception: the WITH-plan branch DOES contain $(PLAN_FILE) — that's
+        # intentional, Make expands it at runtime. But it should NOT contain
+        # any OTHER $( or backticks.
+        # Strip the literal $(PLAN_FILE) first to check the rest is clean.
+        check = prompt.replace("$(PLAN_FILE)", "<PLAN>")
+        assert "`" not in check, f"Tier-1 prompt contains backtick: {check[:200]}"
+        assert "$(" not in check, f"Tier-1 prompt contains shell-substitution `$(`: {check[:200]}"
+
+
+def test_step9_mandate_appears_in_contributing(tmp_path):
+    """PR #5b Bucket B: CONTRIBUTING.md step 9 must explicitly mandate
+    appending the Tier-1-suggested impl-log row + docs-only commit pattern."""
+    target = _bootstrap_fixture(tmp_path)
+    contributing = (target / "CONTRIBUTING.md").read_text()
+    # Find step 9 (numbered list, "Commit in focused units")
+    assert "9. **Commit in focused units**" in contributing
+    # Extract the step 9 block (until step 10)
+    s9_start = contributing.index("9. **Commit in focused units**")
+    s10_start = contributing.index("10. **Push**", s9_start)
+    s9_block = contributing[s9_start:s10_start]
+    # Mandate phrases
+    assert "MANDATED" in s9_block, "step 9 must contain MANDATED keyword for impl-log append"
+    assert "append" in s9_block.lower() and "implementation log" in s9_block.lower(), (
+        "step 9 must reference appending to Implementation log"
+    )
+    assert "docs-only commit" in s9_block.lower(), (
+        "step 9 must specify the separate-docs-only-commit pattern"
+    )
+    assert "PLAN_FILE" in s9_block, "step 9 must show PLAN_FILE= invocation"
+
+
+def test_plan_file_structural_convention_documented(tmp_path):
+    """PR #5b Bucket B: the new plan-file structural convention (sections 1-9
+    order) must appear in shared/docs-plans-README.md.tmpl + dogfood mirror."""
+    target = _bootstrap_fixture(tmp_path)
+    readme = (target / "docs" / "plans" / "README.md").read_text()
+    assert "## Plan-file structural convention" in readme, (
+        "docs/plans/README.md must document the section convention"
+    )
+    # Must reference both the new sections by canonical name
+    assert "Implementation log" in readme
+    assert "Lessons surfaced" in readme
+    assert "Iteration log" in readme
+    # Must mention `make status` extraction reliance
+    assert "make status" in readme.lower()

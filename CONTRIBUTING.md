@@ -108,11 +108,13 @@ Generating a new token does not invalidate older ones.
    - **Do NOT** `git add .` — pick files explicitly.
    - **For substantive PRs, run Tier-1 review on the commit you just made (before push)**:
      ```bash
-     make review-commit-by-claude    # or review-commit-by-codex
+     make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md    # or review-commit-by-codex
      ```
+     Pass `PLAN_FILE=` when you want the reviewer to check plan-impl drift against a specific plan; omit for code-correctness-only review (see `CLAUDE.md` Tier-1 section for the dual-variant subagent path).
      Triage findings per the (a/b/c/d) framework in `CLAUDE.md` (with the four-questions check).
      - **Blockers**: fix and either `git commit --amend` (if not yet pushed) or create a follow-up focused commit. Then **rerun `make review-commit-by-*`** on the corrected commit until no importance-3 findings remain. Then `make check`. THEN push.
-     - For trivial diffs (typo, single-line refactor): skip Tier-1; rely on Tier-2 + `make check`.
+     - **MANDATED: append the Tier-1-suggested impl-log row to the plan's `## Implementation log` section before push**. The reviewer outputs a single markdown table row in the documented format (`| short-sha | what landed | deviations | issues |`). Paste it into your plan file, then create a SEPARATE docs-only commit (e.g. `git commit -m "Append impl-log row for <short-sha>"`). The docs-only commit qualifies as a trivial diff and is exempt from Tier-1 (no recursion). Amending the reviewed commit to include the row would change the SHA and invalidate the audit trail — the docs-only pattern keeps both stable. For commits that don't warrant a row (e.g. trivial-diff Tier-1-skips), mark `N/A` in the impl-log instead.
+     - For trivial diffs (typo, single-line refactor): skip Tier-1 entirely; rely on Tier-2 + `make check`. Docs-only impl-log commits also qualify as trivial and don't loop back through Tier-1.
 
 9. **Push** and open a draft PR:
    ```bash
@@ -170,8 +172,18 @@ When editing the skill itself, mind these invariants:
 
 ## Tier-1 review — prompt template for in-session subagents
 
-Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Pass the subagent this prompt verbatim (substituting your commit SHA for `<SHA>`; get it from `git log -1 --pretty=%H`):
+Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Substitute your commit SHA for `<SHA>` (get it from `git log -1 --pretty=%H`). **Pick ONE variant** matching your situation:
 
-> "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly."
+### Variant A — If you have a plan to check drift against
 
-(For non-Claude-Code sessions, just run `make review-commit-by-claude` or `make review-commit-by-codex` — the same prompt fires, rendered with `HEAD` instead of `<SHA>`.)
+Substitute BOTH `<SHA>` and `<PLAN_FILE>` (your active plan path, e.g. `docs/plans/2026-05-17-foo.md`):
+
+> "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Check this commit against <PLAN_FILE> plan body; flag any deviation as plan-impl drift findings. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan Implementation log section."
+
+### Variant B — If you have no plan binding (code-correctness only)
+
+Substitute only `<SHA>`. The macro emits the unbound prompt; reviewer will limit findings to code-correctness and won't infer a plan file by mtime:
+
+> "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan Implementation log section."
+
+(For non-Claude-Code sessions, just run `make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md` or `make review-commit-by-codex PLAN_FILE=...` — the Makefile passes through `PLAN_FILE` to the same macro. Omit `PLAN_FILE` for the unbound variant.)

@@ -69,6 +69,35 @@ Two distinct PR types:
 5. After plan approval and merge, **implementation PRs** that reference the
    plan land on subsequent branches.
 
+## Plan-file structural convention
+
+Plans grow over iterations. To keep `make status` extraction reliable and
+human readers oriented, plan files follow a fixed section order from top
+to bottom:
+
+1. `# <Title>` and `## Context` (the immutable scope/rationale)
+2. `## Scope` (IN-scope + NOT-in-scope tables)
+3. `## Subsystem breakdown` (Buckets A, B, C, …)
+4. `## Architecture decisions` / `## Risks + mitigations` / `## Verification`
+5. `## Iteration log (this plan)` — one row per Codex/Claude review iter
+   (and per consistency self-check; e.g. iter 1.5, 2.5, …)
+6. `## Evidence table — what was folded and where` — one row per finding
+7. `## Implementation log (this PR)` — one row per implementation commit;
+   Tier-1 review proposes the row, driver pastes it in a separate
+   docs-only commit (see `CONTRIBUTING.md` step 9)
+8. `## Lessons surfaced (this PR)` — reviewer-proposed lessons the driver
+   triages later (real ones → `LESSONS.md`; duplicates/noise rejected)
+9. `## Critical files to read before each iter's review` — last, for
+   reviewer onboarding
+
+Sections 5-8 are typed/appended as the loop runs. Reviewers reading the
+plan should expect sections 1-4 to be stable per-iter; sections 5-8 grow
+monotonically. `make status` tails section 5 (Iteration log) and section
+7 (Implementation log) for the active plan in recovery output, with
+fence-aware extraction (fenced markdown code blocks that contain example
+`## Implementation log` text are skipped — only the top-level real
+section matches).
+
 **Bootstrap exception.** A plan that creates the plan-review infrastructure
 itself (Phase 2.7 in the source project) necessarily lands its plan + tooling
 + dogfood evidence in one PR — there is no earlier plan-review machinery to

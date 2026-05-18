@@ -242,39 +242,112 @@ def test_makefile_review_plan_prompt_contains_cross_section_instruction():
     assert "OTHER sections of the same plan" in rendered, "idea-(a) prompt extension missing"
 
 
+def _extract_prompts_between_quotes(text: str, start_marker: str, count: int) -> list[str]:
+    """Extract `count` quoted prompts from `text`, each starting with `start_marker`."""
+    prompts: list[str] = []
+    cursor = 0
+    for _ in range(count):
+        idx = text.index(start_marker, cursor)
+        # The prompt is a single line; find the closing quote at end of that line
+        line_end = text.index("\n", idx)
+        quoted = text[idx + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
+        prompts.append(quoted)
+        cursor = line_end
+    return prompts
+
+
 def test_makefile_tier1_prompt_byte_identical_between_makefile_and_contributing():
-    """PR #4 idea-(b) macro design: the Tier-1 prompt must be byte-identical
-    between the Makefile recipe's rendered prompt (commit_ref=HEAD) and the
-    CONTRIBUTING.md template's subagent prompt (commit_ref=<SHA>).
-    Macro construction makes drift impossible, but this test locks it down."""
+    """PR #4 idea-(b) macro design + PR #5b dual-variant: the Tier-1 prompts
+    must be byte-identical between Makefile recipe's rendered prompts and
+    CONTRIBUTING.md template's two subagent variants. After PR #5b the macro
+    has TWO branches (with vs without plan_file); both must round-trip
+    identically across the two surfaces."""
     makefile = _render("Makefile.review.tmpl", _context())
     contributing = _render("CONTRIBUTING.md.tmpl", _context())
 
-    # Extract the prompt from the Makefile (look for the review-commit-by-codex recipe)
-    # The prompt starts after `--output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \` and
-    # is on a line beginning with whitespace+quote.
+    # Extract from review-commit-by-codex (two prompts: with-plan, without-plan)
     rec_start = makefile.index("review-commit-by-codex:")
     rec_end = makefile.index("review-commit-by-claude:")
     rec_block = makefile[rec_start:rec_end]
-    # Extract prompt string between first `"Review commit HEAD` ... up to closing `\"`
-    p_start = rec_block.index('"Review commit HEAD')
-    # The prompt is a single line; find the closing quote at end of that line
-    line_end = rec_block.index("\n", p_start)
-    makefile_prompt = rec_block[p_start + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
+    makefile_prompts = _extract_prompts_between_quotes(rec_block, '"Review commit HEAD', count=2)
+    assert len(makefile_prompts) == 2, (
+        "Makefile recipe should have 2 prompts (with + without plan_file)"
+    )
+    # By order in the recipe: first is the `if [ -n "$(PLAN_FILE)" ]` branch (with plan), second is else (without)
+    makefile_with_plan, makefile_without_plan = makefile_prompts
 
-    # Extract from CONTRIBUTING.md the prompt with <SHA>
-    p_start_c = contributing.index('"Review commit <SHA>')
-    # The prompt is everything until the closing `"` at end of paragraph
-    line_end_c = contributing.index('"\n', p_start_c)
-    contributing_prompt = contributing[p_start_c + 1 : line_end_c]
+    # Extract from CONTRIBUTING.md (two prompts: Variant A with-plan, Variant B without)
+    contributing_prompts = _extract_prompts_between_quotes(
+        contributing, '"Review commit <SHA>', count=2
+    )
+    assert len(contributing_prompts) == 2, "CONTRIBUTING.md should have 2 prompt variants"
+    contributing_with_plan, contributing_without_plan = contributing_prompts
 
-    # Normalize: substitute commit_ref placeholder both ways
-    normalized_makefile = makefile_prompt.replace("HEAD", "<COMMIT>")
-    normalized_contributing = contributing_prompt.replace("<SHA>", "<COMMIT>")
-    assert normalized_makefile == normalized_contributing, (
-        f"Tier-1 prompt drift between Makefile recipe and CONTRIBUTING.md:\n"
-        f"Makefile:    {normalized_makefile!r}\n"
-        f"CONTRIBUTING: {normalized_contributing!r}"
+    # Normalize placeholders: HEAD <-> <SHA>, $(PLAN_FILE) <-> <PLAN_FILE>
+    def normalize(p: str) -> str:
+        return (
+            p.replace("HEAD", "<COMMIT>")
+            .replace("<SHA>", "<COMMIT>")
+            .replace("$(PLAN_FILE)", "<PLAN>")
+            .replace("<PLAN_FILE>", "<PLAN>")
+        )
+
+    assert normalize(makefile_with_plan) == normalize(contributing_with_plan), (
+        f"with-plan prompt drift between Makefile + CONTRIBUTING:\n"
+        f"Makefile:     {normalize(makefile_with_plan)!r}\n"
+        f"CONTRIBUTING: {normalize(contributing_with_plan)!r}"
+    )
+    assert normalize(makefile_without_plan) == normalize(contributing_without_plan), (
+        f"without-plan prompt drift between Makefile + CONTRIBUTING:\n"
+        f"Makefile:     {normalize(makefile_without_plan)!r}\n"
+        f"CONTRIBUTING: {normalize(contributing_without_plan)!r}"
+    )
+
+
+def test_tier1_prompt_macro_empty_string_equivalent_to_none():
+    """PR #5 Codex Tier-2 lesson: empty-string plan_file must trigger the
+    same unbound prompt as None (not the with-plan branch with literal
+    empty path)."""
+    env = render.build_env("python")
+    # Render the macro directly via a tiny test template that imports it
+    test_tmpl_source = (
+        "{% from 'Makefile.review.tmpl' import tier1_prompt %}"
+        "NONE:{{ tier1_prompt('HEAD') }}\n"
+        "EMPTY:{{ tier1_prompt('HEAD', '') }}\n"
+        "BOUND:{{ tier1_prompt('HEAD', 'docs/plans/x.md') }}\n"
+    )
+    rendered = env.from_string(test_tmpl_source).render()
+    none_line = rendered.split("\n")[0].removeprefix("NONE:")
+    empty_line = rendered.split("\n")[1].removeprefix("EMPTY:")
+    bound_line = rendered.split("\n")[2].removeprefix("BOUND:")
+    assert none_line == empty_line, (
+        f"None and '' should produce identical prompts (unbound branch);\n"
+        f"None:  {none_line!r}\nEmpty: {empty_line!r}"
+    )
+    assert none_line != bound_line, "bound prompt should differ from unbound"
+    assert "No plan binding" in none_line, "unbound prompt should contain canonical phrase"
+    assert "docs/plans/x.md" in bound_line, "bound prompt should mention the plan file path"
+
+
+def test_tier1_prompt_has_no_backticks_or_shell_metachars():
+    """PR #5 Tier-2 lesson: prompt must not contain backticks or `$(` —
+    those trigger shell command substitution when the rendered prompt is
+    passed as a double-quoted shell arg."""
+    env = render.build_env("python")
+    test_tmpl_source = (
+        "{% from 'Makefile.review.tmpl' import tier1_prompt %}"
+        "{{ tier1_prompt('HEAD') }}\n"
+        "{{ tier1_prompt('HEAD', 'docs/plans/x.md') }}\n"
+    )
+    rendered = env.from_string(test_tmpl_source).render()
+    assert "`" not in rendered, (
+        "Tier-1 prompt must not contain backticks (shell-substitution class); "
+        "PR #5 iter-5 fold required plain text only"
+    )
+    assert "$(" not in rendered, (
+        "Tier-1 prompt must not contain `$(` (shell-substitution); "
+        "the only $(...) allowed is the Make-level $(PLAN_FILE) in the recipe wrapper, "
+        "NOT in the macro-rendered prompt body"
     )
 
 
