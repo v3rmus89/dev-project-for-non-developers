@@ -149,8 +149,11 @@ status:	## Synthesize current project state (recovery for new sessions / post-co
 	@echo ""
 	@echo "── Open PRs ──"
 	@if command -v gh >/dev/null 2>&1; then \
-	  gh pr list --state open --json number,title,headRefName,isDraft --jq '.[] | "#\(.number)  [\(if .isDraft then "draft" else "ready" end)]  \(.title)"' 2>/dev/null \
-	    || echo "(gh CLI unauthed or repo not on github)"; \
+	  out=$$(gh pr list --state open --json number,title,headRefName,isDraft --jq '.[] | "#\(.number)  [\(if .isDraft then "draft" else "ready" end)]  \(.title)"' 2>/dev/null); \
+	  rc=$$?; \
+	  if [ "$$rc" -ne 0 ]; then echo "(gh CLI unauthed or repo not on github)"; \
+	  elif [ -z "$$out" ]; then echo "(no open PRs)"; \
+	  else echo "$$out"; fi; \
 	else echo "(gh CLI not available)"; fi
 	@echo ""
 	@echo "── Active plan ──"
@@ -186,7 +189,7 @@ status:	## Synthesize current project state (recovery for new sessions / post-co
 	fi
 	@echo ""
 	@echo "── Active lessons ──"
-	@if [ -f LESSONS.md ]; then awk 'BEGIN{p=0} /^## Active/{p=1; next} /^## Archived/{exit} p' LESSONS.md | head -50; else echo "(no LESSONS.md)"; fi
+	@if [ -f LESSONS.md ]; then awk 'BEGIN{p=0} /^## Active[[:space:]]*$$/{p=1; next} /^## Archived[[:space:]]*$$/{exit} p' LESSONS.md | head -50; else echo "(no LESSONS.md)"; fi
 	@echo ""
 	@echo "── Local repo state ──"
 	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \

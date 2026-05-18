@@ -36,6 +36,7 @@ DOGFOOD_FILES_TO_SCAN = [
     "AGENTS.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",
+    "LESSONS.md",
     ".github/pull_request_template.md",
 ]
 

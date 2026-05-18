@@ -95,6 +95,15 @@ def test_smoke_nodejs_generated(tmp_path):
     )
     assert target.is_dir()
 
+    # PR #5a post-apply assertion: LESSONS.md is emitted with the expected
+    # schema headings. Closes Tier-1 P1.
+    lessons_path = target / "LESSONS.md"
+    assert lessons_path.exists(), "LESSONS.md must be written by --apply"
+    lessons_text = lessons_path.read_text()
+    assert lessons_text.startswith("# Lessons"), "LESSONS.md must start with top heading"
+    assert "## Active" in lessons_text, "LESSONS.md must have Active section"
+    assert "## Archived" in lessons_text, "LESSONS.md must have Archived section"
+
     # Step 3: git init + user config (required BEFORE install-hooks because
     # install-hooks has a `test -d .git` guard; closes Codex iter-3 #2)
     subprocess.run(["git", "init", "-q"], cwd=str(target), check=True)

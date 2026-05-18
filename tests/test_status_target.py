@@ -231,20 +231,74 @@ def test_status_excludes_docs_plans_readme(tmp_path):
     # No other plan files exist — only the bootstrap-emitted README.md
     result = _make_status(target)
     assert result.returncode == 0, result.stderr
-    # The status output's Active-plan section must say "(no plan files)" since
-    # we're filtering README out, not naming README as the active plan
     active_idx = result.stdout.index("── Active plan ──")
     next_section_idx = result.stdout.index("── Active lessons ──")
     active_section = result.stdout[active_idx:next_section_idx]
     # README.md exists in docs/plans/ but should NOT be displayed as the active plan
-    # The filter should cause: either "(no plan files)" OR the section is empty of README ref
     if "README.md" in active_section:
-        # If README appears, it should only be in the "WARN: candidates" list AS A FILTERED-OUT item
-        # In our current design, README is filtered out at the candidates step entirely.
-        # So README.md should NEVER appear in the Active-plan section.
         raise AssertionError(
             f"docs/plans/README.md must be filtered from plan-detect; got:\n{active_section}"
         )
+
+
+def test_status_real_plan_picked_when_readme_coexists(tmp_path):
+    """Closes Tier-1 P2: plan + README coexist → real plan auto-detected,
+    README must not appear anywhere in the Active-plan section."""
+    target = _bootstrap_fixture(tmp_path)
+    _git_init_commit(target)
+    plan_dir = target / "docs" / "plans"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    real_plan = plan_dir / "2026-05-18-real-plan.md"
+    real_plan.write_text(
+        "# real\n\n## Iteration log\n\n"
+        "| Iter | Findings | Verdict |\n|---|---|---|\n"
+        "| 1 | REAL_PLAN_MARKER | done |\n"
+    )
+    # Touch the real plan so it's newer than README
+    import os as _os
+    import time as _time
+
+    _time.sleep(0.01)
+    _os.utime(str(real_plan), None)
+    result = _make_status(target)
+    assert result.returncode == 0, result.stderr
+    active_idx = result.stdout.index("── Active plan ──")
+    next_idx = result.stdout.index("── Active lessons ──")
+    active_section = result.stdout[active_idx:next_idx]
+    assert "2026-05-18-real-plan.md" in active_section, (
+        "real plan should be auto-detected when README coexists"
+    )
+    assert "REAL_PLAN_MARKER" in active_section, "real plan's content should be tailed"
+    assert "README.md" not in active_section, (
+        "README.md must not appear in Active-plan section even when present alongside a real plan"
+    )
+
+
+def test_status_open_prs_zero_message(tmp_path):
+    """Closes Tier-1 P3: when `gh pr list` succeeds with zero open PRs,
+    section must emit '(no open PRs)' instead of being silent."""
+    target = _bootstrap_fixture(tmp_path)
+    _git_init_commit(target)
+    # Substitute a shim `gh` that returns empty output successfully
+    shim_dir = tmp_path / "shim-gh"
+    shim_dir.mkdir()
+    shim_gh = shim_dir / "gh"
+    shim_gh.write_text(
+        "#!/usr/bin/env bash\n"
+        "# Shim gh: claims success with empty output\n"
+        'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then exit 0; fi\n'
+        "exit 0\n"
+    )
+    shim_gh.chmod(0o755)
+    env = {"PATH": f"{shim_dir}:{os.environ['PATH']}"}
+    result = _make_status(target, env=env)
+    assert result.returncode == 0, result.stderr
+    open_prs_idx = result.stdout.index("── Open PRs ──")
+    next_idx = result.stdout.index("── Active plan ──")
+    open_prs_section = result.stdout[open_prs_idx:next_idx]
+    assert "(no open PRs)" in open_prs_section, (
+        f"Open PRs section should emit '(no open PRs)' on empty success; got:\n{open_prs_section}"
+    )
 
 
 def test_status_fence_aware_extraction(tmp_path):

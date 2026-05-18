@@ -63,19 +63,30 @@ def test_skill_lessons_has_seed_entries():
     """Skill repo's own LESSONS.md ships with the 5 seed entries surfaced from
     PR #1-#5 plan loops (3 originally planned + 2 captured during PR #5 plan loop:
     self-check skipped + Jinja placeholder literal). Generated projects do NOT
-    get these (the shared template ships empty)."""
+    get these (the shared template ships empty).
+
+    Closes Tier-1 P6: assertion tightened to match the docstring's claim of 5
+    entries. If a future cleanup drops one, the test catches it instead of
+    silently lying."""
     text = SKILL_LESSONS.read_text()
     active = _extract_active_section(text)
     entries = ENTRY_HEADING_RE.findall(active)
-    assert len(entries) >= 3, (
-        f"Expected ≥3 seed entries in Active section, found {len(entries)}: {entries}"
+    assert len(entries) >= 5, (
+        f"Expected ≥5 seed entries in Active section per the docstring's claim, "
+        f"found {len(entries)}: {entries}"
     )
-    # Spot-check that specific seed lessons are present (the 3 originally planned)
+    # Spot-check that specific seed lessons are present
     titles = [title for _, title in entries]
     title_text = " | ".join(titles).lower()
     assert "premise" in title_text, "Seed lesson about verifying reviewer premise missing"
     assert "jinja" in title_text, "Seed lesson about Jinja branches missing"
     assert "git add" in title_text, "Seed lesson about git add -A missing"
+    assert "self-check" in title_text or "consistency" in title_text, (
+        "Seed lesson about always running self-check missing (PR #5 plan-loop lesson)"
+    )
+    assert "placeholder" in title_text or "literal" in title_text, (
+        "Seed lesson about Jinja literal placeholders missing (PR #5 Codex Tier-2 lesson)"
+    )
 
 
 def test_skill_lessons_entries_have_required_fields():
