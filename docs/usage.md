@@ -154,6 +154,12 @@ abc1234 Latest commit
 
 Use `make status PLAN_FILE=docs/plans/<active>.md` when the mtime auto-detect might pick the wrong file.
 
+## Tier-2 reviewer triggers
+
+The `claude-review.yml` workflow (when emitted via `--github-review={claude,both-docs}`) auto-fires `claude[bot]` on PR open / draft→ready transitions. Re-trigger on subsequent pushes by commenting `@claude review this` on the PR.
+
+The Codex GitHub bot (when configured via the web UI per `docs/codex-github-review-setup.md`) auto-fires on PR open / draft→ready / `@codex review` comments. **Observed reliability caveat**: in some cases the Codex bot does NOT auto-fire on `gh pr ready` (timing-dependent; cause unclear). Workaround: if Codex Tier-2 hasn't fired within ~5 min of marking a PR ready, comment `@codex review` explicitly. See BACKLOG entry "Investigate Codex GitHub bot's ready-state auto-fire reliability".
+
 ## Self-improvement loop (`LESSONS.md`)
 
 The generated project also ships `LESSONS.md` (empty by default; the skill-repo's own ships with seed entries).

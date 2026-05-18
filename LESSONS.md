@@ -83,6 +83,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-18: Commit messages must not claim tests/files exist without verifying
+
+**Trigger**: PR #5c Tier-1 self-review (`c089051`) — my commit message claimed "/simplify wording assertions in tests/test_shared_templates.py still pass (test (d) for 'Claude Code' + 'skip' + 'optional' substrings)" but no such test had been added. The plan explicitly required it (Bucket F test (d)); I assumed I'd already done it and wrote the commit body to match. Tier-1 reviewer caught the lie.
+
+**Rule**: Before claiming in a commit message that a test or file exists, verify it exists. Quick check: `grep -rn "<substring from claim>" tests/` (or the relevant dir). If the grep returns zero hits, either (a) add the missing piece OR (b) reword the commit message to be honest. Never write "test X still passes" without confirming X exists.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

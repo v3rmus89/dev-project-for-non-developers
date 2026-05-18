@@ -351,6 +351,40 @@ def test_tier1_prompt_has_no_backticks_or_shell_metachars():
     )
 
 
+def test_simplify_pass_has_gating_wording():
+    """PR #5c Bucket F test (d): `/simplify` sub-bullet must gate the step
+    for Claude-Code-only sessions — substrings 'Claude Code' + 'skip' +
+    'optional' present in both rendered template AND skill-repo dogfood
+    CONTRIBUTING.md. Closes Tier-1 P1 (Codex caught this in self-review:
+    plan required the assertion but it was missed in initial commit)."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context())
+    # Extract the /simplify bullet line (and a few surrounding chars for safety)
+    idx = rendered.index("/simplify")
+    line_start = rendered.rfind("\n", 0, idx)
+    # Read forward to end of bullet (next bullet or blank line)
+    line_end = rendered.index("\n", idx + 1)
+    simplify_line = rendered[line_start:line_end]
+    for needle in ("Claude Code", "skip", "optional"):
+        assert needle.lower() in simplify_line.lower(), (
+            f"/simplify rendered template missing gating substring {needle!r}: {simplify_line!r}"
+        )
+
+    # Same check on dogfood
+    from pathlib import Path as _P
+
+    SKILL_ROOT = _P(__file__).resolve().parent.parent
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    idx_d = dogfood.index("/simplify")
+    line_start_d = dogfood.rfind("\n", 0, idx_d)
+    line_end_d = dogfood.index("\n", idx_d + 1)
+    dogfood_line = dogfood[line_start_d:line_end_d]
+    for needle in ("Claude Code", "skip", "optional"):
+        assert needle.lower() in dogfood_line.lower(), (
+            f"/simplify dogfood CONTRIBUTING.md missing gating substring {needle!r}: "
+            f"{dogfood_line!r}"
+        )
+
+
 def test_makefile_tier1_prompt_contains_key_phrases():
     """Defensive smoke check: known-good phrases must appear in the rendered
     Tier-1 prompt regardless of macro construction."""

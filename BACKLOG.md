@@ -440,19 +440,15 @@ post-PR-#5 implementation PR.
 
 **Rough effort**: ~1 hour.
 
-### "When adding a new Make target whose semantics overlap an existing one, audit + mirror the existing target's guards" (process lesson)
+### ✅ "When adding a new Make target with overlapping semantics, audit + mirror the existing guards" (process lesson) — DONE in PR #5c
 
-**Status**: captured here as a workflow observation; not actionable as
-a standalone item.
+**Status**: shipped 2026-05-18 — captured as `LESSONS.md` entry #6.
 
-**Why parked**: from PR #5b Codex Tier-2 fold (`61f0101`). When I added
+**Source**: PR #5b Codex Tier-2 fold (`61f0101`). When I added
 `review-commit-by-{codex,claude}` (semantically overlapping
 `review-plan-by-{codex,claude}`), I missed the `test -f "$(PLAN_FILE)"`
 guard that the plan-review targets already had. Codex caught it.
 
-This belongs in `LESSONS.md` for the skill repo's own use (will be
-added during the next writable session that touches LESSONS.md). For
-generated projects, the lesson is project-local and doesn't need to
-ship in the shared template.
-
-**Trigger to pick up**: no action item; reference in LESSONS.md.
+For generated projects: the lesson is project-local and doesn't ship in
+the shared template (which starts empty). Generated projects accumulate
+their own equivalent if/when they encounter the pattern.
