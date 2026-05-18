@@ -29,7 +29,8 @@ PLAN_CONSISTENCY_OUT     ?= /tmp/review-plan-consistency-$(notdir $(basename $(P
 .PHONY: review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
         review-plan-consistency-by-claude \
-        preflight-review-tooling
+        preflight-review-tooling \
+        status
 
 review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/plans/foo.md [ITERATION=N])
 	@test -n "$(PLAN_FILE)" || \
@@ -122,6 +123,82 @@ review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradicti
 	    "Read the plan file at '$(PLAN_FILE)' in full. Your ONLY job: find internal contradictions, doc-drift between sections, and places where the latest fold's wording is inconsistent with adjacent rows / tables / sections. Do NOT critique the design, scope, completeness, or correctness — that is the Codex/Claude full-review job. Just identify pairs: 'Section X says A, Section Y says B, they disagree because Z'. If the plan is internally consistent, say so explicitly. Output as a numbered list. Be terse." \
 	  > "$(PLAN_CONSISTENCY_OUT)" \
 	  && cat "$(PLAN_CONSISTENCY_OUT)"
+
+status:	## Synthesize current project state (recovery for new sessions / post-compaction). PLAN_FILE=<path> to override plan-detect; otherwise mtime-sorted with README filtered
+	@echo "── Current branch activity ──"
+	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
+	  if git rev-parse --verify HEAD >/dev/null 2>&1; then \
+	    echo "(branch: $$branch)"; \
+	    git log --oneline -10 HEAD; \
+	  else echo "(branch: $$branch; no commits yet)"; fi; \
+	else echo "(not a git repo)"; fi
+	@echo ""
+	@echo "── Recent main activity ──"
+	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  ref=""; \
+	  if git rev-parse --verify origin/main >/dev/null 2>&1; then ref="origin/main"; \
+	  elif git rev-parse --verify main >/dev/null 2>&1; then ref="main"; \
+	  elif git rev-parse --verify HEAD >/dev/null 2>&1; then ref="HEAD"; \
+	  fi; \
+	  if [ -n "$$ref" ]; then \
+	    echo "(ref: $$ref)"; \
+	    git log --oneline -10 "$$ref"; \
+	  else echo "(no commits yet)"; fi; \
+	else echo "(not a git repo)"; fi
+	@echo ""
+	@echo "── Open PRs ──"
+	@if command -v gh >/dev/null 2>&1; then \
+	  gh pr list --state open --json number,title,headRefName,isDraft --jq '.[] | "#\(.number)  [\(if .isDraft then "draft" else "ready" end)]  \(.title)"' 2>/dev/null \
+	    || echo "(gh CLI unauthed or repo not on github)"; \
+	else echo "(gh CLI not available)"; fi
+	@echo ""
+	@echo "── Active plan ──"
+	@if [ -n "$(PLAN_FILE)" ] && [ ! -f "$(PLAN_FILE)" ]; then \
+	  echo "(PLAN_FILE not found: $(PLAN_FILE))"; \
+	elif [ -n "$(PLAN_FILE)" ]; then \
+	  echo "$(PLAN_FILE) (PLAN_FILE override)"; \
+	  awk 'BEGIN{p=0} /^```/{f=!f; next} /^## Iteration log/ && !f {p=1; print; next} /^## / && p && !f {exit} p && !f {print}' "$(PLAN_FILE)" | tail -20 || true; \
+	  echo ""; \
+	  echo "  (Implementation log tail:)"; \
+	  impl_log=$$(awk 'BEGIN{p=0} /^```/{f=!f; next} /^## Implementation log/ && !f {p=1; print; next} /^## / && p && !f {exit} p && !f {print}' "$(PLAN_FILE)"); \
+	  if [ -z "$$impl_log" ]; then echo "  (no Implementation log section yet)"; else echo "$$impl_log" | tail -20; fi; \
+	else \
+	  if ls docs/plans/*.md >/dev/null 2>&1; then \
+	    candidates=$$(ls -t docs/plans/*.md | grep -vE 'README\.md$$'); \
+	    if [ -z "$$candidates" ]; then \
+	      echo "(no plan files)"; \
+	    else \
+	      count=$$(echo "$$candidates" | wc -l | tr -d ' '); \
+	      latest=$$(echo "$$candidates" | head -1); \
+	      echo "$$latest (auto-detected by mtime; pass PLAN_FILE=... to override)"; \
+	      if [ "$$count" -gt 1 ]; then \
+	        echo "!!! WARN: $$count PLAN FILES PRESENT — top 3 by mtime (pass PLAN_FILE=... to override):"; \
+	        echo "$$candidates" | head -3 | sed 's|^|  - |'; \
+	      fi; \
+	      awk 'BEGIN{p=0} /^```/{f=!f; next} /^## Iteration log/ && !f {p=1; print; next} /^## / && p && !f {exit} p && !f {print}' "$$latest" | tail -20 || true; \
+	      echo ""; \
+	      echo "  (Implementation log tail:)"; \
+	      impl_log2=$$(awk 'BEGIN{p=0} /^```/{f=!f; next} /^## Implementation log/ && !f {p=1; print; next} /^## / && p && !f {exit} p && !f {print}' "$$latest"); \
+	      if [ -z "$$impl_log2" ]; then echo "  (no Implementation log section yet)"; else echo "$$impl_log2" | tail -20; fi; \
+	    fi; \
+	  else echo "(no plan files)"; fi; \
+	fi
+	@echo ""
+	@echo "── Active lessons ──"
+	@if [ -f LESSONS.md ]; then awk 'BEGIN{p=0} /^## Active/{p=1; next} /^## Archived/{exit} p' LESSONS.md | head -50; else echo "(no LESSONS.md)"; fi
+	@echo ""
+	@echo "── Local repo state ──"
+	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  out=$$(git status --short); \
+	  if [ -z "$$out" ]; then echo "(clean)"; else echo "$$out"; fi; \
+	else echo "(not a git repo)"; fi
+	@echo ""
+	@echo "── Health checks ──"
+	@for tool in git gh claude codex; do \
+	  if command -v $$tool >/dev/null 2>&1; then echo "  ok       $$tool"; \
+	  else echo "  advisory $$tool not on PATH"; fi; \
+	done
 
 preflight-review-tooling:	## verify claude+codex CLIs work with the flag shape review targets expect
 	@command -v codex >/dev/null 2>&1 || { echo "codex CLI not found"; exit 1; }

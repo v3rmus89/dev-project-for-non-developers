@@ -116,6 +116,23 @@ These four questions add ~30 seconds per finding. They catch the failure mode wh
 
 **No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
 
+## Cross-session state recovery
+
+If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history (current branch + recent main), open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability. Cheap to run; prevents the failure mode where the agent proposes work that's already shipped.
+
+If multiple plan files are present in `docs/plans/`, `make status` prints a loud WARN listing the top 3 by mtime — pass `make status PLAN_FILE=docs/plans/<active>.md` when the auto-detect might be wrong.
+
+## Self-improvement loop (LESSONS.md)
+
+At session start: read `LESSONS.md` "Active" section. Apply the rules during this session.
+
+**Reviewer (you) is a read-only context for `LESSONS.md`**: this `AGENTS.md` is read by automated reviewers (Codex GitHub bot, `make review-plan-by-codex`, `make review-commit-by-claude`, and any session told "Do NOT edit files"). Appending to `LESSONS.md` from such a session would violate the read-only contract.
+
+- **If you (the reviewer) surface a new mistake-class** during a finding: propose the lesson in your review output (or in the plan's `## Lessons surfaced` section if reviewing a plan). The driver triages reviewer-proposed lessons in a later writable session — appends real ones to `LESSONS.md`; rejects duplicates or project-local noise.
+- **Do NOT edit `LESSONS.md` directly from a review session.**
+
+(Writable-session drivers append directly per the same instructions in `CLAUDE.md`.)
+
 ## Tone
 
 Concise, evidence-based comments win. Avoid suggesting wholesale rewrites; small

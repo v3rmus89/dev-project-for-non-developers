@@ -97,6 +97,7 @@ def test_smoke_go_generated(tmp_path):
         "hooks/pre-push",
         "main.go",
         "main_test.go",
+        "LESSONS.md",
     ]:
         assert expected in dry.stdout, f"dry-run missing {expected}"
 

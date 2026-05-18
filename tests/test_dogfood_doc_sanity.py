@@ -137,3 +137,59 @@ def test_plan_review_consistency_line_present_in_dogfood():
         assert "review-plan-consistency-by-claude" in text, (
             f"consistency-self-check reference missing in {rel_path}"
         )
+
+
+@pytest.mark.parametrize("rel_path", ["CLAUDE.md", "AGENTS.md"])
+def test_cross_session_recovery_instruction_present(rel_path):
+    """PR #5a: the cross-session state recovery instruction must appear in
+    BOTH CLAUDE.md AND AGENTS.md (per the original BACKLOG entry's "CLAUDE.md
+    / AGENTS.md instruction" requirement; Codex GitHub bot reads AGENTS.md,
+    not CLAUDE.md)."""
+    text = (SKILL_ROOT / rel_path).read_text()
+    assert "## Cross-session state recovery" in text, (
+        f"Cross-session state recovery section missing in {rel_path}"
+    )
+    assert "make status" in text, (
+        f"{rel_path}'s cross-session recovery section must reference `make status`"
+    )
+
+
+@pytest.mark.parametrize("rel_path", ["CLAUDE.md", "AGENTS.md"])
+def test_self_improvement_loop_instruction_present(rel_path):
+    """PR #5a: the LESSONS.md self-improvement loop instruction must appear in
+    BOTH CLAUDE.md AND AGENTS.md, with the writable-vs-read-only context
+    distinction explicit."""
+    text = (SKILL_ROOT / rel_path).read_text()
+    assert "## Self-improvement loop (LESSONS.md)" in text, (
+        f"Self-improvement loop section missing in {rel_path}"
+    )
+    assert "LESSONS.md" in text, f"{rel_path} must reference LESSONS.md"
+    # The read-only context distinction must be present (different wording per surface)
+    if rel_path == "CLAUDE.md":
+        assert (
+            "writable implementation session" in text.lower() or "writable-session" in text.lower()
+        ), "CLAUDE.md must distinguish writable vs read-only sessions"
+        assert "read-only" in text.lower()
+    else:  # AGENTS.md is itself the read-only context
+        assert "read-only" in text.lower(), (
+            "AGENTS.md must explicitly call itself a read-only context"
+        )
+        assert "do not edit" in text.lower() or "do not append" in text.lower(), (
+            "AGENTS.md must forbid LESSONS.md edits from review sessions"
+        )
+
+
+def test_lessons_md_exists_with_seed_entries():
+    """PR #5a: skill repo's own LESSONS.md ships with ≥3 seed entries. Schema
+    validation is in tests/test_lessons_file_schema.py; this dogfood test
+    just confirms the file exists in the active surface set."""
+    lessons = SKILL_ROOT / "LESSONS.md"
+    assert lessons.exists(), "LESSONS.md must exist at skill repo root"
+    text = lessons.read_text()
+    # At least 3 dated entries
+    import re
+
+    entries = re.findall(r"^### \d{4}-\d{2}-\d{2}:", text, re.MULTILINE)
+    assert len(entries) >= 3, (
+        f"skill repo LESSONS.md should ship with ≥3 seed entries, found {len(entries)}"
+    )

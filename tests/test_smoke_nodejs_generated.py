@@ -36,6 +36,7 @@ EXPECTED_PATHS_NONE_MODE = {
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "BACKLOG.md",
+    "LESSONS.md",
     "docs/plans/README.md",
     "scripts/run-with-clean-env.py",
     "tests/test_smoke.test.ts",

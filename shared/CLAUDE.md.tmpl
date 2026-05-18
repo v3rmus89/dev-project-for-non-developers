@@ -135,6 +135,23 @@ Tier-2 (GitHub auto-review) is NOT configured in this project (`--github-review=
 Tier-1 findings feed the (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
 {%- endif %}
 
+## Cross-session state recovery
+
+If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history (current branch + recent main), open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability. Cheap to run; prevents the failure mode where the agent proposes work that's already shipped.
+
+If multiple plan files are present in `docs/plans/`, `make status` prints a loud WARN listing the top 3 by mtime — pass `make status PLAN_FILE=docs/plans/<active>.md` when the auto-detect might be wrong.
+
+## Self-improvement loop (LESSONS.md)
+
+At session start: read `LESSONS.md` "Active" section. Apply the rules during this session.
+
+**Writable-session-only append rule** — `AGENTS.md` is read by review-only contexts that explicitly cannot edit files; appending lessons from those contexts would violate the read-only contract:
+
+- **In a writable implementation session** (you're the driver, free to edit files): after ANY user push-back that changes your approach, OR any Tier-1/2 finding that surfaced a new mistake-class, append a new entry to `LESSONS.md` "Active" directly. Format: `### YYYY-MM-DD: <one-line mistake>` + **Trigger** + **Rule** + **Status**: Active. Commit alongside the implementation.
+- **In a read-only review session** (you're a reviewer running `make review-plan-by-codex`, `make review-commit-by-claude`, or any session that's been told "Do NOT edit files"): do NOT append to `LESSONS.md`. Instead, propose the lesson in your review output (or in the plan's `## Lessons surfaced` section if reviewing a plan). The driver triages reviewer-proposed lessons in a later writable session: appends real ones to `LESSONS.md`; rejects duplicates or project-local noise.
+
+Promote to `CLAUDE.md` only for FUNDAMENTAL shifts (rare; needs plan-review). Move to `LESSONS.md` "Archived" once the pattern hasn't fired for 3+ sessions OR the underlying problem is solved structurally.
+
 ## Mandatory human-approval gate
 
 After the loop converges and BEFORE any `git add` / `git commit`:
