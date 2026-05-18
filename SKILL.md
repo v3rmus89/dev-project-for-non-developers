@@ -9,7 +9,9 @@ Use this skill when the user wants to spin up a new project (or an existing gree
 - `make check`-equivalent CI on GitHub Actions
 - pre-commit (lint+format) + pre-push (tests) git hooks
 - bidirectional plan-review (`make review-plan-by-codex` / `make review-plan-by-claude`) + Tier-1 commit review (`make review-commit-by-*`) + consistency self-check (`make review-plan-consistency-by-claude`)
-- coherent doc set (`AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md` / `BACKLOG.md` / `docs/plans/`)
+- coherent doc set (`AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md` / `BACKLOG.md` / `LESSONS.md` / `docs/plans/`)
+- `make status` recovery target — synthesizes git + open PRs + active plan + active lessons for post-compaction sessions
+- `LESSONS.md` append-only self-improvement log with writable-vs-read-only rule
 - optional `claude[bot]` PR review via workflow, optional Codex web-UI review setup doc
 
 ## How to invoke

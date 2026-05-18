@@ -118,23 +118,29 @@ manifest scope).
 
 ---
 
-### Retroactively add triage rule + two-tier review docs to Boxette
+### Retroactively add triage rule + two-tier review docs + observability layer to Boxette
 
-**Status**: now actionable as a follow-up side-task (post-PR-#4).
+**Status**: now actionable as a follow-up side-task (post-PR-#5).
 
 **Why parked**: the "Don't fold by default — triage" rule was developed
-during this skill's plan-review loop, and PR #4 added the four-questions
-extension + Two-tier code review section. Boxette (the source repo this
-skill extracts patterns from) doesn't have any of these yet. PR #4 ships
+during this skill's plan-review loop. PR #4 added the four-questions
+extension + Two-tier code review section. PR #5 added `make status` for
+cross-session recovery + `LESSONS.md` self-improvement loop + plan-file
+Implementation log convention. Boxette (the source repo this skill
+extracts patterns from) doesn't have any of these yet. PR #4 + #5 ship
 the relevant `shared/CLAUDE.md.tmpl` / `shared/AGENTS.md.tmpl` /
-`shared/CONTRIBUTING.md.tmpl` sections; Boxette can adopt by copying.
+`shared/CONTRIBUTING.md.tmpl` / `shared/docs-plans-README.md.tmpl` /
+`shared/Makefile.review.tmpl` / `shared/LESSONS.md.tmpl` sections;
+Boxette can adopt by copying.
 
 **Triggers to pick up**: anyone working on Boxette's plan-review workflow,
 OR the next substantive Boxette plan-review starts.
 
-**Rough effort**: ~1 hour — copy the triage block (with four-questions
-extension) + the Two-tier code review section verbatim into Boxette's
-`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/plans/README.md`.
+**Rough effort**: ~2 hours — copy (1) the triage block with four-questions
+extension, (2) the Two-tier code review section, (3) `make status` target,
+(4) `LESSONS.md` scaffold, (5) cross-session-recovery + self-improvement-loop
+instructions in CLAUDE.md + AGENTS.md, (6) plan-file structural convention
+in docs/plans/README.md.
 
 ---
 
@@ -348,40 +354,21 @@ AND idea-(a)/(b) prompt improvements don't reduce loop count enough.
 
 **Rough effort**: ~1 day to design + measure on a real PR.
 
-### Cross-session / post-compaction state recovery (imp-2)
+### ✅ Cross-session / post-compaction state recovery — DONE in PR #5
 
-**Status**: parked.
+**Status**: shipped 2026-05-18 via Plan PR #5 + Impl PR #5a (`make status`
+target with 7 sections — Current branch / Recent main / Open PRs /
+Active plan / Active lessons / Local repo state / Health checks) +
+Impl PR #5b (Implementation-log section per plan; `make status` tails
+both iter-log and impl-log with fence-aware extraction). Cross-session
+recovery instruction lives in BOTH `shared/CLAUDE.md.tmpl` AND
+`shared/AGENTS.md.tmpl` plus dogfood mirrors.
 
-**Why parked**: `TodoWrite` is session-ephemeral; on conversation compaction
-the agent retains partial memory but loses the explicit task list, which
-has empirically produced confident-but-wrong suggestions (suggesting work
-that's already done, or adding to plans that are half-implemented). This
-is the harder failure mode compared to a cold new-session start, because
-the agent doesn't know it's operating on stale state.
+The "optional tracked `STATUS.md`" follow-up was NOT implemented —
+`make status` reads + synthesizes, no state file to drift.
 
-**Triggers to pick up**:
-- Compaction-confusion incident happens on this skill repo (or another
-  similar workflow project).
-- After PR #4 + PR #5 land — the workflow is more complex post-PR-#4 and
-  the post-compaction risk grows.
-
-**Rough effort**: ~half a day. Two components:
-1. A `make status` target that synthesizes current state from git
-   (`git log -20 main`, `gh pr list --state open`, `gh pr view <N>` for
-   each open PR), plus latest plan file's iteration log and evidence table.
-2. A `CLAUDE.md` / `AGENTS.md` instruction: "When uncertain whether work
-   X is done, run `make status` BEFORE proposing changes." Lands in the
-   byte-identical triage-block area.
-
-Optional third component (heavier, defer further): a tracked `STATUS.md`
-file auto-updated by a post-commit hook so the agent has a single read
-for ground truth instead of synthesizing on demand.
-
-**Related parked item**: `sync-plan-to-ui` Makefile target — the same
-workflow gap where the plan-mode UI shows stale plan content while the
-repo file is current. Same `make status` infra could include a
-"plan-mode UI vs repo plan file" drift detector. Bundle when both are
-done.
+Related parked item still open: `sync-plan-to-ui` (plan-mode UI ↔ repo
+plan file drift detector). Different problem, separate trigger.
 
 ### `review-plan-fact-check-by-{claude,codex}` subagent target (imp-2)
 
@@ -397,3 +384,75 @@ Codex finds) before Codex does.
 plan-vs-repo factual mismatches.
 
 **Rough effort**: ~half a day.
+
+## PR #5 follow-ups
+
+### `sync-plan-to-ui` Makefile target (imp-1)
+
+**Status**: parked.
+
+**Why parked**: Claude Code's plan-mode UI reads from `~/.claude/plans/<file>.md`
+which is separate from the in-repo `docs/plans/<file>.md`. As iterations
+proceed in-repo, the UI version drifts. A `make sync-plan-to-ui PLAN_FILE=...
+UI_NAME=...` target would `cp` the in-repo file over the UI file.
+
+**Triggers to pick up**: if the drift causes another confusion incident
+like the one in PR #5 plan loop (user opened the plan-mode UI and saw the
+iter-1 version while the repo had iter-6).
+
+**Rough effort**: ~15 min — a tiny `cp` target with safety check.
+
+### Investigate Codex GitHub bot's ready-state auto-fire reliability (imp-1)
+
+**Status**: parked.
+
+**Why parked**: empirically, Codex Tier-2 review didn't auto-fire on
+`gh pr ready` transition during Plan PR #9 + Impl PR #10. Both required
+explicit `@codex review` comment to trigger. Codex DID auto-fire on Impl
+PR #11. Pattern unclear — might be timing, might be the specific PR
+content shape, might be GitHub-app config.
+
+**Triggers to pick up**: third consecutive PR where Codex doesn't
+auto-fire on ready-state. Then investigate the GitHub app's webhook
+config + recent Codex GitHub-bot release notes.
+
+**Workaround until investigated**: documented in `docs/usage.md` —
+always comment `@codex review` after `gh pr ready` if Codex doesn't
+auto-fire within ~5 min.
+
+**Rough effort**: ~30 min investigation + ~15 min doc note if it turns
+out to be a known limitation.
+
+### Helper script to auto-append a reviewed impl-log row (imp-1)
+
+**Status**: parked.
+
+**Why parked**: per PR #5 plan, `## Implementation log` rows are
+proposed by Tier-1 review and pasted by the driver into the plan file
+(then a separate docs-only commit). PR #5's "Capture is semi-automatic"
+design principle (closes Codex iter-5 #5) explicitly acknowledged the
+manual paste step as a trade-off. A helper script (`make append-impl-log
+PLAN_FILE=... ROW='...'` or one that parses the Tier-1 output) would
+automate this.
+
+**Trigger to pick up**: if driver-forgets-to-paste happens twice on any
+post-PR-#5 implementation PR.
+
+**Rough effort**: ~1 hour.
+
+### "When adding a new Make target whose semantics overlap an existing one, audit + mirror the existing target's guards" (process lesson)
+
+**Status**: captured here as a workflow observation; not actionable as
+a standalone item.
+
+**Why parked**: from PR #5b Codex Tier-2 fold (`61f0101`). When I added
+`review-commit-by-{codex,claude}` (semantically overlapping
+`review-plan-by-{codex,claude}`), I missed the `test -f "$(PLAN_FILE)"`
+guard that the plan-review targets already had. Codex caught it.
+
+This belongs in `LESSONS.md` for the skill repo's own use (will be
+added during the next writable session that touches LESSONS.md). For
+generated projects, the lesson is project-local and doesn't need to
+ship in the shared template.
+
+**Trigger to pick up**: no action item; reference in LESSONS.md.
