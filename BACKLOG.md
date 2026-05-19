@@ -385,6 +385,62 @@ plan-vs-repo factual mismatches.
 
 **Rough effort**: ~half a day.
 
+## PR #7 follow-ups
+
+### Path-safety validation for `--mode=adopt` against sensitive target paths (imp-2)
+
+**Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #1).
+
+**Why parked**: PR #7's `--mode=adopt` doesn't add path-safety validation
+against sensitive target paths (those containing `secrets/`, `data/`,
+customer content, real PII directories). The existing renderer-layer +
+CLI-layer path-safety check guards against `..`/absolute-path escapes
+but doesn't refuse to operate against paths that LOOK like production
+data directories. The first version's blast radius is bounded by adopt
+mode's per-file consent model (every recommendation is shown + decided
+with the owner), but an extra refuse-by-default for sensitive paths
+would be defense-in-depth.
+
+**Triggers to pick up**:
+- First user reports adoption-mode acting against a path containing
+  `secrets/` or `data/`.
+- A near-miss during a Tier-2 review of a future adoption-mode PR.
+
+**Rough effort**: ~1 hour — add a path-pattern check in
+`bootstrap_lib/cli.py` before adopt-mode dispatch (refuse paths matching
+`secrets/`, `data/`, `customer_data/`, configurable via flag for
+intentional opt-in). Tests in `tests/test_bootstrap_cli.py`.
+
+---
+
+### Filesystem-stress test for v1→v2 restore (imp-2)
+
+**Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #2).
+
+**Why parked**: PR #7's manifest v2 introduces per-policy restore
+semantics (`WRITE` removes created file, `OVERWRITE` writes
+content_before_b64 back, `WRITE_NEW` removes `.new`, `APPEND_MERGE`
+truncates to `pre_append_length`). The standard tests cover the happy
+path + SHA-mismatch guard, but not filesystem-stress scenarios
+(disk-full mid-restore, permission changes between manifest write and
+restore, `EACCES` on `os.chmod`, `ENOSPC` on `write`, race with another
+process). PR #1's restore had the same gap; PR #7 inherits + extends.
+
+**Triggers to pick up**:
+- First reported restore failure under disk-full or permission-change
+  scenarios.
+- A future PR rewrites restore internals (worth covering before
+  shipping).
+
+**Rough effort**: ~half a day. Add a fixture with monkey-patched
+filesystem operations in `tests/test_manifest.py` covering: (i) ENOSPC
+mid-restore, (ii) EACCES on chmod, (iii) target file modified between
+manifest write and restore (SHA mismatch — already covered, but
+exercise the cleanup path), (iv) partial restore (some files restored,
+some failed — verify cleanup state).
+
+---
+
 ## PR #6 follow-ups
 
 ### ✅ Fix `make review-plan-by-claude` + `review-plan-consistency-by-claude` + `review-commit-by-claude` plan-mode-exit-declined bug — DONE in PR #6 Step 13
