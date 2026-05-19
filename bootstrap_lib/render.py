@@ -112,9 +112,7 @@ def _emit_python_in_pm_mode(rel_out, package_manager):
     pm = package_manager or "pip"
     if rel_out == "requirements-dev.txt" and pm == "uv":
         return False
-    if rel_out == ".python-version" and pm == "pip":
-        return False
-    return True
+    return not (rel_out == ".python-version" and pm == "pip")
 
 
 def render_all(context, language="python"):

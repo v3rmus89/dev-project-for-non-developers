@@ -92,8 +92,7 @@ def _resolve_mode(args):
     if args.package_manager is not None and args.language != "python":
         raise CLIError(
             2,
-            "--package-manager only valid with --language=python "
-            f"(got --language={args.language})",
+            f"--package-manager only valid with --language=python (got --language={args.language})",
         )
 
     if args.apply:
@@ -165,9 +164,7 @@ def _maybe_print_advisory(args, detected, effective_pm):
     if detected is None:
         return
     if detected.manager is not None:
-        sys.stderr.write(
-            f"info: detected package_manager='{effective_pm}' ({detected.reason})\n"
-        )
+        sys.stderr.write(f"info: detected package_manager='{effective_pm}' ({detected.reason})\n")
         return
     if detected.reason.startswith("ambiguous") and effective_pm == "uv":
         sys.stderr.write(

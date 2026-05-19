@@ -1,6 +1,6 @@
 import tomllib
 from pathlib import Path
-from typing import NamedTuple, Union
+from typing import NamedTuple
 
 
 class DetectionResult(NamedTuple):
@@ -15,7 +15,7 @@ class DetectionResult(NamedTuple):
     failure, `"greenfield: ..."` for absent or signal-less directories.
     """
 
-    manager: Union[str, None]
+    manager: str | None
     reason: str
 
 
@@ -37,7 +37,7 @@ def _load_pyproject(out_dir: Path):
         return _PARSE_FAILED
 
 
-def _first_requirements_match(out_dir: Path) -> Union[str, None]:
+def _first_requirements_match(out_dir: Path) -> str | None:
     """Return the filename of the first `requirements*.txt` match, or None.
 
     Sorted alphabetically for stable test output. The leading-`requirements`

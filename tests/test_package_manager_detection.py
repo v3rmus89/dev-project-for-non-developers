@@ -11,7 +11,6 @@ import pytest
 
 from bootstrap_lib.detect import DetectionResult, detect_package_manager
 
-
 # ──────────────────────────────────────────────────────────────────────
 # (a) (b) (m) (n) — input contract: greenfield + str/None accepted
 # ──────────────────────────────────────────────────────────────────────
