@@ -413,6 +413,37 @@ intentional opt-in). Tests in `tests/test_bootstrap_cli.py`.
 
 ---
 
+### Update CLAUDE.md + shared/CLAUDE.md.tmpl: Codex GitHub bot IS configured (imp-2)
+
+**Status**: parked. **Source**: discovered 2026-05-19 during PR #16 Tier-2 review verification.
+
+**Why parked**: Both `CLAUDE.md:97` and `shared/CLAUDE.md.tmpl:131` (the
+generated-project template that dogfoods this) state "Codex GitHub bot
+is NOT configured in this project. Retroactively adding it is non-trivial
+today — see BACKLOG for the planned `--enable-github-review` flag." This
+is stale — `chatgpt-codex-connector[bot]` actively reviewed PR #16
+(twice, on commits `94bcdaa` and `d8ca64b`, surfacing 1 P1 + 3 P2 real
+findings). The Codex bot has been wired up at some point and CLAUDE.md
+hasn't caught up.
+
+**Why not folded into PR #7**: touches `shared/CLAUDE.md.tmpl` (the
+generated-project template), which is a code change with byte-identity
+tests downstream (`tests/test_triage_byte_identity.py`). Better as a
+small focused PR that updates both files in lockstep + verifies the
+byte-identity test still passes + updates `--enable-github-review`
+BACKLOG entry (which assumed Codex bot wasn't there).
+
+**Triggers to pick up**: next session that touches CLAUDE.md or the
+shared template for any reason.
+
+**Rough effort**: ~30 min — edit both files in lockstep (keep wording
+byte-identical), update `--enable-github-review` BACKLOG entry to note
+"Codex bot is already configured; this flag would just toggle it per
+generated project," run `make test` to confirm byte-identity test
+passes.
+
+---
+
 ### Filesystem-stress test for v1→v2 restore (imp-2)
 
 **Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #2).
