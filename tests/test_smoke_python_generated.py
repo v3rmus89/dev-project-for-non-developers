@@ -41,13 +41,19 @@ def test_smoke_python_generated(tmp_path):
     target = tmp_path / "smoke-test"
     assert not target.exists()
 
-    # Step 1: dry-run, assert no writes
+    # Step 1: dry-run, assert no writes.
+    # Explicit --package-manager=pip so PR #6's default shift to uv doesn't
+    # change this test's expected file set (uv mode skips requirements-dev.txt
+    # and adds .python-version). uv-mode smoke walk lives in
+    # test_smoke_python_uv_generated.py (added in a later PR #6 step).
     dry = subprocess.run(
         [
             sys.executable,
             str(BOOTSTRAP_PY),
             "--language",
             "python",
+            "--package-manager",
+            "pip",
             "--project-name",
             "smoke-test",
             "--out",
@@ -63,7 +69,7 @@ def test_smoke_python_generated(tmp_path):
     for path in EXPECTED_PATHS_NONE_MODE:
         assert path in dry.stdout, f"dry-run missing expected path: {path}"
 
-    # Step 2: --apply
+    # Step 2: --apply (same explicit --package-manager=pip)
     subprocess.run(
         [
             sys.executable,
@@ -71,6 +77,8 @@ def test_smoke_python_generated(tmp_path):
             "--apply",
             "--language",
             "python",
+            "--package-manager",
+            "pip",
             "--project-name",
             "smoke-test",
             "--out",

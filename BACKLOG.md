@@ -385,6 +385,20 @@ plan-vs-repo factual mismatches.
 
 **Rough effort**: ~half a day.
 
+## PR #6 follow-ups
+
+### Tighten CLAUDE.md two-tier review wording from "or" to explicit same-AI / cross-AI split (imp-2)
+
+**Status**: parked.
+
+**Why parked**: CLAUDE.md's current "Tier-1 (after each focused commit, before push): `make review-commit-by-claude` or `make review-commit-by-codex`" presents both targets as equally valid options. The discipline (per LESSONS.md 2026-05-19 entry, surfaced via user push-back during PR #6 impl) is that Tier-1 uses the **same AI as the implementer** (Claude→Claude, Codex→Codex), and cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector). The "or" wording is too permissive and led to me using Codex for Tier-1 on Steps 2–3 before the user caught it.
+
+**Triggers to pick up**:
+- Next plan-review session opens (this is a fundamental-shift candidate per LESSONS.md's "Promotion to CLAUDE.md only for FUNDAMENTAL shifts" rule).
+- Any other contributor hits the same "or" ambiguity.
+
+**Rough effort**: ~30 min — one CLAUDE.md edit + same edit in `shared/CLAUDE.md.tmpl` + parametrized test in `tests/test_triage_byte_identity.py` to assert both files have the same updated wording. Likely needs a tiny plan PR since it changes the workflow contract.
+
 ## PR #5 follow-ups
 
 ### `sync-plan-to-ui` Makefile target (imp-1)

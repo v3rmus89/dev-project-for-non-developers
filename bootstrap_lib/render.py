@@ -90,10 +90,37 @@ def _emit_in_mode(rel_out, mode, enable_smoke):
     return not (rel_out == "docs/SMOKE.md" and not enable_smoke)
 
 
+def _emit_python_in_pm_mode(rel_out, package_manager):
+    """Filter Python-language template entries by package_manager mode.
+
+    Closes Codex Tier-2 #6: normalize `None`/missing values to `"pip"` as
+    the first line. Without normalization, a non-aware caller that omits
+    `"package_manager"` from the context dict would pass `None` here, and
+    neither `None == "uv"` nor `None == "pip"` would match — both
+    `requirements-dev.txt` AND `.python-version` would render,
+    contradicting the shared-templates `|default("pip")` safety convention.
+
+    Defaulting to `"pip"` preserves pre-PR-#6 rendering for non-aware
+    callers (existing tests that construct context dicts manually).
+
+    Real CLI flow resolves `package_manager` to a non-None string via
+    `bootstrap_lib.cli._resolve_package_manager` BEFORE context build;
+    the normalization here defends only against direct `render_all`
+    callers (tests, future programmatic consumers).
+    """
+    pm = package_manager or "pip"
+    if rel_out == "requirements-dev.txt" and pm == "uv":
+        return False
+    if rel_out == ".python-version" and pm == "pip":
+        return False
+    return True
+
+
 def render_all(context, language="python"):
     env = build_env(language)
     mode = context.get("github_review_mode", "none")
     enable_smoke = bool(context.get("enable_smoke", False))
+    package_manager = context.get("package_manager")
 
     output = {}
 
@@ -108,6 +135,11 @@ def render_all(context, language="python"):
         raise ValueError(f"unsupported language: {language!r}") from None
 
     for rel_out, tmpl_name in lang_map.items():
+        # Python-specific package-manager filtering. For non-python
+        # languages, _emit_python_in_pm_mode is a no-op (no entries match
+        # the filenames it checks).
+        if language == "python" and not _emit_python_in_pm_mode(rel_out, package_manager):
+            continue
         output[rel_out] = env.get_template(tmpl_name).render(**context).encode("utf-8")
 
     # First-tier path-safety check: every rel_path stays inside a notional root

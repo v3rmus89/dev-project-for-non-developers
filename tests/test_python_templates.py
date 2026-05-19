@@ -189,3 +189,121 @@ def test_strict_undefined_catches_missing_var():
     }
     with pytest.raises(jinja2.exceptions.UndefinedError):
         env.get_template("src-main.py.tmpl").render(**bad_ctx)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# _emit_python_in_pm_mode — package-manager-aware filtering (PR #6)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_emit_python_in_pm_mode_uv_skips_requirements_dev():
+    """In uv mode, requirements-dev.txt is NOT emitted (deps live in pyproject)."""
+    assert render._emit_python_in_pm_mode("requirements-dev.txt", "uv") is False
+
+
+def test_emit_python_in_pm_mode_pip_emits_requirements_dev():
+    """In pip mode, requirements-dev.txt IS emitted (legacy pip flow)."""
+    assert render._emit_python_in_pm_mode("requirements-dev.txt", "pip") is True
+
+
+def test_emit_python_in_pm_mode_uv_emits_python_version():
+    """In uv mode, .python-version IS emitted (uv reads it for `uv python install`)."""
+    assert render._emit_python_in_pm_mode(".python-version", "uv") is True
+
+
+def test_emit_python_in_pm_mode_pip_skips_python_version():
+    """In pip mode, .python-version is NOT emitted (pip doesn't use it; would just be noise)."""
+    assert render._emit_python_in_pm_mode(".python-version", "pip") is False
+
+
+def test_emit_python_in_pm_mode_pre_commit_config_always_emitted():
+    """`.pre-commit-config.yaml` is always emitted (closes Codex iter-1 #3 — scope
+    contradiction; framework stays in both modes, only the pytest entry differs)."""
+    assert render._emit_python_in_pm_mode(".pre-commit-config.yaml", "uv") is True
+    assert render._emit_python_in_pm_mode(".pre-commit-config.yaml", "pip") is True
+
+
+def test_emit_python_in_pm_mode_unrelated_files_always_emitted():
+    """Files outside the pm-aware set are emitted regardless of mode."""
+    for rel_out in [
+        "Makefile",
+        "pyproject.toml",
+        "ruff.toml",
+        "pytest.ini",
+        ".gitignore",
+        ".github/workflows/ci.yml",
+        "tests/test_smoke.py",
+        "src/main.py",
+    ]:
+        assert render._emit_python_in_pm_mode(rel_out, "uv") is True, rel_out
+        assert render._emit_python_in_pm_mode(rel_out, "pip") is True, rel_out
+
+
+def test_emit_python_in_pm_mode_none_normalizes_to_pip():
+    """`package_manager=None` (non-aware caller) must normalize to pip-mode behaviour.
+
+    Closes Codex Tier-2 #6: without the `pm = package_manager or "pip"`
+    normalization, neither `None == "uv"` nor `None == "pip"` would match,
+    so both `requirements-dev.txt` AND `.python-version` would render —
+    contradicting the shared-templates `|default("pip")` safety net.
+    """
+    # Same behaviour as pip mode:
+    assert render._emit_python_in_pm_mode("requirements-dev.txt", None) is True  # rendered (pip)
+    assert render._emit_python_in_pm_mode(".python-version", None) is False  # skipped (pip)
+    assert render._emit_python_in_pm_mode(".pre-commit-config.yaml", None) is True
+    assert render._emit_python_in_pm_mode("Makefile", None) is True
+
+
+def test_render_all_filters_python_by_package_manager_uv(tmp_path):
+    """render_all with package_manager="uv": requirements-dev.txt NOT in output.
+
+    `.python-version` not in output either because the template doesn't
+    exist yet (added in PR #6 Step 5). Once Step 5 lands, an integration
+    test asserts `.python-version` IS in output for uv mode. For now,
+    Step 4's contract is verified by the helper unit tests above.
+    """
+    ctx = _context(package_manager="uv")
+    output = render.render_all(ctx, language="python")
+    assert "requirements-dev.txt" not in output
+
+
+def test_render_all_filters_python_by_package_manager_pip(tmp_path):
+    """render_all with package_manager="pip": requirements-dev.txt IS in output,
+    .python-version NOT in output, .pre-commit-config pytest entry is pip-form.
+
+    The full plan assertion set (Bucket D test row): asserts pip-mode renders
+    `requirements-dev.txt` AND `.pre-commit-config.yaml`'s pytest entry
+    contains `./venv/bin/python -m pytest` AND `.python-version` is NOT
+    rendered. Closes Tier-1 F1 + F2 (missing assertions from the plan).
+    """
+    ctx = _context(package_manager="pip")
+    output = render.render_all(ctx, language="python")
+    assert "requirements-dev.txt" in output
+    assert ".python-version" not in output  # closes Tier-1 F2 (pip-mode skip)
+    # closes Tier-1 F1 — pre-commit-config pytest entry is pip-form (./venv/bin/python).
+    # The .pre-commit-config.yaml.tmpl is single-branch today (pip default); when Step
+    # 6 lands the two-branch form, this assertion guards against accidental flip.
+    assert b"./venv/bin/python -m pytest" in output[".pre-commit-config.yaml"]
+
+
+def test_render_all_missing_package_manager_key_renders_pip_mode(tmp_path):
+    """render_all without `package_manager` in context normalizes to pip-mode.
+
+    Closes Codex Tier-2 #6 end-to-end: existing tests + non-aware callers
+    that omit `"package_manager"` from their context dict get pip-mode
+    output (the pre-PR-#6 default), not a half-uv / half-pip mix.
+
+    NOTE: Full coverage of the shared-templates `|default("pip")` filter
+    (assertion (a): "no UndefinedError raised") lands after PR #6 Step 7
+    (Bucket C shared template branches). Step 4's check here covers the
+    render-layer normalization only.
+    """
+    # _context() omits package_manager by default — exactly the scenario.
+    ctx = _context()
+    assert "package_manager" not in ctx
+    output = render.render_all(ctx, language="python")
+    # pip-mode behaviour: requirements-dev.txt rendered.
+    assert "requirements-dev.txt" in output
+    assert ".python-version" not in output  # closes Tier-1 F2 (pip-mode skip)
+    # closes Tier-1 F1 — pre-commit-config pytest entry is pip-form.
+    assert b"./venv/bin/python -m pytest" in output[".pre-commit-config.yaml"]
