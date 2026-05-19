@@ -37,9 +37,10 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 
 | Flag | Description |
 |---|---|
-| `--language {python,nodejs,go}` | target language. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 adds Go (gofumpt + golangci-lint + native git hooks). All three v1 languages supported |
+| `--language {python,nodejs,go}` | target language. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 added Go (gofumpt + golangci-lint + native git hooks); PR #6 added uv support for Python. All three v1 languages supported |
 | `--project-name <slug>` | must match `^[a-z][a-z0-9-]*$` (lowercase ASCII + digits + hyphens, leading letter, no path separators) |
 | `--out <dir>` | target directory; created ONLY during `--apply` |
+| `--package-manager {uv,pip}` | **Python only.** Default `uv` for greenfield; auto-detected when bootstrapping into an existing project (positive markers: `uv.lock`, `[tool.uv]` table, or `build-backend = "uv_build"` in `pyproject.toml` → `uv`; `requirements*.txt` glob → `pip`). Use `pip` to opt out. See "Python: uv vs pip" section below for the full guide |
 | `--github-review {none,claude,both-docs}` | default `none` — no Claude workflow / OAuth secret dependency unless explicitly opted in |
 | `--github-owner <owner>` | required when `--github-review != none` |
 | `--github-repo <repo>` | required when `--github-review != none` |
@@ -71,16 +72,54 @@ The bootstrap process itself never installs git hooks. To wire up the pre-commit
 
 ```bash
 cd <out>
-make install        # python: creates venv + pip; nodejs: npm install + arms husky
+make install        # python+uv: uv sync (.venv/ + uv.lock); python+pip: venv + pip; nodejs: npm install + arms husky
 make install-hooks  # registers / re-arms git hooks (requires .git/)
 ```
 
 `make install-hooks` is a target IN THE GENERATED PROJECT, NOT a bootstrap CLI flag. The Makefile-target surface is identical across languages; the underlying tool differs:
 
-- **Python**: hooks via `pre-commit` framework. `make install-hooks` runs `./venv/bin/pre-commit install` (commit-side) + `./venv/bin/pre-commit install --hook-type pre-push`.
+- **Python (uv mode)**: hooks via `pre-commit` framework, invoked through `uv run pre-commit`. `make install-hooks` runs `uv run pre-commit install` (commit-side) + `uv run pre-commit install --hook-type pre-push`. The framework's own deps live in `.venv/` managed by uv.
+- **Python (pip mode)**: hooks via `pre-commit` framework, invoked through the project venv. `make install-hooks` runs `./venv/bin/pre-commit install` (commit-side) + `./venv/bin/pre-commit install --hook-type pre-push`.
 - **Node-TS**: hooks via Husky v9 + lint-staged. Hooks are armed automatically during `npm install` (via `package.json`'s `"prepare": "husky"` script); `make install-hooks` is a defensive idempotent re-arm path (e.g. for users who ran `npm install --ignore-scripts`).
 
 Hooks live in `.git/hooks/` (Python), `.husky/` (Node), or `hooks/` via `core.hooksPath` (Go) and survive moves or rebuilds of the skill repo.
+
+### Python: uv vs pip
+
+**What `uv` is** (one paragraph for the non-developer audience): `uv` is a fast Rust-based Python package manager from Astral (~10–100× faster than pip in practice). It manages a per-project virtual environment (`.venv/`) for you, locks every dependency precisely in `uv.lock` so installs reproduce on any machine, and can install Python itself via `uv python install`. Same `pyproject.toml`, mostly compatible with pip-era tooling. Commands look like `uv add requests`, `uv run pytest`, `uv sync` — no manual venv activation needed.
+
+**When each mode fires:**
+
+| Scenario | Mode picked | Why |
+|---|---|---|
+| `--language=python --out=<empty-or-nonexistent-dir>` | `uv` (default) | greenfield Python → modern path |
+| `--language=python --out=<existing-dir-with-uv.lock>` | `uv` (auto-detected) | positive uv marker `uv.lock` |
+| `--language=python --out=<existing-dir-with-[tool.uv]>` | `uv` (auto-detected) | positive uv marker in pyproject.toml |
+| `--language=python --out=<existing-dir-with-build-backend="uv_build">` | `uv` (auto-detected) | positive uv marker (PEP 517 key, kebab-case) |
+| `--language=python --out=<existing-dir-with-requirements*.txt>` | `pip` (auto-detected) | positive pip marker (wildcard glob — covers `requirements.txt`, `requirements-dev.txt`, `requirements-test.txt`, etc.) |
+| `--language=python --out=<existing-pyproject-no-PM-markers>` | `uv` (CLI default) + override-hint advisory | ambiguous; advisory on stderr surfaces the choice |
+| `--language=python --package-manager=pip` | `pip` (explicit override) | escape hatch; ignores detection |
+
+**Install instructions for `uv` itself** (one-time per machine):
+
+```bash
+# macOS:
+brew install uv
+# Linux / WSL:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Or via pipx (any platform):
+pipx install uv
+```
+
+**Commit `uv.lock` after the first `make install`.** Generated CI runs `uv sync --locked` (strict-lock enforcement, analogous to Node's `npm ci`) — without a committed `uv.lock`, CI fails loudly. The local `make install` recipe uses bare `uv sync` (auto-creates the lock on first run), so the typical flow is:
+
+```bash
+make install
+git add uv.lock
+git commit -m "lock dependencies"
+```
+
+**Escape hatch**: if uv breaks for any reason (broken release, exotic environment, corporate policy), pass `--package-manager=pip` to bootstrap and the generated project uses the classic pip+venv flow instead. Same `make` targets work; only the underlying tools differ.
 
 ### Node-TS specifics
 
