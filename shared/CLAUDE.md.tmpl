@@ -5,7 +5,11 @@
 | Task | Command |
 |---|---|
 {% if language == 'python' -%}
+{% if (package_manager | default("pip")) == "uv" -%}
+| Install dev deps via uv sync | `make install` |
+{% else -%}
 | Install dev deps into venv | `make install` |
+{% endif -%}
 | Register git hooks | `make install-hooks` |
 | Run tests (pytest) | `make test` |
 | Lint + format-check via ruff | `make lint` |
@@ -194,9 +198,17 @@ explicitly.
 {% if language == 'python' -%}
 ## Python version
 
+{% if (package_manager | default("pip")) == "uv" -%}
+This project uses **`uv`** for Python dependency + venv management. uv pins
+Python via `.python-version` (currently `{{python_version}}`). Run code with
+`uv run python …`; add deps with `uv add …`. The Makefile abstracts most
+of this — `make test`, `make lint`, `make run` work the same as in pip
+projects.
+{% else -%}
 Always use `python{{python_version}}` for this project. The skill bootstraps
 a per-project `venv/` at the project root; all tool invocations go through
 `./venv/bin/python` (via `$(PYTHON)` in the Makefile).
+{% endif -%}
 {% elif language == 'nodejs' -%}
 ## Node version
 

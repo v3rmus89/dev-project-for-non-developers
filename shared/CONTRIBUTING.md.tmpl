@@ -8,9 +8,25 @@ local check normally predicts a green CI run.
 
 ## One-time setup (fresh clone)
 
+{% if language == 'python' and (package_manager | default("pip")) == "uv" -%}
+First, install `uv` if you don't have it (one-time per machine):
+
+```bash
+# macOS:
+brew install uv
+# Linux / WSL:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Or:
+pipx install uv
+```
+
+Then:
+
+{% endif -%}
 ```bash
 cd /path/to/{{project_name}}
-make install        {% if language == 'python' %}# creates venv if missing, installs deps
+make install        {% if language == 'python' and (package_manager | default("pip")) == "uv" %}# runs `uv sync` to create `.venv/` + `uv.lock`
+{% elif language == 'python' %}# creates venv if missing, installs deps
 {% elif language == 'nodejs' %}# runs `npm install`; Husky's prepare script arms hooks
 {% elif language == 'go' %}# go mod download + installs gofumpt + golangci-lint into ./bin/
 {% endif -%}
