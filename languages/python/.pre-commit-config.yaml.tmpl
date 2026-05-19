@@ -1,3 +1,4 @@
+{%- set pm = package_manager | default("pip") -%}
 # Pre-commit and pre-push hooks for {{project_name}}.
 #
 # Install (one-time per clone): `make install && make install-hooks`
@@ -11,7 +12,11 @@
 # Emergency override: `git push --no-verify`.
 
 repos:
+{%- if pm == "uv" %}
+  # Keep this rev IN LOCKSTEP with `[dependency-groups].dev`'s `ruff==X.Y.Z` pin in pyproject.toml.
+{%- else %}
   # Keep this rev IN LOCKSTEP with requirements-dev.txt's `ruff==X.Y.Z`.
+{%- endif %}
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.12
     hooks:
@@ -23,7 +28,11 @@ repos:
     hooks:
       - id: pytest-pre-push
         name: pytest (pre-push)
+{%- if pm == "uv" %}
+        entry: uv run python -m pytest
+{%- else %}
         entry: ./venv/bin/python -m pytest
+{%- endif %}
         language: system
         stages: [pre-push]
         pass_filenames: false

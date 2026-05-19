@@ -30,6 +30,7 @@ PYTHON_TEMPLATE_MAP = {
     "pytest.ini": "pytest.ini.tmpl",
     ".gitignore": ".gitignore.tmpl",
     ".github/workflows/ci.yml": "ci.yml.tmpl",
+    ".python-version": ".python-version.tmpl",
     "tests/test_smoke.py": "tests-test_smoke.py.tmpl",
     "src/main.py": "src-main.py.tmpl",
 }

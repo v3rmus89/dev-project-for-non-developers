@@ -1,11 +1,21 @@
+{%- set pm = package_manager | default("pip") -%}
 [project]
 name = "{{project_name}}"
 version = "0.1.0"
 description = "{{project_name}} — bootstrapped by dev-project-setup"
 requires-python = ">={{python_version}}"
-
+dependencies = []
+{% if pm == "uv" %}
+[dependency-groups]
+dev = [
+    "ruff==0.15.12",
+    "pytest>=8.0,<9",
+    "pre-commit>=3.7,<5",
+]
+{%- else %}
 [tool.setuptools]
 py-modules = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
+{%- endif %}

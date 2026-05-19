@@ -1,3 +1,40 @@
+{%- set pm = package_manager | default("pip") -%}
+{% if pm == "uv" -%}
+.PHONY: help install install-hooks test lint format check run \
+        review-plan-by-codex review-plan-by-claude preflight-review-tooling
+
+help:	## list all targets with descriptions
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-28s %s\n", $$1, $$2}'
+
+install:	## sync deps via uv (creates .venv/ + uv.lock; does NOT register hooks — see install-hooks)
+	@command -v uv >/dev/null 2>&1 || { \
+	  echo "uv not on PATH. Install: 'brew install uv' (macOS) OR 'curl -LsSf https://astral.sh/uv/install.sh | sh' (Linux/WSL). Or re-bootstrap with '--package-manager=pip' to use pip+venv instead." >&2; \
+	  exit 1; \
+	}
+	uv sync
+	@echo "next step: 'make install-hooks' if this is a git repo"
+
+install-hooks:	## install pre-commit hooks (requires .git/; safe to skip in non-git tempdirs)
+	@git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "skipping: not a git repo"; exit 0; }
+	uv run pre-commit install
+	uv run pre-commit install --hook-type pre-push
+
+test:	## run pytest via uv
+	uv run pytest -v
+
+lint:	## ruff check + format-check via uv
+	uv run ruff check .
+	uv run ruff format --check .
+
+format:	## auto-fix lint + apply format via uv
+	uv run ruff check --fix .
+	uv run ruff format .
+
+check: lint test	## CI-equivalent — all tool invocations go through uv run
+
+run:	## run src/main.py via uv
+	uv run python src/main.py
+{% else -%}
 PYTHON ?= ./venv/bin/python
 
 .PHONY: help venv install install-hooks test lint format check run \
@@ -33,5 +70,6 @@ check: lint test	## CI-equivalent — all tool invocations go through $(PYTHON)
 
 run:	## run src/main.py via venv
 	$(PYTHON) src/main.py
+{%- endif %}
 
 {% include 'Makefile.review.tmpl' %}

@@ -1,3 +1,4 @@
+{%- set pm = package_manager | default("pip") -%}
 name: CI
 
 on:
@@ -10,9 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      {%- if pm == "uv" %}
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: '{{python_version}}'
+      - name: uv --version
+        run: uv --version
+      - name: uv sync --locked (strict-lock enforcement)
+        run: uv sync --locked
+      {%- else %}
       - uses: actions/setup-python@v5
         with:
           python-version: '{{python_version}}'
+      {%- endif %}
       - name: make install
         run: make install
       - name: make check
