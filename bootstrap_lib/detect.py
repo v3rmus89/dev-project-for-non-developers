@@ -6,8 +6,12 @@ from typing import NamedTuple
 class DetectionResult(NamedTuple):
     """Result of `detect_package_manager`.
 
-    `manager` is `"uv"`, `"pip"`, or `None`. `None` means the caller should
-    apply its own default (the CLI applies `"uv"` for `--language=python`).
+    `manager` is `"uv"`, `"pip"`, or `None`. `None` means no marker fired
+    (greenfield, ambiguous-pyproject, or malformed-pyproject path); the
+    caller applies its own default. The CLI's resolution precedence is:
+    explicit `--package-manager` flag > positive marker from detection
+    > `"uv"` default (only for `--language=python` and only when both
+    the flag is unset AND detection returned None).
 
     `reason` is a stable string explaining which heuristic branch fired.
     Branches: `"marker: <filename>"` for positive markers, `"ambiguous: ..."`
