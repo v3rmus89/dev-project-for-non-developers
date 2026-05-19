@@ -70,6 +70,17 @@ def add_flags(parser):
         ),
     )
     parser.add_argument(
+        "--package-manager",
+        dest="package_manager",
+        choices=["uv", "pip"],
+        default=None,
+        help=(
+            "Python package manager. Default 'uv' for greenfield; "
+            "auto-detected when bootstrapping into an existing project. "
+            "Use 'pip' to opt out. Only valid with --language=python."
+        ),
+    )
+    parser.add_argument(
         "--overwrite-existing",
         dest="overwrite_existing",
         action="store_true",

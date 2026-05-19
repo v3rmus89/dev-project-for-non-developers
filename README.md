@@ -20,7 +20,7 @@ Designed for non-developers using LLM-assisted workflows (Claude Code, Codex CLI
 
 ## Status
 
-**Python + Node-TS + Go shipped.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 added Node-TS (Biome + vitest + TypeScript + Husky). PR #3 adds Go (gofumpt + golangci-lint + native git hooks). All three v1 languages now supported. The master plan still lives in the Boxette repo (bootstrap exception):
+**Python (uv + pip) + Node-TS + Go shipped.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 added Node-TS (Biome + vitest + TypeScript + Husky). PR #3 added Go (gofumpt + golangci-lint + native git hooks). PR #6 added uv support for Python — **greenfield Python projects now default to `uv` (Astral)** for fast, modern dependency management; pip stays first-class for adoption-into-existing-pip-projects (auto-detected) + explicit opt-out via `--package-manager=pip`. All three v1 languages now supported. The master plan still lives in the Boxette repo (bootstrap exception):
 
 📋 [`docs/plans/2026-05-15-dev-project-setup-skill.md`](https://github.com/v3rmus89/boxette-tgbot/blob/main/docs/plans/2026-05-15-dev-project-setup-skill.md)
 
@@ -42,7 +42,8 @@ Per the plan:
 - **PR #3** ✅ add `languages/go/` (gofumpt + golangci-lint + native git hooks)
 - **PR #4** ✅ two-tier code review + plan-loop improvements (Tier-1 `make review-commit-by-*` targets, plan-review prompt cross-section instruction, `make review-plan-consistency-by-claude` self-check target, four-questions triage extension)
 - **PR #5** ✅ observability + self-improvement layer (`make status` for cross-session/post-compaction recovery; `LESSONS.md` append-only log with writable-session-only rule; plan-file Implementation log convention + Tier-1 `PLAN_FILE=` binding; `/simplify` as optional Tier-1 step). Shipped across 3 sequential impl PRs (#5a foundation, #5b Tier-1+impl-log, #5c `/simplify`+docs+BACKLOG)
-- **PR #6** — real-project trial; exercises `LESSONS.md` self-improvement loop on a real project and accumulates lessons from that trial
+- **PR #6** ✅ uv support for Python — `--package-manager={uv,pip}` flag, default `uv` for greenfield, auto-detect for adoption. Non-package mode for greenfield uv (no `[build-system]`); `astral-sh/setup-uv@v8.1.0` in generated CI; `uv sync --locked` strict-lock enforcement; pre-commit framework stays the hook engine in both modes. Co-landed the `--permission-mode plan` bug fix across all 5 Claude review targets — `review-plan-by-claude`, `review-plan-consistency-by-claude`, both `review-commit-by-claude` invocations (with/without PLAN_FILE), and `preflight-review-tooling`'s claude smoke (BACKLOG f).
+- **PR #7** — hybrid real-project trial + adoption-mode redesign on `~/Desktop/Code/Boxette/call-details/`. Ships the "analyze-then-decide-with-owner" adoption-mode UX (`--mode=adopt`) based on empirical data from the trial's `--dry-run` collision manifest.
 
 Each PR uses the bidirectional plan-review loop on its own plan. PR #1 is the bootstrap exception: its plan is reviewed with Boxette's existing `make review-plan` (Codex direction only) since the skill doesn't self-host the loop yet.
 

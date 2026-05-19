@@ -1,6 +1,6 @@
 # dev-project-setup
 
-> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 adds **Go** (gofumpt + golangci-lint + native git hooks). All three v1 languages now supported.
+> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 added **Go** (gofumpt + golangci-lint + native git hooks); PR #6 added **uv** support for Python (greenfield default; pip-mode kept for adoption + explicit opt-out). All three v1 languages now supported.
 
 ## When to invoke
 
@@ -24,6 +24,7 @@ cd ~/.claude/skills/dev-project-setup
     --language {python,nodejs,go} \
     --project-name <slug> \
     --out <target-dir> \
+    [--package-manager {uv,pip}] \
     [--github-review {none,claude,both-docs}] \
     [--github-owner <owner>] \
     [--github-repo <repo>] \
@@ -32,6 +33,8 @@ cd ~/.claude/skills/dev-project-setup
 ```
 
 `--project-name` must match `^[a-z][a-z0-9-]*$`.
+
+`--package-manager` is **Python-only**. Default `uv` for greenfield; auto-detect for adoption (positive markers: `uv.lock`, `[tool.uv]`, `uv_build` backend > `requirements*.txt` for pip). Pass `--package-manager=pip` to opt out and stay on pip+venv.
 
 **One-time setup:** the skill's venv lives at `~/.claude/skills/dev-project-setup/venv/`. If it doesn't exist yet, run `make install` in that dir once.
 
@@ -61,12 +64,13 @@ The same token works across all their repos. The bootstrap's post-apply printout
 
 The generated project ships a `make install-hooks` target. Bootstrap itself never installs git hooks; the user runs them in the target project. The Makefile target is identical across languages; the underlying hook framework differs:
 
-- **Python projects**: `pre-commit` framework (Python tool). `make install-hooks` runs `./venv/bin/pre-commit install` + the pre-push variant.
+- **Python projects (uv mode, default for greenfield)**: `pre-commit` framework, invoked via `uv run pre-commit`. `make install` runs `uv sync` (creates `.venv/` + `uv.lock`). **Commit `uv.lock`** after first `make install` — generated CI runs `uv sync --locked` (strict-lock enforcement, like `npm ci`) and will fail if the lockfile isn't committed.
+- **Python projects (pip mode)**: `pre-commit` framework, invoked via `./venv/bin/pre-commit`. `make install` creates a per-project `venv/` + pip-installs deps from `requirements-dev.txt`.
 - **Node-TS projects**: Husky v9 + lint-staged. `make install` already arms hooks via `package.json`'s `"prepare": "husky"` script; `make install-hooks` is a defensive idempotent re-arm (e.g. for users who ran `npm install --ignore-scripts`).
 
 ```bash
 cd <out>
-make install        # python: venv + pip; node: npm install + arms husky
+make install        # python+uv: uv sync (.venv/ + uv.lock); python+pip: venv + pip; node: npm install + arms husky
 make install-hooks  # registers / re-arms git hooks (requires .git/)
 ```
 

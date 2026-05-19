@@ -385,6 +385,100 @@ plan-vs-repo factual mismatches.
 
 **Rough effort**: ~half a day.
 
+## PR #6 follow-ups
+
+### ✅ Fix `make review-plan-by-claude` + `review-plan-consistency-by-claude` + `review-commit-by-claude` plan-mode-exit-declined bug — DONE in PR #6 Step 13
+
+**Status**: done.
+
+**Summary**: All five Claude-direction review targets used `claude --print --permission-mode plan --add-dir ... --output-format text "..."`. The `--permission-mode plan` flag caused the subagent to enter plan mode, generate its findings, then politely decline ExitPlanMode (correctly per its own guidance: research task, not implementation). The harness then wrote `"The user declined the exit. The findings above stand as the deliverable for the consistency self-check"` to the output file INSTEAD of the actual findings. Surfaced during PR #6 iter-1.5 self-check; spread across all 5 affected targets confirmed during iter-2.
+
+**Fix**: Removed `--permission-mode plan` from all 5 occurrences in `shared/Makefile.review.tmpl` + same 5 in `Makefile` (the skill-repo's dogfood). The prompts already say "Do NOT edit any files" (file-edit safety covered at the prompt layer); without plan mode, no ExitPlanMode call attempts, no spurious "declined" output. Verified by re-running `make review-plan-consistency-by-claude` against the converged PR #6 plan file — output is now the actual findings list, not the decline message.
+
+**Triggers met**: Surfaced during PR #6 plan loop; user decision (2026-05-19) co-landed in PR #6 impl rather than as a separate small PR.
+
+**Effort**: ~30 min including the verification run.
+
+---
+
+### Pin uv binary version in CI (imp-1)
+
+**Status**: parked.
+
+**Why parked**: Generated CI uses `astral-sh/setup-uv@v8.1.0` (action ref pinned — required because setup-uv v8 has no floating major tag). The uv BINARY version is NOT pinned — the action's default (latest stable uv) is what gets installed. `uv.lock` provides per-project reproducibility, so the binary version drift is OK for most cases.
+
+**Triggers to pick up**:
+- First time the action's default-latest uv binary breaks a smoke walk.
+- User reports CI non-determinism from uv version drift.
+
+**Rough effort**: ~30 min — add `version:` input to the `astral-sh/setup-uv@v8.1.0` invocations in both `languages/python/ci.yml.tmpl` (generated CI) and `.github/workflows/ci.yml` (skill repo CI) + docstring explaining the trade-off.
+
+---
+
+### uv migration tool (`bootstrap.py --migrate-from=pip --to=uv`)
+
+**Status**: parked.
+
+**Why parked**: PR #6 added uv support but does NOT convert existing pip projects to uv (adoption-mode respects the user's existing tooling). A migration tool would: read `requirements*.txt`, convert pin lines to `[dependency-groups].dev` in `pyproject.toml`, run initial `uv sync` to create `uv.lock`, optionally delete `requirements*.txt` after success.
+
+**Triggers to pick up**:
+- A user explicitly asks "I have a pip project; how do I switch to uv?"
+- The PR #7 trial on `call-details/` surfaces this as a common adoption need.
+
+**Rough effort**: ~1 day — design + impl + tests + docs.
+
+---
+
+### Adoption-mode UX redesign (analyze-then-decide-with-owner)
+
+**Status**: parked. **Ships in PR #7 (hybrid: trial + adoption mode together) per user decision 2026-05-19.**
+
+**Why parked**: PR #6 keeps the existing PR #1 collision-abort contract unchanged (`--apply` aborts on any collision unless `--overwrite-existing`). The real redesign is content-driven: a 4-phase `--mode=adopt` flag — (1) **Analyze** the target project per file (size, sections, markers), (2) **Recommend** a policy with reasoning shown to the user (`SKIP` / `OVERWRITE` / `WRITE-.new` / `APPEND-MERGE`), (3) **Decide with owner** (interactive prompt OR batch report with `--auto-accept-recommendations` for non-interactive use), (4) **Apply** per the agreed policies. **Not a hardcoded policy table** — different projects need different choices.
+
+**Triggers to pick up**: PR #7 trial on `call-details/` is the empirical data source for the recommendation heuristics. PR #7 ships both the trial AND the redesign together.
+
+**Rough effort**: ~2-3 days informed by trial data.
+
+---
+
+### Library-style scaffold (`--library` flag)
+
+**Status**: parked.
+
+**Why parked**: PR #6's greenfield uv mode ships in "non-package" mode (`[project]` table, no `[build-system]`) — correct for application starters, but doesn't support building a wheel. A `--library` flag would: add `src/<project_import_name>/__init__.py` package layout + `[build-system] uv_build` + `dependencies = []` stays + add `[project.scripts]` entry for installable CLIs.
+
+**Triggers to pick up**: First user with a real library-publishing use case.
+
+**Rough effort**: ~half a day — new scaffold files + tests + Architecture-decision doc edits.
+
+---
+
+### Real-project trial on `~/Desktop/Code/Boxette/call-details/` — PR #7
+
+**Status**: parked (= scoped to PR #7).
+
+**Why parked**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` uses `--dry-run` / `--diff` first to produce an empirical collision manifest (call-details has 8 collisions today: `CLAUDE.md`, `README.md`, `pyproject.toml`, `.python-version`, `uv.lock`, `.gitignore`, `src/`, `tests/` — and ~12 files that write cleanly). That manifest informs the adoption-mode recommendation heuristics. Trial finishes with a real `--apply --mode=adopt` using the new policies.
+
+**Deliverables**: (i) trial plan in `docs/plans/`, (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct), (iii) the `--mode=adopt` implementation, (iv) any skill polish surfaced.
+
+**Triggers to pick up**: PR #6 merges. (Already scheduled.)
+
+**Rough effort**: ~3-4 days for the combined plan + impl loop.
+
+---
+
+### Tighten CLAUDE.md two-tier review wording from "or" to explicit same-AI / cross-AI split (imp-2)
+
+**Status**: parked.
+
+**Why parked**: CLAUDE.md's current "Tier-1 (after each focused commit, before push): `make review-commit-by-claude` or `make review-commit-by-codex`" presents both targets as equally valid options. The discipline (per LESSONS.md 2026-05-19 entry, surfaced via user push-back during PR #6 impl) is that Tier-1 uses the **same AI as the implementer** (Claude→Claude, Codex→Codex), and cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector). The "or" wording is too permissive and led to me using Codex for Tier-1 on Steps 2–3 before the user caught it.
+
+**Triggers to pick up**:
+- Next plan-review session opens (this is a fundamental-shift candidate per LESSONS.md's "Promotion to CLAUDE.md only for FUNDAMENTAL shifts" rule).
+- Any other contributor hits the same "or" ambiguity.
+
+**Rough effort**: ~30 min — one CLAUDE.md edit + same edit in `shared/CLAUDE.md.tmpl` + parametrized test in `tests/test_triage_byte_identity.py` to assert both files have the same updated wording. Likely needs a tiny plan PR since it changes the workflow contract.
+
 ## PR #5 follow-ups
 
 ### `sync-plan-to-ui` Makefile target (imp-1)

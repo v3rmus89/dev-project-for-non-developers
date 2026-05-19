@@ -445,3 +445,120 @@ def test_contributing_template_omits_oauth_token_in_none_mode():
     don't have."""
     rendered = _render("CONTRIBUTING.md.tmpl", _context(github_review_mode="none"))
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in rendered
+
+
+# ──────────────────────────────────────────────────────────────────────
+# package_manager branching in shared templates (PR #6 Bucket C)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_shared_claude_md_uv_branch_renders_uv_specific_content():
+    """uv-mode CLAUDE.md.tmpl renders uv-specific Python-version + Commands content.
+
+    Closes Codex iter-4 #3 + iter-6 #4: shared docs must not have pip-era
+    wording dangling in uv-rendered output.
+    """
+    rendered = _render("CLAUDE.md.tmpl", _context(package_manager="uv"))
+    # uv-specific content present:
+    assert "Install dev deps via uv sync" in rendered  # Commands table
+    assert "uv run python" in rendered  # Python-version section
+    assert "`.python-version`" in rendered  # Python-version section
+    # pip-era wording absent:
+    assert "Install dev deps into venv" not in rendered
+    assert "./venv/bin/python" not in rendered
+    assert "python -m venv" not in rendered
+    assert "per-project `venv/`" not in rendered
+
+
+def test_shared_claude_md_pip_branch_renders_pip_content_unchanged():
+    """pip-mode CLAUDE.md.tmpl renders the pre-PR-#6 pip content (no drift)."""
+    rendered = _render("CLAUDE.md.tmpl", _context(package_manager="pip"))
+    assert "Install dev deps into venv" in rendered
+    assert "./venv/bin/python" in rendered
+    assert "per-project `venv/`" in rendered
+    # And NOT the uv branch:
+    assert "uv run python" not in rendered
+    assert "Install dev deps via uv sync" not in rendered
+
+
+def test_shared_claude_md_commands_table_uses_make_in_both_modes():
+    """The Commands table uses `make X` identically across modes — only the
+    row's *description* differs (uv: 'Install dev deps via uv sync' vs pip:
+    'Install dev deps into venv'). The user's muscle memory stays the same."""
+    for pm in ["uv", "pip"]:
+        rendered = _render("CLAUDE.md.tmpl", _context(package_manager=pm))
+        # Commands table rows mention `make install` (same in both)
+        assert "`make install`" in rendered, f"pm={pm}"
+        assert "`make test`" in rendered, f"pm={pm}"
+        assert "`make lint`" in rendered, f"pm={pm}"
+        assert "`make install-hooks`" in rendered, f"pm={pm}"
+
+
+def test_shared_claude_md_missing_package_manager_key_renders_pip_mode():
+    """Closes Codex iter-5 #1: `render.py:79` uses `StrictUndefined`. Existing
+    test contexts construct context dicts manually without `package_manager`.
+    The shared templates' `|default("pip")` filter must handle the missing
+    key gracefully (NO `UndefinedError`) and render pip-mode equivalent.
+    """
+    ctx = _context()  # no package_manager key
+    assert "package_manager" not in ctx
+    # Must not raise UndefinedError:
+    rendered = _render("CLAUDE.md.tmpl", ctx)
+    # Pip-mode equivalent output:
+    assert "Install dev deps into venv" in rendered
+    assert "uv run python" not in rendered
+    assert "Install dev deps via uv sync" not in rendered
+
+
+def test_shared_contributing_md_uv_branch_includes_install_uv_prerequisite():
+    """uv-mode CONTRIBUTING.md.tmpl one-time-setup section adds the
+    'First install uv' prerequisite (brew / curl / pipx)."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context(package_manager="uv"))
+    assert "First, install `uv`" in rendered
+    assert "brew install uv" in rendered
+    assert "astral.sh/uv/install.sh" in rendered
+    assert "pipx install uv" in rendered
+    # And the make-install comment is uv-specific:
+    assert "uv sync" in rendered
+    # pip-era "creates venv if missing" NOT in uv-rendered output:
+    assert "creates venv if missing" not in rendered
+
+
+def test_shared_contributing_md_pip_branch_unchanged():
+    """pip-mode CONTRIBUTING.md.tmpl one-time-setup section keeps current
+    'creates venv if missing' wording; no uv prerequisite."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context(package_manager="pip"))
+    assert "creates venv if missing" in rendered
+    assert "First, install `uv`" not in rendered
+    assert "brew install uv" not in rendered
+
+
+def test_shared_contributing_md_missing_package_manager_key_renders_pip_mode():
+    """Same StrictUndefined safety check for CONTRIBUTING.md."""
+    ctx = _context()
+    assert "package_manager" not in ctx
+    rendered = _render("CONTRIBUTING.md.tmpl", ctx)
+    assert "creates venv if missing" in rendered
+    assert "First, install `uv`" not in rendered
+
+
+def test_shared_claude_md_non_python_languages_unaffected_by_package_manager():
+    """`package_manager` branching is gated inside `{% if language == 'python' %}`
+    — Node and Go renders must not show any uv/pip-specific content. Test ALL
+    three pm settings (uv, pip, missing-key) for non-python languages to catch
+    a future regression where someone hoists `package_manager`-conditional
+    outside the language guard. Closes Tier-1 F1 (one-sided coverage)."""
+    for lang in ["nodejs", "go"]:
+        for pm_kwargs in [
+            {"package_manager": "uv"},
+            {"package_manager": "pip"},
+            {},  # missing-key (StrictUndefined safety check)
+        ]:
+            ctx = _context(language=lang, **pm_kwargs)
+            # Must not raise UndefinedError even with missing key:
+            rendered = _render("CLAUDE.md.tmpl", ctx)
+            # uv-mode python wording must NOT leak into non-python renders:
+            assert "Install dev deps via uv sync" not in rendered, f"language={lang} pm={pm_kwargs}"
+            assert "uv run python" not in rendered, f"language={lang} pm={pm_kwargs}"
+            # pip-mode python wording must NOT leak either:
+            assert "Install dev deps into venv" not in rendered, f"language={lang} pm={pm_kwargs}"

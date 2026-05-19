@@ -93,6 +93,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-19: Tier-1 commit review must use the SAME AI (fresh subagent), not the cross-AI
+
+**Trigger**: PR #6 Impl Step 2-3 — I used `make review-commit-by-codex` for Tier-1 (Codex reviewing Claude's commits). User push-back: *"our rule is tier 1 commit review should be done by the same AI but just new subagent, no? only tier 2 review we have cross review"*. The rule was implicit in the workflow (same-author = same-AI Tier-1; Tier-2 = cross-AI via GitHub bots) but CLAUDE.md's "or" wording made both targets look equivalent. I'd separately defaulted to Codex because the `review-commit-by-claude` make target hits the `--permission-mode plan` exit-declined bug (BACKLOG f).
+
+**Rule**: When the implementer is Claude (this session), Tier-1 commit review uses a **fresh Claude subagent**, not Codex. Invoke via the `Agent` tool with `subagent_type: general-purpose` (or `claude` default) and pass the canonical Tier-1 prompt from `shared/Makefile.review.tmpl`'s `tier1_prompt` macro. The Codex Tier-1 target (`make review-commit-by-codex`) is for when Codex is the implementer (symmetric). Cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector on PR open / draft→ready). If `review-commit-by-claude` is broken (e.g. the plan-mode bug), use the Agent-tool subagent as the immediate workaround; fix the make target separately. CLAUDE.md's current "or" wording for the Tier-1 targets is too permissive — tightening it to explicit same-AI/cross-AI split is tracked in BACKLOG.md as a PR #6 follow-up.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

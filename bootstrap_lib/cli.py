@@ -54,6 +54,8 @@ def _resolve_mode(args):
             bad.append("--github-owner")
         if args.github_repo:
             bad.append("--github-repo")
+        if args.package_manager is not None:
+            bad.append("--package-manager")
         # --github-review has a default of 'none'; only flag it if user passed
         # a non-default — but we can't tell from args alone. Skip.
         if bad:
@@ -87,6 +89,12 @@ def _resolve_mode(args):
             "have no origin yet)",
         )
 
+    if args.package_manager is not None and args.language != "python":
+        raise CLIError(
+            2,
+            f"--package-manager only valid with --language=python (got --language={args.language})",
+        )
+
     if args.apply:
         return "apply"
     if args.diff:
@@ -94,7 +102,16 @@ def _resolve_mode(args):
     return "dry_run"
 
 
-def _build_context(args):
+def _build_context(args, package_manager=None):
+    """Build the Jinja render context dict.
+
+    Stays a pure dict-construction function — no filesystem I/O (closes
+    Claude iter-2 #6). Detection + advisory printing live in `main()`
+    upstream; the resolved `package_manager` value flows in as a kwarg.
+
+    `package_manager` is the effective value: explicit flag > detection >
+    `"uv"` default for `--language=python` > `None` for other languages.
+    """
     return {
         "project_name": args.project_name,
         "project_import_name": args.project_name.replace("-", "_"),
@@ -102,11 +119,59 @@ def _build_context(args):
         "python_version": "3.12",
         "node_version": "24",
         "go_version": "1.26",
+        "package_manager": package_manager,
         "enable_smoke": bool(args.enable_smoke),
         "github_owner": args.github_owner or "",
         "github_repo": args.github_repo or "",
         "github_review_mode": args.github_review,
     }
+
+
+def _resolve_package_manager(args):
+    """Resolve the effective `package_manager` for this invocation.
+
+    Returns `(effective_pm, detection_result_or_None)`. Detection runs only
+    for `--language=python`; for other languages, returns `(None, None)`.
+
+    The CLI applies the `"uv"` default for `--language=python` when neither
+    the explicit flag nor detection produces a manager — closes Claude
+    iter-2 #1 (rule 6 returns `(None, "ambiguous: ...")` so the override
+    hint advisory can fire; CLI is what defaults to uv).
+    """
+    if args.language != "python":
+        return None, None
+    detected = detect.detect_package_manager(args.out)
+    if args.package_manager is not None:
+        return args.package_manager, detected
+    if detected.manager is not None:
+        return detected.manager, detected
+    # Manager-None paths (greenfield / ambiguous / malformed) — CLI default.
+    return "uv", detected
+
+
+def _maybe_print_advisory(args, detected, effective_pm):
+    """Print a one-line stderr advisory about the resolved package manager.
+
+    Rules (closes Claude iter-2 #1, Codex iter-3 #2):
+    - User passed `--package-manager` explicitly → no advisory.
+    - Positive marker fired in detection (rules 2-5) → succinct info line.
+    - Ambiguous (rule 6 → manager=None, reason starts "ambiguous") AND
+      CLI defaulted to uv → explicit override-hint advisory.
+    - Greenfield / malformed paths (rule 1/7/8) → no advisory.
+    """
+    if args.package_manager is not None:
+        return
+    if detected is None:
+        return
+    if detected.manager is not None:
+        sys.stderr.write(f"info: detected package_manager='{effective_pm}' ({detected.reason})\n")
+        return
+    if detected.reason.startswith("ambiguous") and effective_pm == "uv":
+        sys.stderr.write(
+            "info: existing pyproject.toml has no uv/pip markers; "
+            "defaulting package_manager='uv' "
+            "(pass --package-manager=pip to override)\n"
+        )
 
 
 def _print_dry_run(planned_files, inspection):
@@ -229,7 +294,13 @@ def main(argv):
         _r, _rm, _sk, n_rj = manifest.restore_from_manifest(m)
         return 1 if n_rj > 0 else 0
 
-    context = _build_context(args)
+    # Resolve package_manager (Python-only) BEFORE _build_context so
+    # _build_context stays a pure dict-construction function (closes
+    # Claude iter-2 #6).
+    effective_pm, detected = _resolve_package_manager(args)
+    _maybe_print_advisory(args, detected, effective_pm)
+
+    context = _build_context(args, package_manager=effective_pm)
     try:
         planned_files = render.render_all(context, language=args.language)
     except paths.PathSafetyError as e:

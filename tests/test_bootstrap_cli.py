@@ -58,6 +58,7 @@ def test_every_flag_appears_in_help():
         "--github-repo",
         "--overwrite-existing",
         "--enable-smoke",
+        "--package-manager",
     ]:
         assert flag in help_text, f"{flag} missing from --help"
 
@@ -437,3 +438,248 @@ def test_overwrite_existing_alone_is_fine_on_empty_target(tmp_path):
         ]
     )
     assert rc == 0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# --package-manager flag (PR #6 Bucket A — closes plan iter-3 #2 +
+# Codex iter-3 #2 + Claude iter-2 #1/#6 + Codex Tier-2 #6)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("language", ["nodejs", "go"])
+def test_package_manager_rejected_for_non_python_language(tmp_path, language):
+    """Closes Codex iter-3 #2: help text + cli.py validation must agree.
+
+    Help text says "Only valid with --language=python." — cli.py rejects
+    the combination with a clear error message.
+    """
+    target = tmp_path / "x"
+    rc, _out, err = run_cli(
+        [
+            "--apply",
+            "--language",
+            language,
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+            "--package-manager",
+            "uv",
+        ]
+    )
+    assert rc == 2
+    assert "--package-manager only valid with --language=python" in err
+
+
+def test_package_manager_rejected_in_restore_mode(tmp_path):
+    """Closes Codex iter-3 #2 (restore branch): --package-manager must be
+    in _resolve_mode's restore-mode invalid-flag list. Symmetric with
+    --language, --out, --apply, etc."""
+    manifest_p = tmp_path / "manifest.json"
+    manifest_p.write_text("{}")  # invalid manifest but we should fail on the flag check first
+    rc, _out, err = run_cli(["--restore", str(manifest_p), "--package-manager", "uv"])
+    assert rc == 2
+    assert "--package-manager" in err
+    assert "not valid in restore mode" in err
+
+
+@pytest.mark.parametrize("github_review", ["none", "claude", "both-docs"])
+def test_package_manager_valid_with_python_across_github_modes(tmp_path, github_review):
+    """`--package-manager=uv` valid combinations across all 3 github-review modes."""
+    target = tmp_path / "x"
+    argv = [
+        "--apply",
+        "--language",
+        "python",
+        "--project-name",
+        "x",
+        "--out",
+        str(target),
+        "--package-manager",
+        "uv",
+        "--github-review",
+        github_review,
+    ]
+    if github_review != "none":
+        argv += ["--github-owner", "v3rmus89", "--github-repo", "test"]
+    rc, _out, err = run_cli(argv)
+    assert rc == 0, err
+
+
+def test_package_manager_absence_greenfield_python_no_advisory(tmp_path):
+    """`--package-manager` absence with greenfield Python → no advisory printed.
+
+    Closes Claude iter-2 #1: greenfield default is unsurprising, no advisory.
+    """
+    target = tmp_path / "new-project"  # doesn't exist
+    rc, _out, err = run_cli(
+        [
+            "--dry-run",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 0
+    # No "info:" advisory line.
+    assert "info: detected" not in err
+    assert "defaulting package_manager" not in err
+
+
+def test_package_manager_absence_existing_uv_marker_prints_advisory(tmp_path):
+    """`--package-manager` absence with existing uv-marker dir → context has
+    `"uv"` + stderr contains positive-marker advisory."""
+    target = tmp_path / "existing-uv"
+    target.mkdir()
+    (target / "uv.lock").write_text("")
+    rc, _out, err = run_cli(
+        [
+            "--dry-run",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 0
+    assert "info: detected package_manager='uv'" in err
+    assert "uv.lock" in err  # the reason string
+
+
+def test_package_manager_absence_existing_pip_marker_prints_advisory(tmp_path):
+    """`--package-manager` absence with existing pip-marker dir → context has
+    `"pip"` + stderr advisory mentions pip."""
+    target = tmp_path / "existing-pip"
+    target.mkdir()
+    (target / "requirements.txt").write_text("")
+    rc, _out, err = run_cli(
+        [
+            "--dry-run",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 0
+    assert "info: detected package_manager='pip'" in err
+    assert "requirements.txt" in err
+
+
+def test_package_manager_absence_ambiguous_pyproject_prints_override_hint(tmp_path):
+    """`--package-manager` absence with ambiguous-pyproject dir → context has
+    `"uv"` (CLI default) + stderr contains the explicit override-hint advisory.
+
+    Closes Claude iter-2 #1: this is the test that proves the ambiguous-specific
+    advisory actually fires. Without rule 6 returning manager=None + the CLI's
+    `or "uv"` defaulting, the override-hint branch was logically dead.
+    """
+    target = tmp_path / "ambiguous"
+    target.mkdir()
+    (target / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1.0"\n')
+    rc, _out, err = run_cli(
+        [
+            "--dry-run",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+        ]
+    )
+    assert rc == 0
+    assert "pass --package-manager=pip to override" in err
+    assert "defaulting package_manager='uv'" in err
+
+
+def test_explicit_pip_on_ambiguous_pyproject_prints_no_advisory(tmp_path):
+    """`--package-manager=pip` explicit on ambiguous-pyproject dir → context has
+    `"pip"` + no advisory (explicit flag = no advisory rule)."""
+    target = tmp_path / "ambiguous"
+    target.mkdir()
+    (target / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1.0"\n')
+    rc, _out, err = run_cli(
+        [
+            "--dry-run",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(target),
+            "--package-manager",
+            "pip",
+        ]
+    )
+    assert rc == 0
+    # No advisory of any kind because user was explicit.
+    assert "info:" not in err
+    assert "defaulting" not in err
+
+
+def test_build_context_stays_pure(tmp_path):
+    """`_build_context` accepts a `package_manager` kwarg but does NO filesystem I/O.
+
+    Closes Claude iter-2 #6: detection lives in `main()`/`_resolve_package_manager`,
+    NOT inside `_build_context`. Existing tests that call `_build_context` with
+    synthetic args (no real --out filesystem) must still work.
+    """
+    parser = cli._build_parser()
+    args = parser.parse_args(
+        [
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            "/nonexistent/path/that/does/not/exist",
+        ]
+    )
+    # Calling _build_context without package_manager should not raise and
+    # should NOT touch the filesystem.
+    context = cli._build_context(args)
+    assert context["language"] == "python"
+    assert context["package_manager"] is None  # kwarg default
+
+
+def test_build_context_respects_package_manager_kwarg(tmp_path):
+    """`_build_context(args, package_manager="uv")` puts uv in the context."""
+    parser = cli._build_parser()
+    args = parser.parse_args(
+        [
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(tmp_path),
+        ]
+    )
+    context = cli._build_context(args, package_manager="uv")
+    assert context["package_manager"] == "uv"
+
+
+def test_resolve_package_manager_for_non_python_returns_none(tmp_path):
+    """For non-Python languages, no detection runs and no manager is resolved."""
+    parser = cli._build_parser()
+    args = parser.parse_args(
+        [
+            "--language",
+            "nodejs",
+            "--project-name",
+            "x",
+            "--out",
+            str(tmp_path),
+        ]
+    )
+    effective_pm, detected = cli._resolve_package_manager(args)
+    assert effective_pm is None
+    assert detected is None

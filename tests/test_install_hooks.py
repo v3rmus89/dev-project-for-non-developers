@@ -18,7 +18,10 @@ BOOTSTRAP_PY = SKILL_ROOT / "bootstrap.py"
 def test_generated_install_hooks_uses_target_venv(tmp_path):
     target = tmp_path / "proj"
 
-    # 1. Bootstrap into the tempdir
+    # 1. Bootstrap into the tempdir.
+    # Explicit --package-manager=pip so PR #6's default shift to uv doesn't
+    # break this test (the test asserts pip-mode artifacts: ./venv/bin/python
+    # in the hook). uv-mode equivalent lives in test_smoke_python_uv_generated.py.
     result = subprocess.run(
         [
             sys.executable,
@@ -26,6 +29,8 @@ def test_generated_install_hooks_uses_target_venv(tmp_path):
             "--apply",
             "--language",
             "python",
+            "--package-manager",
+            "pip",
             "--project-name",
             "hooks-test",
             "--out",
