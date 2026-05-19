@@ -57,6 +57,9 @@ doctor:	## check local prereqs (python3.12, git required; claude, codex advisory
 	else \
 	  echo "  advisory go not on PATH (only needed when bootstrapping --language go OR running make check's go smoke walk)"; \
 	fi; \
+	command -v uv >/dev/null 2>&1 \
+	  && echo "  ok       uv" \
+	  || echo "  advisory uv not on PATH (only needed when bootstrapping --package-manager=uv OR running make check's uv smoke walk)"; \
 	command -v claude >/dev/null 2>&1 \
 	  && echo "  ok       claude" \
 	  || echo "  advisory claude CLI not on PATH (needed for make review-{plan,commit,plan-consistency}-by-claude)"; \
