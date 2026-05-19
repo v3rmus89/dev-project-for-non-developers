@@ -118,7 +118,6 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude \
 	    --print \
-	    --permission-mode plan \
 	    --add-dir "$(CURDIR)" \
 	    --output-format text \
 	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly." \
@@ -182,14 +181,14 @@ review-commit-by-claude:	## Claude review of the most recent commit (Tier-1). PL
 	    echo "PLAN_FILE not found: $(PLAN_FILE)"; exit 1; \
 	  fi; \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
-	    claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	    claude --print --add-dir "$(CURDIR)" \
 	      --output-format text \
 	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. Check this commit against $(PLAN_FILE)'s plan body; flag any deviation as plan-impl drift findings. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
 	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
 	    && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"; \
 	else \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
-	    claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	    claude --print --add-dir "$(CURDIR)" \
 	      --output-format text \
 	      "Review commit HEAD on this branch. Run 'git log -1 --stat HEAD' and 'git show HEAD' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section." \
 	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
@@ -203,7 +202,7 @@ review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradicti
 	@command -v claude >/dev/null 2>&1 || \
 	  { echo "claude CLI not found."; exit 1; }
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
-	  claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	  claude --print --add-dir "$(CURDIR)" \
 	    --output-format text \
 	    "Read the plan file at '$(PLAN_FILE)' in full. Your ONLY job: find internal contradictions, doc-drift between sections, and places where the latest fold's wording is inconsistent with adjacent rows / tables / sections. Do NOT critique the design, scope, completeness, or correctness — that is the Codex/Claude full-review job. Just identify pairs: 'Section X says A, Section Y says B, they disagree because Z'. If the plan is internally consistent, say so explicitly. Output as a numbered list. Be terse." \
 	  > "$(PLAN_CONSISTENCY_OUT)" \
@@ -297,7 +296,7 @@ preflight-review-tooling:	## verify claude+codex CLIs work with the flag shape r
 	    "Reply with the single word: ok" >/dev/null 2>&1 \
 	    || { echo "codex flag smoke failed — see merged plan risk table"; exit 1; }
 	@$(CURDIR)/scripts/run-with-clean-env.py -- \
-	    claude --print --permission-mode plan --add-dir "$(CURDIR)" \
+	    claude --print --add-dir "$(CURDIR)" \
 	    --output-format text \
 	    "Reply with the single word: ok" >/dev/null 2>&1 \
 	    || { echo "claude flag smoke failed — see merged plan risk table"; exit 1; }
