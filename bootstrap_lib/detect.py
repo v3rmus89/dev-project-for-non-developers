@@ -56,7 +56,7 @@ def _first_requirements_match(out_dir: Path) -> str | None:
     return matches[0].name if matches else None
 
 
-def detect_package_manager(out_dir: "Path | str | None") -> DetectionResult:
+def detect_package_manager(out_dir: Path | str | None) -> DetectionResult:
     """Detect Python package manager from files in `out_dir`.
 
     Accepts `Path`, `str`, or `None` (closes Claude iter-2 #3 — `args.out`
