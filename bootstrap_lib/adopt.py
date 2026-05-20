@@ -33,7 +33,19 @@ Confidence = Literal["high", "medium", "low"]
 _MARKDOWN_EXTS = frozenset({".md", ".markdown"})
 
 # Regex for a markdown heading line (start of line, 1-6 '#', then space or EOL).
+# Used by `_compute_target_meta` to *count* headings.
 _MD_HEADING_RE = re.compile(rb"^#{1,6}(?:\s|$)", re.MULTILINE)
+
+# Regex for the *full* heading line (with text) — used by `recommend_policy`
+# rule (f) to compare heading SETS between target and skill template.
+_MD_HEADING_LINE_RE = re.compile(rb"^#{1,6}\s+.+?\s*$", re.MULTILINE)
+
+# Domain-rich markdown files governed by Scope #5 rule (f) — these files'
+# non-trivial existing content gets WRITE_NEW with manual_review_needed=True
+# (preserve target's domain content; emit .new for manual merge).
+_DOMAIN_MD_FILES = frozenset(
+    {"CLAUDE.md", "AGENTS.md", "CONTRIBUTING.md", "BACKLOG.md", "LESSONS.md"}
+)
 
 
 class TargetMeta(NamedTuple):
@@ -209,6 +221,238 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
     )
 
 
+def _normalize_gitignore_lines(content_bytes: bytes) -> set[str]:
+    """Return the set of meaningful (non-empty, non-comment) `.gitignore` lines.
+
+    Used by rule (d) for line-level idempotent-merge analysis. Comments and
+    blank lines aren't patterns, so they don't participate in the membership
+    check. Trailing/leading whitespace on a pattern is stripped (gitignore
+    treats `venv/` and `venv/ ` identically in practice; we match exact lines
+    after strip).
+    """
+    result: set[str] = set()
+    for line in content_bytes.decode("utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            result.add(stripped)
+    return result
+
+
+def _md_heading_lines(content_bytes: bytes) -> set[bytes]:
+    """Return the set of full markdown heading lines (e.g. b'## Section').
+
+    Used by rule (f) to detect "custom section headings not in skill template".
+    A heading is `^#{1,6}\\s+<text>$`. Setext-style (`====`) headings are not
+    counted — heuristic is good-enough for the file shapes this rule targets
+    (CLAUDE.md, AGENTS.md, etc., which use ATX-style headings).
+    """
+    return {m.group(0).rstrip() for m in _MD_HEADING_LINE_RE.finditer(content_bytes)}
+
+
+def _is_nontrivial_markdown(
+    target_content: bytes, skill_content: bytes, target_meta: TargetMeta
+) -> bool:
+    """Rule (f) non-trivial test: >20 lines OR headings not in skill template.
+
+    Either branch alone is sufficient: a 100-line target with identical
+    headings is non-trivial (lots of prose); a 5-line target with a "## My
+    Custom Section" not in skill is non-trivial (small but domain-bearing).
+    """
+    if target_meta.line_count is not None and target_meta.line_count > 20:
+        return True
+    target_headings = _md_heading_lines(target_content)
+    skill_headings = _md_heading_lines(skill_content)
+    return bool(target_headings - skill_headings)
+
+
+def _is_nontrivial_pyproject(content_bytes: bytes, target_meta: TargetMeta) -> bool:
+    """Rule (g) non-trivial test: [project] deps, [tool.*], or [dependency-groups].
+
+    `has_dependency_groups` is already on TargetMeta (populated by
+    `_compute_target_meta`); we re-parse here to check `[project].dependencies`
+    and `[tool.*]` since those signals aren't part of TargetMeta's privacy-safe
+    shape markers. Malformed TOML → returns False; rule (h) default-SKIP/
+    manual_review still gives a safe outcome for the unknown shape.
+    """
+    if target_meta.has_dependency_groups:
+        return True
+    try:
+        data = tomllib.loads(content_bytes.decode("utf-8", errors="replace"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return False
+    if isinstance(data.get("tool"), dict) and data["tool"]:
+        return True
+    project = data.get("project")
+    return bool(isinstance(project, dict) and project.get("dependencies"))
+
+
+def recommend_policy(
+    rel_path: str,
+    target_path: Path,
+    skill_content: bytes,
+    target_meta: TargetMeta,
+) -> PolicyRecommendation:
+    """Apply Scope #5 rules (a0/a..h) in order; first match wins.
+
+    The per-rule semantics are EXACTLY as the plan specifies (manual_review_needed
+    values match Bucket D test fixture expectations + the v2 restore matrix in
+    Bucket B):
+
+      (a0) missing + ignored_by_git → SKIP, manual_review_needed=True ALWAYS
+      (a)  missing + not ignored    → WRITE,  manual_review_needed=False
+      (b)  empty / whitespace-only  → OVERWRITE, manual_review_needed=False
+      (c)  byte-for-byte match      → SKIP,  manual_review_needed=False
+      (d)  .gitignore: missing pats → APPEND_MERGE, manual_review_needed=False
+           .gitignore: all present  → SKIP,  manual_review_needed=False
+      (e)  .python-version: match   → SKIP,  manual_review_needed=False
+           .python-version: differ  → SKIP,  manual_review_needed=False
+      (f)  domain .md + non-trivial → WRITE_NEW, manual_review_needed=True
+      (g)  pyproject.toml + non-triv→ SKIP,  manual_review_needed=True
+      (h)  DEFAULT (existing, no match) → SKIP, manual_review_needed=True
+
+    Rule (h) is the core safety guarantee: any existing non-empty file that
+    doesn't match a recognized adoption pattern gets SKIP with manual_review.
+    Codex iter-1 #3: rule (h) must NEVER recommend WRITE on an existing file
+    — that would let `--restore` silently delete user files (WRITE's restore
+    semantics delete the path per Bucket B v2 restore matrix row (a)).
+    """
+    name = Path(rel_path).name
+
+    # Rule (a0): planned CREATE is ignored by git.
+    # Silent SKIP loses the planned file; silent WRITE writes invisible-to-git
+    # output. Both unacceptable. ALWAYS manual_review_needed=True so the
+    # interactive prompt asks the owner (SKIP-confirm vs WRITE_NEW).
+    if not target_meta.exists and target_meta.ignored_by_git is not None:
+        return PolicyRecommendation(
+            policy="SKIP",
+            reason=(
+                f"target gitignores this path ({target_meta.ignored_by_git}); "
+                "owner must decide SKIP-confirm vs WRITE_NEW"
+            ),
+            confidence="high",
+            manual_review_needed=True,
+        )
+
+    # Rule (a): missing AND not ignored → safe to create.
+    if not target_meta.exists:
+        return PolicyRecommendation(
+            policy="WRITE",
+            reason="target file does not exist; safe to create",
+            confidence="high",
+            manual_review_needed=False,
+        )
+
+    # All remaining rules need target content (rules b/d/f/g operate on bytes).
+    # We re-read here rather than threading content through TargetMeta because
+    # TargetMeta is deliberately content-free per Scope #11 privacy boundary —
+    # only derived markers/hashes live there.
+    target_content = target_path.read_bytes()
+
+    # Rule (b): empty or whitespace-only → OVERWRITE.
+    # `.strip() == b""` catches both size-0 files and whitespace-only files.
+    if target_content.strip() == b"":
+        return PolicyRecommendation(
+            policy="OVERWRITE",
+            reason="target file is empty / whitespace-only; safe to fill",
+            confidence="high",
+            manual_review_needed=False,
+        )
+
+    # Rule (c): byte-for-byte match → SKIP (semantically honest no-op).
+    # SHA comparison is sufficient — equal SHA implies equal bytes (collision
+    # negligible). `target_meta.sha256` is the canonical hash source.
+    skill_sha = hashlib.sha256(skill_content).hexdigest()
+    if target_meta.sha256 == skill_sha:
+        return PolicyRecommendation(
+            policy="SKIP",
+            reason="target content matches skill template byte-for-byte; no-op",
+            confidence="high",
+            manual_review_needed=False,
+        )
+
+    # Rule (d): .gitignore — line-level idempotent merge OR no-op if covered.
+    if name == ".gitignore":
+        target_lines = _normalize_gitignore_lines(target_content)
+        skill_lines = _normalize_gitignore_lines(skill_content)
+        missing = skill_lines - target_lines
+        if not missing:
+            return PolicyRecommendation(
+                policy="SKIP",
+                reason="all skill .gitignore patterns already present in target",
+                confidence="high",
+                manual_review_needed=False,
+            )
+        return PolicyRecommendation(
+            policy="APPEND_MERGE",
+            reason=(
+                f"{len(missing)} skill .gitignore pattern(s) missing from target; "
+                "append-only line-level merge"
+            ),
+            confidence="high",
+            manual_review_needed=False,
+        )
+
+    # Rule (e): .python-version — SKIP either way; never overwrite a pin.
+    if name == ".python-version":
+        skill_pin = _python_version_pin(skill_content)
+        target_pin = target_meta.python_version_pin
+        if target_pin == skill_pin:
+            return PolicyRecommendation(
+                policy="SKIP",
+                reason=f"target pins same Python version ({target_pin}); no-op",
+                confidence="high",
+                manual_review_needed=False,
+            )
+        return PolicyRecommendation(
+            policy="SKIP",
+            reason=(
+                f"target pins a different Python version "
+                f"({target_pin!r} vs skill's {skill_pin!r}); leave target alone"
+            ),
+            confidence="high",
+            manual_review_needed=False,
+        )
+
+    # Rule (f): domain markdown files non-trivial → WRITE_NEW.
+    if name in _DOMAIN_MD_FILES and _is_nontrivial_markdown(
+        target_content, skill_content, target_meta
+    ):
+        return PolicyRecommendation(
+            policy="WRITE_NEW",
+            reason=(
+                f"target {name} has domain content (>20 lines or custom headings); "
+                "preserve original and write .new for manual merge"
+            ),
+            confidence="medium",
+            manual_review_needed=True,
+        )
+
+    # Rule (g): pyproject.toml non-trivial → SKIP with manual_review.
+    if name == "pyproject.toml" and _is_nontrivial_pyproject(target_content, target_meta):
+        return PolicyRecommendation(
+            policy="SKIP",
+            reason=(
+                "target pyproject.toml has [project] deps, [tool.*], or "
+                "[dependency-groups]; review the diff manually with --diff"
+            ),
+            confidence="medium",
+            manual_review_needed=True,
+        )
+
+    # Rule (h): DEFAULT — existing non-empty file with no recognized pattern.
+    # This is the core safety guarantee: never silently WRITE over an unknown
+    # existing file (Codex iter-1 #3 closed). Owner must decide.
+    return PolicyRecommendation(
+        policy="SKIP",
+        reason=(
+            "existing file does not match any recognized adoption pattern; "
+            "default SKIP for safety — owner decides"
+        ),
+        confidence="low",
+        manual_review_needed=True,
+    )
+
+
 __all__ = [
     "AdoptionPlan",
     "Confidence",
@@ -217,4 +461,5 @@ __all__ = [
     "PolicyRecommendation",
     "TargetMeta",
     "_compute_target_meta",  # exported for tests
+    "recommend_policy",
 ]

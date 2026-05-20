@@ -444,6 +444,37 @@ passes.
 
 ---
 
+### Adoption-mode rule (d): `.gitignore` order-aware merge for `!negation` patterns (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `recommend_policy` impl commit (PR #17).
+
+**Why parked**: `_normalize_gitignore_lines` (`bootstrap_lib/adopt.py`)
+uses a `set` for line-membership, which is correct for the common case
+(skill adds new positive patterns missing from target's gitignore) and
+order-blind by design. Gitignore semantics ARE order-dependent in one
+edge case: `*.log` followed by `!important.log` differs from the reverse
+order. The current APPEND_MERGE always appends to end, so if the skill
+template ever includes `!negation` patterns that need to come AFTER
+specific positive matches in the target, the merge would produce
+semantically-different behavior than a hand-written ordering.
+
+The call-details collision set used for PR #7's trial doesn't have
+`!negation` patterns; the skill's own `.gitignore.tmpl` doesn't either.
+Real-but-deferrable.
+
+**Triggers to pick up**:
+- First user reports APPEND_MERGE producing wrong gitignore semantics
+  after running `--mode=adopt` on a project with negation patterns.
+- The skill's `.gitignore.tmpl` ever adds a `!negation` pattern.
+
+**Rough effort**: ~1 hour — extend `_normalize_gitignore_lines` to
+return an ordered list with positional metadata; rewrite the APPEND_MERGE
+contract to insert `!negation` lines in semantically-correct positions
+rather than always-end-append. Manifest v2 `pre_append_length` would
+need to become a more general "pre-merge state hash" for restore to work.
+
+---
+
 ### Filesystem-stress test for v1→v2 restore (imp-2)
 
 **Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #2).
