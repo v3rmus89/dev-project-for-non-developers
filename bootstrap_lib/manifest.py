@@ -19,6 +19,21 @@ EXECUTABLE_TARGETS = {
     "hooks/pre-push",
 }
 
+# Manifest format versions:
+#   v1 (legacy / `--apply` path) — entries: path / existed_before / sha256_before /
+#       content_before_b64 / mode_before / action_planned / sha256_after / mode_after
+#   v2 (`--apply --mode=adopt` path) — v1 fields PLUS per-policy fields:
+#       policy, target_path, sha256_before_target_path, sha256_after_target_path,
+#       pre_append_length. SKIP entries are NOT in v2 manifests (mutation-only).
+#
+# Backward-compat dispatch (Bucket B): when loading a manifest, `format_version`
+# absent or None → treated as v1 (preserves PR #1-#6 manifest compat); `2` →
+# v2 semantics. Any other value → ValueError (fail-loud on unknown future
+# versions rather than silently mis-interpreting).
+MANIFEST_FORMAT_V1 = 1
+MANIFEST_FORMAT_V2 = 2
+_SUPPORTED_FORMAT_VERSIONS = frozenset({MANIFEST_FORMAT_V1, MANIFEST_FORMAT_V2})
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -38,12 +53,19 @@ class Manifest:
         entries,
         created_directories,
         created_at=None,
+        format_version=MANIFEST_FORMAT_V1,
     ):
+        if format_version not in _SUPPORTED_FORMAT_VERSIONS:
+            raise ValueError(
+                f"unsupported manifest format_version={format_version!r}; "
+                f"supported: {sorted(_SUPPORTED_FORMAT_VERSIONS)}"
+            )
         self.target_root = target_root
         self.github_review_mode = github_review_mode
         self.entries = entries
         self.created_directories = created_directories
         self.created_at = created_at or datetime.datetime.now(datetime.UTC).isoformat()
+        self.format_version = format_version
 
     def to_dict(self):
         return {
@@ -52,16 +74,23 @@ class Manifest:
             "github_review_mode": self.github_review_mode,
             "entries": self.entries,
             "created_directories": self.created_directories,
+            "format_version": self.format_version,
         }
 
     @classmethod
     def from_dict(cls, data):
+        # `format_version` absent / None → v1 (preserves PR #1-#6 manifest
+        # backward-compat per Bucket B). `2` → v2. Anything else → ValueError
+        # (raised by the constructor via _SUPPORTED_FORMAT_VERSIONS check).
+        raw_version = data.get("format_version")
+        format_version = MANIFEST_FORMAT_V1 if raw_version is None else raw_version
         return cls(
             target_root=data["target_root"],
             github_review_mode=data["github_review_mode"],
             entries=data["entries"],
             created_directories=data.get("created_directories", []),
             created_at=data.get("created_at"),
+            format_version=format_version,
         )
 
 
@@ -150,6 +179,16 @@ def load_manifest(path):
 def restore_from_manifest(m, stderr=None):
     if stderr is None:
         stderr = sys.stderr
+
+    # v1 manifests use the legacy restore semantics below (PR #1 contract).
+    # v2 manifests need the per-policy restore matrix (Bucket B) which lands in
+    # a follow-up commit; raise loud here rather than silently mis-restoring.
+    if m.format_version != MANIFEST_FORMAT_V1:
+        raise NotImplementedError(
+            f"manifest format_version={m.format_version} requires the v2 "
+            "per-policy restore matrix (Bucket B); not yet implemented in "
+            "this commit"
+        )
 
     target_root = Path(m.target_root).resolve()
     n_restored = 0
