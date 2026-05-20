@@ -519,6 +519,7 @@ separate docs-only commit)
 
 | short-sha | what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |---|---|---|---|
+| 3ceb492 | Shrank the "Triaging review findings" block across all 6 byte-identity surfaces; moved calibration + plateau prose into a new "(full discipline)" section in CONTRIBUTING.md + tmpl; tightened Tier-1 same-AI wording in CONTRIBUTING.md/tmpl | none (matches Scope items 1-2 / Bucket A) | Tier-1 imp-2 (commit-message-only): stale line ref + premature "closes" wording — fixed via `--amend` before this row |
 
 ## Lessons surfaced
 
