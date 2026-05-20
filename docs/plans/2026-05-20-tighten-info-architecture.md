@@ -6,28 +6,49 @@ The skill currently loads ~182 lines into every Claude Code session via `CLAUDE.
 ~141 lines into every read-only review session via `AGENTS.md`. Both files were grown
 incrementally across PR #1–#7 — most additions earned their place at the time, but the
 result is verbose enough that priority signal dilutes. The PR #7 trial against
-`call-details/` surfaced the issue empirically: when the rendered `CLAUDE.md.new`
-(~160 lines) merged with the user's existing 96-line CLAUDE.md, the combined version
-hit 233 lines before any tightening — at that point, the "every line earns its place"
-test was failing.
+`call-details/` surfaced the issue empirically: the rendered `CLAUDE.md.new` (~160
+lines) merged with the user's existing 96-line CLAUDE.md hit 233 lines before any
+tightening.
 
-The user's stated principle: **CLAUDE.md should be short** — it's the always-on context;
-every line should be either a rule you can't afford to forget OR a pointer to where
-detail lives. **Detail-rich content** (workflow steps, prompt templates, calibration
-paragraphs, examples) **belongs in `CONTRIBUTING.md`**, which is consulted on-demand,
-not loaded into context every session.
+The user's principle: **CLAUDE.md should be short** — it's the always-on context; every
+line should be either a rule you can't afford to forget OR a pointer to where detail
+lives. **Detail-rich content** (workflow steps, prompt templates, calibration paragraphs)
+**belongs in `docs/plans/README.md` (canonical for plan-loop discipline) or
+`CONTRIBUTING.md`** (consulted on-demand).
 
-This plan tightens the skill repo's own `CLAUDE.md` + `AGENTS.md` (the dogfood docs)
-AND the templates that render to generated projects, absorbing verbose detail into
-`CONTRIBUTING.md` (skill + tmpl). Plus adds a `gh repo create` hint to the post-apply
-"next steps" output when `--github-review != none` and no remote is detected (per user
-request 2026-05-20).
+**Iter-1 fold note (Claude 3-2)**: most of the "verbose detail" CLAUDE.md carries is
+already canonically present in `docs/plans/README.md`:
+- Filename convention (`/tmp/plan-review-…-iter-N.md`) → `docs/plans/README.md:27-35`
+- Bootstrap exception → `docs/plans/README.md:101-105`
+- When-to-stop / no-imp-3 rule → `docs/plans/README.md:131-148`
+- Consistency self-check cadence → `docs/plans/README.md:52-59`
+- Human-approval-gate per-step elaboration → `docs/plans/README.md:60-67`
 
-### Pre-loop user-decided scope constraints (before iter-1)
+So **CLAUDE.md's correct move** for these sections is to delete the elaboration and
+point at `docs/plans/README.md`, NOT to duplicate into CONTRIBUTING.md. The only
+genuinely-orphan content is the **self-improvement writable-vs-read-only protocol**
+(lives only in CLAUDE.md + AGENTS.md). That single piece either stays in CLAUDE.md or
+gets one new CONTRIBUTING.md section (decision: stay in CLAUDE.md compressed; see Bucket B).
 
-- **Target line counts**: `CLAUDE.md` (skill's own) ~120-130 lines; `AGENTS.md` ~80-100;
-  `CLAUDE.md.tmpl` / `AGENTS.md.tmpl` similar. Hard target is **density** (every line
-  earns its place), not the exact number.
+This plan tightens the skill repo's own `CLAUDE.md` + `AGENTS.md` (the dogfood docs) AND
+the templates that render to generated projects. Pointers replace verbose elaboration
+where `docs/plans/README.md` is already canonical. CONTRIBUTING.md absorbs only the
+verbose triage content (calibration + plateau rule + evidence-table format), which is
+NOT in docs/plans/README.md. Plus a `gh repo create` hint in cli.py's v1 post-apply
+success path.
+
+### Pre-loop user-decided scope constraints
+
+- **Target line counts**:
+  - `CLAUDE.md` (skill's own): ~120-130 lines (down from 182).
+  - `AGENTS.md` (skill's own): **revised to ~125-135 per Bucket D analysis** (down
+    from 141 — see iter-1 fold note below). Reviewer-specific sections ("What to flag
+    with high confidence", "Plan Review Guidance") can't move without losing their
+    purpose, so the 80-100 target from the initial brief is not achievable without
+    cutting reviewer-critical content. **(d)-class decision flagged for human-approval
+    gate**: accept revised ~135 target, or rewrite reviewer guidance to fit ~100.
+  - `CLAUDE.md.tmpl` / `AGENTS.md.tmpl` rendered output: similar to dogfood targets.
+  - Hard target is **density** (every line earns its place), not the exact number.
 - **Byte-identity invariant**: the "## Triaging review findings" section must remain
   byte-identical across six surfaces (`CLAUDE.md` + `AGENTS.md` + `docs/plans/README.md`
   + their 3 `shared/*.tmpl` counterparts), enforced by
@@ -35,38 +56,42 @@ request 2026-05-20).
 - **Four-questions test invariant**: `tests/test_triage_byte_identity.py::
   test_four_questions_extension_present` asserts exact substring text for the 4
   questions. New short version must preserve: "Before deciding (a/b/c/d), ask these
-  four questions" + each question's first sentence ("Is the premise correct?", "Is
-  the suggested fix the best fix", "What else does this finding imply?", "Does folding
-  introduce a contradiction").
-- **No content loss**: verbose content moved out of CLAUDE.md/AGENTS.md/templates must
-  land in CONTRIBUTING.md + shared/CONTRIBUTING.md.tmpl so the cross-refs resolve.
-- **gh-hint is a code change, not a doc change**: small addition to
-  `bootstrap_lib/cli.py`'s post-apply success path; one if-branch + one print.
-- **PR #17 merge-conflict risk**: PR #17 (open) heavily modifies `bootstrap_lib/cli.py`
-  but doesn't touch the success-print block of `main()`. The gh-hint edit happens in
-  the v1 success path (untouched by PR #17). When PR #17 merges, the gh-hint also
-  needs landing in adopt-mode's `_main_apply_adopt` success path — flagged as a
-  follow-up here (NOT in scope for this PR).
+  four questions" + each question's first sentence.
+- **Selftest overlap invariant**: `tests/test_selftest_overlap.py` checks
+  `shared/docs-plans-README.md.tmpl` byte-renders to match `docs/plans/README.md`. So
+  changes to these two files must be byte-identical in lockstep. The plan's Bucket A
+  triage-shrink already affects both surfaces; the test IS in scope (iter-1 fold).
+- **No content loss**: detail moved out of CLAUDE.md/AGENTS.md/templates MUST land at
+  the canonical destination: `docs/plans/README.md` for plan-loop / human-approval
+  detail (already there — just point at it); `CONTRIBUTING.md` for the verbose triage
+  calibration/plateau/evidence-table content (one new section).
+- **gh-hint is a code change**: small addition to `bootstrap_lib/cli.py`'s v1
+  post-apply success path. Uses safe explicit-paths pattern (NOT `git add -A` —
+  contradicts `LESSONS.md:48`).
+- **PR #17 merge-conflict status**: **needs to be verified at impl time** (iter-1
+  fold — the original plan claimed "no conflict" based on line numbers measured
+  against PR #17's branch, not main). PR #17 adds the adopt-mode dispatch BEFORE
+  the v1 success block on its branch; whether it modifies the v1 block itself is
+  to-be-checked when impl PR opens.
 
 ### Sequencing within this PR
 
-The PR ships as multiple focused commits:
+Ships as **4 focused commits** (iter-1 fold: merge old Commits 2+3 atomic to avoid
+non-triage drift between CLAUDE.md and shared/CLAUDE.md.tmpl; same for old Commits 4):
 
-1. **Commit 1**: Triage section shrink across the 6 byte-identity surfaces +
-   absorb the verbose content (calibration paragraph, plateau rule, evidence-table
-   format) into CONTRIBUTING.md + shared/CONTRIBUTING.md.tmpl. Most coordinated
-   piece (byte-identity test passes after).
-2. **Commit 2**: Tighten CLAUDE.md (skill's own) other sections — plan-review-loop,
-   self-improvement-loop, mandatory-human-approval-gate, focused-commits — moving
-   detail to CONTRIBUTING.md.
-3. **Commit 3**: Mirror Commit 2's changes to `shared/CLAUDE.md.tmpl`, preserving
-   Jinja conditionals.
-4. **Commit 4**: Tighten AGENTS.md (skill's own) other sections + mirror to
-   `shared/AGENTS.md.tmpl`.
-5. **Commit 5**: Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply
-   success path + test.
+1. **Commit 1**: Triage section shrink across all 6 byte-identity surfaces + add the
+   "## Triaging review findings (full discipline)" section to `CONTRIBUTING.md` +
+   `shared/CONTRIBUTING.md.tmpl`. byte-identity test + selftest_overlap test must
+   pass after.
+2. **Commit 2**: Tighten CLAUDE.md other sections AND mirror to `shared/CLAUDE.md.tmpl`
+   in the SAME commit (closes Claude 2-4 imp-2 — no byte-identity test guards
+   non-triage CLAUDE.md↔tmpl consistency, so atomic edit prevents drift).
+3. **Commit 3**: Tighten AGENTS.md (skill's own) + mirror to `shared/AGENTS.md.tmpl`
+   atomic.
+4. **Commit 4**: Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply
+   success path + tests.
 
-Tier-1 review per commit before push. Total estimated 4-6 hours including loop overhead.
+Tier-1 review per commit before push. Total estimated 3-5 hours including loop overhead.
 
 ## Scope
 
@@ -74,45 +99,45 @@ Tier-1 review per commit before push. Total estimated 4-6 hours including loop o
 
 | # | Change | Where |
 |---|---|---|
-| 1 | Shrink "## Triaging review findings" verbose block (24 lines) → short version (~17 lines): 4-option bullets compressed to 1 sentence each, drop "The loop converges faster…" filler, drop "These four questions add ~30 seconds…" filler, drop the Calibration paragraph, drop the plateau-rule paragraph. Keep the 4 options + the 4 questions (with exact substring text per byte-identity test). End with: "See `CONTRIBUTING.md` for the full triage discipline: imp-3 calibration, plateau rule, evidence-table format." | `CLAUDE.md`, `AGENTS.md`, `docs/plans/README.md`, `shared/CLAUDE.md.tmpl`, `shared/AGENTS.md.tmpl`, `shared/docs-plans-README.md.tmpl` (all 6 byte-identity surfaces) |
-| 2 | Add the verbose content moved out of the triage section to `CONTRIBUTING.md` + `shared/CONTRIBUTING.md.tmpl` — new section "## Triaging review findings (full discipline)" placed BEFORE the existing "## Tier-1 review — prompt template for in-session subagents". Includes calibration paragraph + plateau rule + evidence-table format guidance. | `CONTRIBUTING.md`, `shared/CONTRIBUTING.md.tmpl` |
-| 3 | Tighten `CLAUDE.md` (skill's own) ## Plan review loop section from 34 lines → ~8 lines: keep the rule ("write to `docs/plans/...`, run review-plan-by-codex + claude, stop when no imp-3 remain"), drop the detailed iteration cadence + filename convention + bootstrap-exception. Move detail to CONTRIBUTING.md. | `CLAUDE.md` |
-| 4 | Tighten `CLAUDE.md` ## Two-tier code review from 8 lines → ~6 lines: keep Tier-1 + Tier-2 rule, drop "Both feed the same…" sentence. | `CLAUDE.md` |
-| 5 | Tighten `CLAUDE.md` ## Self-improvement loop (LESSONS.md) from 10 lines → ~6 lines: keep "read LESSONS.md at session start" + 1-line writable-vs-read-only summary + pointer. Move full writable-vs-read-only protocol to CONTRIBUTING.md. | `CLAUDE.md` |
-| 6 | Tighten `CLAUDE.md` ## Mandatory human-approval gate from 12 lines → ~6 lines: keep the 4-step rule (summary→approve/changes/read-full→fold→approve→commit), drop the "Wait for…" elaboration. Pointer to docs/plans/README.md step 3 for canonical wording. | `CLAUDE.md` |
-| 7 | Tighten `CLAUDE.md` ## Focused commits from 14 lines → ~6 lines: keep the rule + 4-line bash example + "Don't `git add .`" warning. Drop the elaboration. Pointer to CONTRIBUTING.md per-change checklist. | `CLAUDE.md` |
-| 8 | Mirror items 3-7 to `shared/CLAUDE.md.tmpl`, preserving Jinja conditionals (`{% if package_manager %}`, `{% if github_review_mode %}`, etc.). The template has language-specific + package-manager-specific branches that the skill's own CLAUDE.md doesn't. | `shared/CLAUDE.md.tmpl` |
-| 9 | Tighten `AGENTS.md` (skill's own): keep "What to flag with high confidence" + "What NOT to flag" + "Local quality gate" + "Plan Review Guidance" + "Tone" sections (these are reviewer-specific). Tighten "Cross-session state recovery" + "Self-improvement loop" sections (mirror CLAUDE.md cuts). | `AGENTS.md` |
-| 10 | Mirror item 9 to `shared/AGENTS.md.tmpl`. | `shared/AGENTS.md.tmpl` |
-| 11 | Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply success path (around line 598-610, the `if args.github_review != "none":` block). When the apply succeeds AND `--github-review != none` AND target directory has NO git remote (`git -C <out> remote` returns empty), print: `"create the GitHub repo + push:\n  cd <out> && git init && git add -A && git commit -m 'initial bootstrap' && gh repo create <owner>/<repo> --source=. --push --public"` (or similar). | `bootstrap_lib/cli.py` |
-| 12 | Tests: extend `tests/test_bootstrap_cli.py` to verify the gh-hint fires when expected + doesn't fire when remote already exists. | `tests/test_bootstrap_cli.py` |
+| 1 | Shrink "## Triaging review findings" verbose block (24 lines) → short version (~17 lines): 4-option bullets compressed to 1 sentence each, drop "The loop converges faster…" filler, drop "These four questions add ~30 seconds…" filler, drop the Calibration paragraph (moves to CONTRIBUTING.md), drop the plateau-rule paragraph (moves to CONTRIBUTING.md). Keep the 4 options + the 4 questions (with exact substring text per byte-identity test). End with: "See `CONTRIBUTING.md` for the full triage discipline: imp-3 calibration, plateau rule, evidence-table format." | `CLAUDE.md`, `AGENTS.md`, `docs/plans/README.md`, `shared/CLAUDE.md.tmpl`, `shared/AGENTS.md.tmpl`, `shared/docs-plans-README.md.tmpl` (all 6 byte-identity surfaces) |
+| 2 | Add new section "## Triaging review findings (full discipline)" to `CONTRIBUTING.md` + `shared/CONTRIBUTING.md.tmpl`, placed BEFORE the existing "## Tier-1 review — prompt template for in-session subagents". Includes ONLY: the calibration paragraph (imp-3 definition), the plateau rule, the evidence-table format guidance. Also update CONTRIBUTING.md line 114 of existing per-change checklist to reference "the (a/b/c/d) framework below in this document". | `CONTRIBUTING.md`, `shared/CONTRIBUTING.md.tmpl` |
+| 3 | Tighten `CLAUDE.md` ## Plan review loop section from 34 lines → ~6 lines: keep the rule ("write to `docs/plans/...`, run review-plan-by-codex + claude, stop when no imp-3 remain"), drop the detailed iteration cadence + filename convention + bootstrap-exception. **End with**: "See `docs/plans/README.md` for filename convention, bootstrap exception, when-to-stop rule, and consistency self-check cadence" — pointing at the existing canonical surface, NOT duplicating to CONTRIBUTING.md (iter-1 fold). | `CLAUDE.md` |
+| 4 | Tighten `CLAUDE.md` ## Two-tier code review from 8 lines → ~6 lines: keep Tier-1 + Tier-2 rule, drop "Both feed the same…" sentence. **Note**: NOT updating the "Codex GitHub bot is NOT configured" wording — that's a known-stale BACKLOG entry (BACKLOG.md:416); explicitly out-of-scope for this PR (iter-1 fold: Codex #4 rejected as out-of-scope for IA refactor). | `CLAUDE.md` |
+| 5 | Tighten `CLAUDE.md` ## Self-improvement loop (LESSONS.md) from 10 lines → ~6 lines: keep "read LESSONS.md at session start" + 1-line writable-vs-read-only summary + pointer to AGENTS.md for the read-only-context details. **Decision (iter-1 fold)**: the writable-vs-read-only protocol stays in CLAUDE.md (compressed) and AGENTS.md (where it's reviewer-relevant). NO new CONTRIBUTING.md section needed — protocol is short enough at ~6 lines that pointer-to-AGENTS.md is sufficient. | `CLAUDE.md` |
+| 6 | Tighten `CLAUDE.md` ## Mandatory human-approval gate from 12 lines → ~6 lines: keep the 4-step rule (summary→wait→fold→commit), drop the per-step elaboration. **End with**: "See `docs/plans/README.md` step 3 for the canonical wording" (already canonical there, iter-1 fold). | `CLAUDE.md` |
+| 7 | Tighten `CLAUDE.md` ## Focused commits from 14 lines → ~6 lines: keep the rule + 4-line bash example + "Don't `git add .`" warning. Pointer to CONTRIBUTING.md per-change checklist. | `CLAUDE.md` |
+| 8 | Mirror items 3-7 to `shared/CLAUDE.md.tmpl` in the SAME commit (Claude 2-4 fold — avoid drift). Preserve Jinja conditionals (`{% if package_manager %}`, `{% if github_review_mode %}`, etc.). | `shared/CLAUDE.md.tmpl` |
+| 9 | Tighten `AGENTS.md` (skill's own): keep "What to flag with high confidence" + "What NOT to flag" + "Local quality gate" + "Plan Review Guidance" + "Tone" sections (reviewer-specific; CAN'T move without losing purpose). Tighten "Cross-session state recovery" (5 → 4) + "Self-improvement loop" (10 → 6, mirror CLAUDE.md item 5). | `AGENTS.md` |
+| 10 | Mirror item 9 to `shared/AGENTS.md.tmpl` in the SAME commit. | `shared/AGENTS.md.tmpl` |
+| 11 | Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply success block (lines 358-378 on main — iter-1 fold: corrected from the previous "598-610" which was measured against PR #17's branch, not main). Detection: distinguish "no `.git/` directory" (target needs `git init`) vs "`.git/` exists but no remote" (only needs remote creation) — iter-1 fold (Claude 1-3). **Safe-pattern hint** (iter-1 fold, Codex #1): NEVER `git add -A` / `git add .`. Print an explicit-paths or status-then-review checklist (NOT a copy-paste bulk command). See Bucket E for the exact code. | `bootstrap_lib/cli.py` |
+| 12 | Tests: extend `tests/test_bootstrap_cli.py` with two tests — gh-hint fires correctly + no `git add -A` ever appears in the hint output. Plus: `tests/test_selftest_overlap.py::test_overlap_docs_plans_readme` must continue to pass (iter-1 fold: this test IS impacted by Commit 1's triage shrink to `docs/plans/README.md`). | `tests/test_bootstrap_cli.py` |
 
 ### NOT in scope
 
 - **gh-hint in adopt-mode's `_main_apply_adopt` success path** — that code doesn't exist
   on main yet (lives in PR #17). After PR #17 merges, a follow-up PR will mirror the
   hint into the adopt-mode success path.
-- **CONTRIBUTING.md restructure beyond absorbing the moved content** — the existing
-  CONTRIBUTING.md sections (One-time setup, Per-change checklist, Branch naming, etc.)
-  stay as-is. Only the new "## Triaging review findings (full discipline)" section is
-  added.
-- **Restructure of docs/plans/README.md beyond the triage section change** — the
-  surrounding content (When to write a plan, File naming, Workflow) stays.
-- **Re-running the selftest overlap test** — only impacted if a selftested template
-  changes shape (none here do).
-- **`Key implementation invariants` section in skill's CLAUDE.md** — those are
-  load-bearing technical constraints that earn their place. Preserve verbatim.
-- **`Hard rules — PII` section** (only in the call-details merge, not in skill's
-  CLAUDE.md) — keep verbatim in the call-details version (already done outside this PR).
-- **Substantive English rewrites of preserved text** — the goal is to MOVE detail to
-  CONTRIBUTING.md, not to RE-WRITE detail. The text that stays in CLAUDE.md stays
-  as-is for the un-moved sections. Reduces risk of accidental wording drift that
-  breaks the byte-identity test.
+- **CONTRIBUTING.md restructure beyond Bucket A** — only the new "## Triaging review
+  findings (full discipline)" section is added. Other sections (One-time setup,
+  Per-change checklist, Branch naming, Emergency override, Skill repo specifics,
+  Tier-1 prompt template) stay as-is.
+- **`docs/plans/README.md` restructure beyond the triage section change** — the
+  surrounding content (When to write a plan, File naming, Workflow with the canonical
+  plan-loop detail) stays. CLAUDE.md POINTERS to it; README.md's content doesn't
+  change beyond the triage section.
+- **Codex-bot wording fix in CLAUDE.md / shared/CLAUDE.md.tmpl** — known-stale; tracked
+  at `BACKLOG.md:416`. Out of scope for this PR (iter-1 fold: Codex #4 rejected).
+  The BACKLOG entry's trigger "next session that touches CLAUDE.md" remains valid for
+  a future session.
+- **`Key implementation invariants` section in skill's CLAUDE.md** — load-bearing
+  technical constraints; preserve verbatim.
+- **Substantive English rewrites of preserved text** — move-not-rewrite discipline:
+  text that stays in CLAUDE.md stays as-is for the un-moved sections. Reduces risk
+  of accidental wording drift breaking the byte-identity test.
 - **`tests/test_triage_byte_identity.py` modifications** — the test stays as-is; the
-  new short triage block must pass it. The 4-questions-presence test also stays as-is;
-  the short block preserves the required substrings.
-- **Updating `BACKLOG.md` to add the "adopt-mode gh-hint follow-up" entry** — this is
-  noted in the implementation PR's BACKLOG.md addition, not in the plan.
+  new short triage block must pass it. The 4-questions-presence test also stays as-is.
+- **Updating `BACKLOG.md`** — add the "adopt-mode gh-hint follow-up" entry in the
+  impl PR (not in this plan).
 
 ## Subsystem breakdown
 
@@ -122,45 +147,41 @@ Tier-1 review per commit before push. Total estimated 4-6 hours including loop o
 |---|---|
 | `CLAUDE.md` | Replace lines 68-90 (current verbose triage block) with the new short version (~17 lines). |
 | `AGENTS.md` | Replace lines 95-117 (byte-identical block) with the same new short version. |
-| `docs/plans/README.md` | Replace the triage section (find by grep `^## Triaging`) with the same new short version. |
+| `docs/plans/README.md` | Replace the triage section with the same new short version. |
 | `shared/CLAUDE.md.tmpl` | Replace the triage section with the same new short version. |
 | `shared/AGENTS.md.tmpl` | Replace the triage section with the same new short version. |
 | `shared/docs-plans-README.md.tmpl` | Replace the triage section with the same new short version. |
-| `CONTRIBUTING.md` | Add new section "## Triaging review findings (full discipline)" BEFORE the existing "## Tier-1 review — prompt template" section. Content: calibration paragraph + plateau rule + evidence-table format guidance. Also update line 114 of existing per-change checklist to refer to "the (a/b/c/d) framework below" instead of "in `CLAUDE.md`". |
-| `shared/CONTRIBUTING.md.tmpl` | Mirror the new section + line-114 update from CONTRIBUTING.md. |
+| `CONTRIBUTING.md` | Add new section "## Triaging review findings (full discipline)" BEFORE the existing "## Tier-1 review — prompt template" section. Content: calibration paragraph (imp-3 definition) + plateau rule + evidence-table format guidance. Also update line 114 to "the (a/b/c/d) framework below in this document". |
+| `shared/CONTRIBUTING.md.tmpl` | Mirror the new section + line-114 update. |
 
-### Bucket B — Skill's own CLAUDE.md tightening (other sections)
+**Selftest_overlap impact** (iter-1 fold): `tests/test_selftest_overlap.py:81-85` checks
+`shared/docs-plans-README.md.tmpl` byte-renders to `docs/plans/README.md`. Both files
+get the same triage shrink in this Bucket; the test passes after Commit 1 because the
+edits are byte-identical lockstep.
 
-| Section | Current lines | Target | What stays | What moves to CONTRIBUTING.md |
+### Bucket B — Skill's own CLAUDE.md tightening + shared/CLAUDE.md.tmpl mirror (atomic Commit 2)
+
+| Section | Current | Target | What stays in CLAUDE.md | What moves; destination |
 |---|---|---|---|---|
 | Commands table | 22 | 22 | Full table | (nothing) |
 | What this repo is | 8 | 8 | Full content | (nothing) |
-| Plan review loop | 34 | 8 | Lead sentence + 2-line `make review-plan-by-codex` + `make review-plan-by-claude` invocation, "stop when no imp-3" rule, pointer to CONTRIBUTING.md for filename convention + bootstrap-exception + iteration cadence + consistency self-check detail | The Filename convention paragraph, the Bootstrap exception paragraph, the When-to-stop bullets, the Pre-next-iter consistency self-check paragraph |
-| Triaging review findings | 23 | 17 | (covered by Bucket A) | (full discipline → CONTRIBUTING.md, per Bucket A) |
-| Two-tier code review | 8 | 6 | Tier-1 + Tier-2 rules | "Both feed the same (a/b/c/d) triage rule…" sentence (already implied) |
-| Cross-session state recovery | 5 | 4 | First paragraph compressed | The "If multiple plan files…" elaboration |
-| Pre-coding gate | 9 | 9 | Full content | (nothing — this section is dense already) |
-| Self-improvement loop | 10 | 6 | "Read LESSONS.md at session start" + 1-line writable-vs-read-only summary + pointer | The full writable-vs-read-only protocol + promote/archive rules |
-| Mandatory human-approval gate | 12 | 6 | 4-step rule | Elaboration of each step + the docs/plans/README.md step-3 pointer (kept as 1-line) |
+| Plan review loop | 34 | 6 | Lead rule + 2-line invocation + 1-line "stop when no imp-3" + 1-line pointer | Filename convention, bootstrap exception, when-to-stop bullets, consistency self-check paragraph → POINT AT `docs/plans/README.md` (already canonical there; iter-1 fold) |
+| Triaging review findings | 23 | 17 | (covered by Bucket A) | Calibration + plateau + evidence-table format → `CONTRIBUTING.md` (Bucket A) |
+| Two-tier code review | 8 | 6 | Tier-1 + Tier-2 rules | "Both feed the same…" sentence (already implied) |
+| Cross-session state recovery | 5 | 4 | First paragraph compressed | "If multiple plan files…" elaboration |
+| Pre-coding gate | 9 | 9 | Full content | (nothing — dense already) |
+| Self-improvement loop | 10 | 6 | "Read LESSONS.md at session start" + 1-line writable-vs-read-only summary + pointer to AGENTS.md | Full writable-vs-read-only protocol → STAYS in AGENTS.md (where it's reviewer-relevant; iter-1 fold — no new CONTRIBUTING.md section needed) |
+| Mandatory human-approval gate | 12 | 6 | 4-step rule | Per-step elaboration → POINT AT `docs/plans/README.md:60-67` step 3 (already canonical; iter-1 fold) |
 | Focused commits | 14 | 6 | Rule + bash example + "Don't `git add .`" | (nothing — already short) |
 | Python version | 5 | 5 | Full content | (nothing) |
 | Environment | 5 | 5 | Full content | (nothing) |
-| Key implementation invariants | 13 | 13 | Full content | (nothing — load-bearing technical constraints) |
+| Key implementation invariants | 13 | 13 | Full content (load-bearing) | (nothing) |
 
-**Estimated new total**: 22 + 8 + 8 + 17 + 6 + 4 + 9 + 6 + 6 + 6 + 5 + 5 + 13 + section-separator blanks (~14) = **~129 lines**. Within 120-130 target.
+**Estimated new total**: 22 + 8 + 6 + 17 + 6 + 4 + 9 + 6 + 6 + 6 + 5 + 5 + 13 + ~14 separator blanks = **~127 lines**. Within 120-130 target.
 
-### Bucket C — shared/CLAUDE.md.tmpl tightening
+### Bucket C — AGENTS.md + shared/AGENTS.md.tmpl tightening (atomic Commit 3)
 
-Mirror Bucket B. Preserve all Jinja conditionals:
-- `{% if language == "python" %}` and `{% if package_manager == "uv" %}` for language/PM-specific guidance
-- `{% if github_review_mode == "claude" %}` etc. for github-review-specific notes
-- `{{ project_name }}`, `{{ python_version }}` etc. variable substitutions
-
-The template renders to ~120-130 lines for typical Python+uv project contexts.
-
-### Bucket D — AGENTS.md + shared/AGENTS.md.tmpl tightening
-
-| Section | Current lines | Target | What stays | What moves |
+| Section | Current | Target | What stays | What moves |
 |---|---|---|---|---|
 | Header + intro | 10 | 10 | Full content | (nothing) |
 | What to flag with high confidence | 45 | 45 | Full content (reviewer-specific) | (nothing) |
@@ -168,92 +189,142 @@ The template renders to ~120-130 lines for typical Python+uv project contexts.
 | Local quality gate | 3 | 3 | Full content | (nothing) |
 | Plan Review Guidance | 37 | 37 | Full content (reviewer-specific) | (nothing) |
 | Triaging review findings | 23 | 17 | (covered by Bucket A) | (covered by Bucket A) |
-| Cross-session state recovery | 5 | 4 | Mirror CLAUDE.md cut | |
-| Self-improvement loop | 10 | 6 | Mirror CLAUDE.md cut | (full protocol already in CONTRIBUTING.md per Bucket A) |
+| Cross-session state recovery | 5 | 4 | Compressed | "If multiple plan files…" elaboration |
+| Self-improvement loop | 10 | 6 | Read LESSONS at session start + Reviewer-is-read-only rule + Do-NOT-edit | Promote/archive elaboration |
 | Tone | 5 | 5 | Full content | (nothing) |
 
-**Estimated new total**: 10+45+5+3+37+17+4+6+5 + section-separator blanks (~9) = **~141 lines**. Slightly above the 80-100 target — but the "What to flag with high confidence" + "Plan Review Guidance" sections are reviewer-specific and can't be moved to CONTRIBUTING.md without losing their purpose. AGENTS.md is read by review-only agents who can't read CONTRIBUTING.md mid-review (well, they CAN, but the rules need to be at-hand for fast triage). Targeting AGENTS.md ~135 lines is realistic; going below 100 would require dropping reviewer-specific guidance which is exactly what AGENTS.md exists to carry.
+**Estimated new total** (iter-1 fold: arithmetic corrected): 10 + 45 + 5 + 3 + 37 + 17 + 4 + 6 + 5 + ~9 separator blanks = **~141 lines**. **No net reduction in headline terms** because the only shrinkable non-reviewer sections are tiny.
 
-**Decision**: Accept AGENTS.md at ~135 lines (down from 141 — 6-line savings from triage shrink + Self-improvement compression).
+**(d)-class decision flagged for human-approval gate**: AGENTS.md cannot hit the
+pre-loop ~80-100 target without cutting the 45-line "What to flag" or 37-line "Plan
+Review Guidance" sections — both reviewer-specific and load-bearing. Accept revised
+target ~135 (down from 141 — modest 6-line savings from triage shrink + 5-line
+self-improvement compression), OR rewrite the reviewer-specific sections more
+tersely (separate exercise — out of scope for IA refactor).
 
-### Bucket E — gh-hint code change
+### Bucket D — gh-hint code change (Commit 4)
 
-In `bootstrap_lib/cli.py`'s `main()`, the v1 `--apply` success block (around line 598-610), add a new block:
+In `bootstrap_lib/cli.py`'s `main()`, the v1 `--apply` success block at **lines 358-378
+on main** (iter-1 fold: corrected from "598-610" which was PR-#17-branch-relative).
+Insert new block AFTER existing success prints but BEFORE the `if args.github_review !=
+"none":` CLAUDE_CODE_OAUTH_TOKEN block:
 
 ```python
 if args.github_review != "none":
     # Detect: does target_root have a git remote already?
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(target_root), "remote"],
-            capture_output=True, text=True, check=False,
-        )
-        has_remote = result.returncode == 0 and result.stdout.strip()
-    except (FileNotFoundError, OSError):
-        has_remote = False
+    # Two states: (a) no .git/ at all → user needs `git init` first;
+    # (b) .git/ exists but no remote → user only needs remote creation
+    # (iter-1 fold: Claude 1-3 — distinguish the two cases for accurate
+    # hints). Use `git -C ... remote` (subprocess, not gh CLI; gh is an
+    # optional prereq but git is required).
+    git_dir = target_root / ".git"
+    has_git = git_dir.is_dir()
+    has_remote = False
+    if has_git:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(target_root), "remote"],
+                capture_output=True, text=True, check=False, timeout=5,
+            )
+            has_remote = result.returncode == 0 and bool(result.stdout.strip())
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            # iter-1 fold: Claude 2-2 — `subprocess.TimeoutExpired` subclasses
+            # `SubprocessError` (NOT `OSError`); the broader catch ensures the
+            # hint detection never crashes the apply itself.
+            has_remote = False
 
     if not has_remote:
-        owner = args.github_owner or "<owner>"
-        repo = args.github_repo or args.project_name
+        # iter-1 fold: Codex #1 — safe-pattern checklist, NOT bulk add.
+        # Tell the user what files the skill wrote (from `planned_files`)
+        # via the existing `restore manifest` reference; they explicitly
+        # `git add` those + their own intended files.
         print("")
-        print(f"create the GitHub repo + push (target has no git remote yet):")
-        print(f"  cd {target_root}")
-        print(f"  git init && git add -A && git commit -m 'initial bootstrap'")
-        print(f"  gh repo create {owner}/{repo} --source=. --push --public")
-        print(f"  (or --private; requires `gh` CLI authenticated)")
+        if not has_git:
+            print(f"create the GitHub repo + push:")
+            print(f"  cd {target_root}")
+            print(f"  git init")
+            print(f"  git status --short                 # review what's about to be staged")
+            print(f"  git add <files>                    # pick explicitly; NEVER `git add -A` or `git add .`")
+            print(f"  git commit -m 'initial bootstrap'")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --public")
+        else:
+            print(f"your repo isn't on GitHub yet — create the remote + push:")
+            print(f"  cd {target_root}")
+            print(f"  git status --short                 # review uncommitted changes first")
+            print(f"  git add <files>                    # explicit picks (skipping debug/state)")
+            print(f"  git commit -m 'initial bootstrap'  # only if there are pending changes")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --public")
+        print(f"  (--public or --private; requires `gh` CLI authenticated)")
 ```
 
-Placement: AFTER the existing CLAUDE_CODE_OAUTH_TOKEN instructions if `--github-review != none`, OR BEFORE them (TBD during impl based on flow readability). Suggested: BEFORE the OAuth-token instructions, because creating the repo logically comes first.
+**Placement**: BEFORE the existing CLAUDE_CODE_OAUTH_TOKEN instructions if
+`--github-review != none`, because creating the repo logically comes first
+(repo-creation → push → workflows fire → OAuth token needed for `claude[bot]` to post).
 
-### Bucket F — Tests
+**Iter-1 fold (Claude 1-2)**: dropped the `or "<owner>"` / `or args.project_name`
+fallbacks — when `--github-review != none`, `_resolve_mode` already requires both
+flags (cli.py:84). They can never be None at this point.
+
+### Bucket E — Tests
 
 | Test | Assertion |
 |---|---|
-| `test_triage_byte_identity.py::test_triage_block_byte_identical_across_six_surfaces` | Continues to pass — the new short block is byte-identical across all 6 surfaces. |
-| `test_triage_byte_identity.py::test_four_questions_extension_present` | Continues to pass — the 4 question substrings are preserved verbatim. |
-| `test_dogfood_doc_sanity.py` | Continues to pass — the triage heading still exists. |
-| NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_no_remote` | Apply to a fresh target, assert "gh repo create" appears in stdout when --github-review=claude + no remote. |
-| NEW `test_bootstrap_cli.py::test_gh_repo_hint_absent_when_remote_exists` | Pre-init target with `git init` + add a remote, apply, assert "gh repo create" does NOT appear. |
+| `test_triage_byte_identity.py::test_triage_block_byte_identical_across_six_surfaces` | Continues to pass — new short block is byte-identical across all 6 surfaces. |
+| `test_triage_byte_identity.py::test_four_questions_extension_present` | Continues to pass — 4 question substrings preserved verbatim. |
+| `test_dogfood_doc_sanity.py` | Continues to pass — triage heading still exists. |
+| `test_selftest_overlap.py::test_overlap_docs_plans_readme` | Continues to pass after Commit 1 — `shared/docs-plans-README.md.tmpl` and `docs/plans/README.md` get the same triage shrink in lockstep (iter-1 fold: previously claimed unaffected, false). |
+| NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_no_git_dir` | Apply to a fresh target with no `.git/`, assert `git init` + `gh repo create` appear in stdout when --github-review=claude. |
+| NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_git_no_remote` | Pre-`git init` the target, apply, assert ONLY `gh repo create` (no `git init` re-run) appears. |
+| NEW `test_bootstrap_cli.py::test_gh_repo_hint_absent_when_remote_exists` | Pre-init + add a remote, apply, assert NO gh-hint appears. |
+| NEW `test_bootstrap_cli.py::test_gh_repo_hint_never_uses_bulk_add` | Apply to a fresh target, assert NEITHER `git add -A` NOR `git add .` appears in stdout. (iter-1 fold: Codex #1 — safety regression guard.) |
 | `test_shim_cli_help_consistency.py` | Continues to pass — no `_flags.py` changes. |
 | All other tests | Continue to pass. |
 
 ## Architecture decisions
 
-- **CLAUDE.md vs CONTRIBUTING.md**: CLAUDE.md is the always-on session context;
-  CONTRIBUTING.md is consulted on-demand. Rule of thumb: every line in CLAUDE.md
-  must be a *rule* you can't forget OR a *pointer* to where detail lives. Workflow
-  steps, prompt templates, calibration paragraphs go in CONTRIBUTING.md.
-- **AGENTS.md vs CONTRIBUTING.md**: AGENTS.md is read by *review-only* agents; it
-  carries reviewer-specific guidance that those agents need at hand. Reviewers CAN
-  read CONTRIBUTING.md, but the rules they apply (triage + 4-questions) need to be
-  in AGENTS.md for fast access. AGENTS.md ends up larger than CLAUDE.md because it
-  carries reviewer-specific content.
-- **Byte-identity invariant preserved**: the "## Triaging review findings" section
-  stays byte-identical across the 6 surfaces (3 dogfood + 3 templates). The new
-  shorter version is the new canonical bytes.
-- **gh-hint is informational, not actionable**: the skill prints a hint; the user
-  runs `gh repo create` themselves. The skill doesn't invoke `gh` or modify GitHub
-  remote state — keeps the safety contract (manifest-based reversibility) intact.
-- **Two-phase rollout vs one PR**: shipped as 5 focused commits in one PR rather
-  than 5 separate PRs because the changes are tightly coupled (the CLAUDE.md tightening
-  + CONTRIBUTING.md absorption are interdependent; splitting would create an
-  intermediate state where CLAUDE.md references content not yet in CONTRIBUTING.md).
-- **PR #17 merge handling**: this PR lands independently of PR #17. After PR #17
-  merges, a small follow-up PR mirrors the gh-hint into adopt-mode's
-  `_main_apply_adopt` success path. Flagged in BACKLOG.md.
+- **CLAUDE.md vs CONTRIBUTING.md vs docs/plans/README.md**: three on-demand surfaces.
+  CLAUDE.md is always-on session context — short rules + pointers. `docs/plans/README.md`
+  is the canonical home for **plan-loop discipline** (filename convention, bootstrap
+  exception, when-to-stop rule, consistency self-check cadence, human-approval-gate
+  wording) — CLAUDE.md POINTS at it for these topics. `CONTRIBUTING.md` is the
+  canonical home for **per-change workflow detail** (Tier-1 prompt templates,
+  per-change checklist, triage calibration + plateau + evidence-table format) —
+  CLAUDE.md POINTS at it for these.
+- **AGENTS.md vs CONTRIBUTING.md**: AGENTS.md is read by *review-only* agents that
+  may not be able to read other docs mid-review. So AGENTS.md carries reviewer-specific
+  guidance (what to flag, plan-review guidance) inline. Verbose triage detail still
+  refs CONTRIBUTING.md (reviewers CAN read on-demand for that).
+- **Byte-identity invariant preserved**: triage section stays byte-identical across
+  the 6 surfaces (3 dogfood + 3 templates). The new shorter version is the new canonical.
+- **gh-hint is informational + safe**: prints a hint; user runs `gh` themselves.
+  Detection distinguishes no-`.git/` vs `.git/-but-no-remote` (iter-1 fold: Claude 1-3).
+  Hint NEVER includes `git add -A` / `git add .` (iter-1 fold: Codex #1; contradicts
+  `LESSONS.md:48`). User explicitly picks files.
+- **Atomic CLAUDE.md+tmpl and AGENTS.md+tmpl commits** (iter-1 fold: Claude 2-4) —
+  no byte-identity test guards non-triage drift between dogfood and templates, so the
+  commit boundary itself prevents drift.
+- **PR #17 merge handling**: independent of PR #17. Follow-up PR after PR #17 merges
+  mirrors gh-hint into adopt-mode's `_main_apply_adopt`. Iter-1 fold: the original
+  "no conflict expected" claim is downgraded to "verify at impl time" — the line
+  numbers cited in v0 of this plan were measured against PR #17's branch (not main).
+- **Self-improvement protocol stays in CLAUDE.md compressed** (iter-1 fold) — no new
+  CONTRIBUTING.md section needed; the protocol fits in 6 lines of CLAUDE.md +
+  reference to AGENTS.md for read-only-context detail.
 
 ## Risks + mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Byte-identity test fails due to trailing whitespace / newline drift across the 6 surfaces | Use Python script with `text.replace(OLD, NEW)` to ensure exact byte match; run test after each surface edit. |
-| Four-questions test fails because a question substring got accidentally shortened | Preserve the question text verbatim in the new short block (closes the test's exact-substring assertion). |
-| Wording drift in CLAUDE.md cut sections introduces an unintended meaning change | Move-not-rewrite discipline: text that stays in CLAUDE.md stays as-is; text moved to CONTRIBUTING.md is moved verbatim (no re-wording). |
-| CONTRIBUTING.md cross-refs from CLAUDE.md become broken if CONTRIBUTING.md is renamed / restructured | Document in CONTRIBUTING.md's own header that cross-refs from CLAUDE.md exist; flag if a future restructure proposal removes or renames sections. |
-| gh-hint subprocess call fails / hangs on weird targets (NFS, slow filesystems) | Use `subprocess.run(check=False, timeout=5)` + treat any exception as "no remote detected, print hint"; never fail the apply because of gh-hint detection. |
-| Test `test_gh_repo_hint_when_no_remote` flaky if `gh` CLI not installed | Use `git -C <out> remote` for detection (not `gh remote`); `git` is already a hard prereq. The hint text contains `gh repo create` but the detection doesn't depend on `gh`. |
-| PR #17's cli.py changes conflict with the gh-hint addition on merge | gh-hint is added in the v1 success block (line ~598-610 of main.cli on main); PR #17 added the adopt-mode dispatch BEFORE this block but didn't modify the block itself. No conflict expected; flagged as follow-up after PR #17 merges. |
-| The "absorb into CONTRIBUTING.md" piece grows CONTRIBUTING.md from 190 → ~280 lines | Accepted. CONTRIBUTING.md is consulted on-demand; size matters less than for CLAUDE.md. |
+| Four-questions test fails because a question substring got shortened | Preserve question text verbatim in new short block. |
+| Selftest_overlap test fails because `docs/plans/README.md` and `shared/docs-plans-README.md.tmpl` drift | Bucket A applies the same triage shrink to both files in lockstep; run `test_selftest_overlap.py` after Commit 1. |
+| Wording drift in moved-to-CONTRIBUTING.md content vs original CLAUDE.md (e.g. silent meaning change) | Move-not-rewrite discipline: text moved to CONTRIBUTING.md (calibration + plateau + evidence-table format) is moved verbatim from current CLAUDE.md lines 88-90. |
+| CLAUDE.md cross-refs to `docs/plans/README.md` become broken if README.md is restructured | Document in `docs/plans/README.md`'s own header that cross-refs from CLAUDE.md exist; future restructure proposals should preserve the anchor sections. |
+| gh-hint subprocess call hangs on slow filesystems (NFS, etc.) | `subprocess.run(check=False, timeout=5)` + broad `except (FileNotFoundError, OSError, subprocess.SubprocessError)` catches `TimeoutExpired` (iter-1 fold: Claude 2-2). Detection failure → no hint printed; apply still succeeds. |
+| User runs the hint's bulk-paste command, accidentally commits secrets | Mitigated by Codex #1 fold: the hint NEVER uses `git add -A`. It uses `git status --short` + `git add <files>` pattern. Test `test_gh_repo_hint_never_uses_bulk_add` enforces. |
+| Test `test_gh_repo_hint_*` flaky on CI without `gh` CLI | Detection uses `git -C <out> remote`, not `gh`. `git` is already hard prereq. Test asserts hint-text appears, doesn't run `gh`. |
+| PR #17's cli.py changes conflict with the gh-hint addition on merge | **To be verified at impl time** (iter-1 fold). PR #17 added the adopt-mode dispatch BEFORE the v1 success block on its branch; whether it modifies the block itself needs to be checked by diffing PR #17 against main. If conflict: rebase impl PR after PR #17 merges. |
+| Non-triage CLAUDE.md ↔ shared/CLAUDE.md.tmpl drift (no byte-identity test) | Atomic Commit 2 (CLAUDE.md + tmpl in same commit) prevents intermediate drift. Manual diff during Tier-1 review verifies the cuts mirror. |
 
 ## Verification (acceptance criteria)
 
@@ -264,55 +335,82 @@ Placement: AFTER the existing CLAUDE_CODE_OAUTH_TOKEN instructions if `--github-
 
 ### Phase 2 — post-implementation gates
 
-(Ordered; gate 1 must pass before gate 2, etc.)
+(Ordered; gate 1 must pass before gate 2.)
 
-1. **Draft Implementation PR opened** on branch `impl/tighten-info-architecture`
-   (branched from main; not from PR #17's branch).
-2. **All 5 focused commits land** in order: triage shrink + CONTRIBUTING absorb,
-   CLAUDE.md tightening, shared/CLAUDE.md.tmpl tightening, AGENTS.md +
-   shared/AGENTS.md.tmpl tightening, gh-hint code.
+1. **Draft Implementation PR opened** on branch `refactor/tighten-info-architecture`
+   (iter-1 fold: was `impl/...`, not in CONTRIBUTING.md branch convention).
+2. **All 4 focused commits land** in order: triage shrink + CONTRIBUTING absorb,
+   CLAUDE.md+tmpl atomic tightening, AGENTS.md+tmpl atomic tightening, gh-hint code.
 3. **Per-commit Tier-1 review** (`make review-commit-by-claude`) clean (no imp-3
    findings) before push.
 4. **`make check` passes** (full pytest + ruff suite).
-5. **`tests/test_triage_byte_identity.py` passes** — confirms triage byte-identity
-   across 6 surfaces.
-6. **`tests/test_dogfood_doc_sanity.py` passes** — confirms triage heading + bullets
-   still present.
-7. **`tests/test_bootstrap_cli.py::test_gh_repo_hint_when_no_remote` passes** + the
-   no-fire counterpart passes.
-8. **Final line counts measured**:
+5. **`test_triage_byte_identity.py` passes** — triage byte-identity across 6 surfaces.
+6. **`test_dogfood_doc_sanity.py` passes** — triage heading still present.
+7. **`test_selftest_overlap.py` passes** — `docs-plans-README.md.tmpl` byte-identical
+   to `docs/plans/README.md` (iter-1 fold: was incorrectly excluded; this gate is new).
+8. **New `test_bootstrap_cli.py` gh-hint tests pass** — 4 tests:
+   no-`.git/`, `.git/`-no-remote, has-remote (no fire), never-uses-bulk-add.
+9. **Final line counts measured**:
    - `CLAUDE.md` (skill): 120-130 (acceptable: 115-140)
-   - `AGENTS.md` (skill): ~135 (down from 141)
-   - `shared/CLAUDE.md.tmpl`: 160-180 (renders to ~120-130)
+   - `AGENTS.md` (skill): ~135 (down from 141 — modest, **(d)-decision accepted**
+     per pre-loop revision)
+   - `shared/CLAUDE.md.tmpl`: ~225 (renders to 120-130 for typical Python+uv context)
    - `shared/AGENTS.md.tmpl`: ~115 (down from 119)
-   - `CONTRIBUTING.md`: ~270-290 (up from 190; absorbed content)
-   - `shared/CONTRIBUTING.md.tmpl`: ~330-350 (up from 252)
-9. **PR ready-for-review** triggers `claude[bot]` Tier-2 auto-review.
-10. **Tier-2 findings triaged** per (a/b/c/d).
-11. **Merge** when CI green + no imp-3 Tier-2 findings remain.
+   - `CONTRIBUTING.md`: ~205-220 (up from 190; absorbs only triage-section
+     full-discipline — iter-1 fold: NOT also absorbing plan-loop/human-approval which
+     stay in `docs/plans/README.md`)
+   - `shared/CONTRIBUTING.md.tmpl`: ~265-280 (up from 252)
+10. **Manual diff CLAUDE.md vs shared/CLAUDE.md.tmpl** — non-triage sections mirror
+    in shape (atomic Commit 2 prevents drift; this gate is the human-discipline check).
+11. **Manual diff AGENTS.md vs shared/AGENTS.md.tmpl** — non-triage sections mirror.
+12. **PR ready-for-review** triggers `claude[bot]` Tier-2 auto-review.
+13. **Tier-2 findings triaged** per (a/b/c/d) with 4-questions check.
+14. **Merge** when CI green + no imp-3 Tier-2 findings remain.
 
 ## Iteration log (this plan)
 
 | Iter | Findings | Verdict |
 |---|---|---|
-| 1 (codex) | (TBD — will run after this draft) | (TBD) |
-| 1 (claude) | (TBD) | (TBD) |
-| ... | ... | ... |
+| 1 (codex) | 2 imp-3 + 3 imp-2 | do not implement yet — see iter-1 fold log below |
+| 1 (claude) | 2 imp-3 + 5 imp-2 + 4 imp-1 | needs another iteration — see iter-1 fold log below |
+| 1-fold | All (a)-folds applied: gh-hint safe-pattern (Codex #1), content-destination rerouted to `docs/plans/README.md` (Codex #2 / Claude 3-1+3-2), selftest_overlap test added (Codex #3 / Claude 2-3), AGENTS.md target revised + arithmetic fixed (Codex #5 / Claude 2-5), cli.py line numbers corrected to 358-378 (Claude 2-1), subprocess timeout + broader except (Claude 2-2), atomic Commits 2/3 (Claude 2-4), branch prefix `refactor/...` (Claude 1-1), dead-code fallbacks dropped (Claude 1-2), gh-hint two-state detection (Claude 1-3). Codex #4 (Codex-bot wording) rejected as out-of-scope. Claude 1-4 (line-count estimates hand-wavy) rejected as already covered by acceptance band. |
 
 ## Evidence table — what was folded and where
 
-| Source | Finding | Fold location | Triage |
+| Source | Finding (one-line) | Triage | Where in plan |
 |---|---|---|---|
+| Codex iter-1 #1 | `git add -A` unsafe per LESSONS.md:48 | **(a) fold** | Bucket D code sample uses safe explicit-paths pattern + `git status` checklist; new test `test_gh_repo_hint_never_uses_bulk_add`; Architecture-decisions "gh-hint informational + safe" bullet |
+| Codex iter-1 #2 / Claude 3-1+3-2 | "No content loss" contradicts NOT-in-scope; verbose detail already in `docs/plans/README.md`, not CONTRIBUTING.md | **(a) major refold** | Buckets A+B re-routed: plan-loop / human-approval detail → POINT AT `docs/plans/README.md`; self-improvement protocol → stays in CLAUDE.md compressed; only triage calibration/plateau/evidence-table → CONTRIBUTING.md |
+| Codex iter-1 #3 / Claude 2-3 | NOT-in-scope falsely says selftest_overlap unaffected | **(a) fold** | Bucket E test list now includes `test_overlap_docs_plans_readme`; Phase 2 gate 7 added; NOT-in-scope claim removed |
+| Codex iter-1 #4 | Codex-bot wording is stale in files we touch | **(c) reject** | NOT-in-scope explicitly: "out of scope for IA refactor; BACKLOG.md:416 trigger remains valid for a separate session" |
+| Codex iter-1 #5 / Claude 2-5 | AGENTS.md target ~80-100 unachievable; arithmetic doesn't add up | **(a) fold + (d) surface to human** | Pre-loop constraint revised: AGENTS.md ~125-135 acceptable; Bucket C arithmetic corrected; (d)-decision flagged for human-approval gate |
+| Claude 2-1 | cli.py line numbers wrong (598-610 is PR-#17-branch, not main) | **(a) fold** | Bucket D: "lines 358-378 on main"; Risks row downgraded "no-conflict" claim to "verify at impl time" |
+| Claude 2-2 | gh-hint subprocess missing `timeout=` + can't catch TimeoutExpired | **(a) fold** | Bucket D code includes `timeout=5` + `except (..., subprocess.SubprocessError)`; Risks row reconciled |
+| Claude 2-4 | No byte-identity test for non-triage CLAUDE.md↔tmpl drift | **(a) fold** | Sequencing reduced 5 → 4 commits (Commits 2+3 merged atomic; same for 4). Phase 2 gates 10+11 added for manual diff check |
+| Claude 1-1 | Branch prefix `impl/` not in CONTRIBUTING list | **(a) fold** | Phase 2 gate 1: `refactor/tighten-info-architecture` |
+| Claude 1-2 | Dead-code `or "<owner>"` fallbacks | **(a) fold** | Bucket D code sample drops the fallbacks; comment explains why |
+| Claude 1-3 | gh-hint says `git init` even when target is already a git repo | **(a) fold** | Bucket D distinguishes no-`.git/` vs `.git/-but-no-remote`; two-state print logic |
+| Claude 1-4 | Line-count estimates hand-wavy | **(c) reject** | Acceptance band already absorbs estimate noise; line-count is auditable post-impl via `wc -l` |
 
 ## Lessons surfaced
 
-(none yet)
+- **Plan author error to avoid**: line-number references in plans should be measured
+  against the branch the plan will be implemented on (main, in this case), not the
+  branch the author was working in when drafting (Claude 2-1). When citing
+  `cli.py:N`, always run `git checkout main` first and `wc -l` to verify.
+- **Information-architecture risk**: "move detail to CONTRIBUTING.md" is the wrong
+  default when `docs/plans/README.md` is already canonical. The default move for
+  plan-loop discipline is "point at docs/plans/README.md", not "duplicate into
+  CONTRIBUTING.md" (Claude 3-2). This is a project-specific lesson that should land
+  in `LESSONS.md` during impl (after impl PR's first Tier-1).
 
 ## What we are NOT doing in this PR
 
 - Adopt-mode (PR #17) gh-hint — follow-up PR after PR #17 merges.
-- CONTRIBUTING.md restructure beyond absorbing moved content.
+- CONTRIBUTING.md restructure beyond Bucket A's new triage section.
 - Restructure of docs/plans/README.md beyond the triage section.
+- Codex-bot wording fix in CLAUDE.md / shared/CLAUDE.md.tmpl (BACKLOG.md:416 — separate
+  session).
 - Wording rewrites of preserved CLAUDE.md / AGENTS.md sections (move-not-rewrite).
 - Updates to BACKLOG.md (handled in impl PR).
 - Cross-language adoption-mode (Node, Go) — parked separately.
@@ -322,14 +420,21 @@ Placement: AFTER the existing CLAUDE_CODE_OAUTH_TOKEN instructions if `--github-
 - `CLAUDE.md` (skill repo's own) — current 182 lines
 - `AGENTS.md` (skill repo's own) — current 141 lines
 - `CONTRIBUTING.md` (skill repo's own) — current 190 lines
+- `docs/plans/README.md` — current 157 lines (already canonical for plan-loop;
+  CLAUDE.md will POINT here)
 - `shared/CLAUDE.md.tmpl` — current 228 lines (renders 120-130 for typical context)
 - `shared/AGENTS.md.tmpl` — current 119 lines
 - `shared/CONTRIBUTING.md.tmpl` — current 252 lines
-- `docs/plans/README.md` + `shared/docs-plans-README.md.tmpl` — current 157 lines each
+- `shared/docs-plans-README.md.tmpl` — current 157 lines
 - `tests/test_triage_byte_identity.py` — the byte-identity test (6 surfaces)
+- `tests/test_selftest_overlap.py` — checks docs-plans-README.md.tmpl byte-renders
+  to docs/plans/README.md (iter-1 fold: was missed; is in scope)
 - `tests/test_dogfood_doc_sanity.py` — the triage-presence test
-- `bootstrap_lib/cli.py` lines 591-612 — the v1 post-apply success block where gh-hint
-  goes
+- `bootstrap_lib/cli.py` lines **358-378** — the v1 post-apply success block where
+  gh-hint goes (iter-1 fold: corrected from 598-610)
 - `tests/test_bootstrap_cli.py` — pattern for the new gh-hint tests
+- `LESSONS.md:48` — the don't-bulk-add lesson the gh-hint must respect
+- `BACKLOG.md:416` — the Codex-bot wording entry (NOT folded by this PR)
 - PR #17 (open) — the adoption-mode work in flight; this PR is independent but its
-  gh-hint will need a mirror-edit in `_main_apply_adopt` after PR #17 merges
+  gh-hint will need a mirror-edit in `_main_apply_adopt` after PR #17 merges (verify
+  no-conflict claim at impl time)
