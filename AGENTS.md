@@ -114,20 +114,13 @@ See `CONTRIBUTING.md` for the full triage discipline: imp-3 calibration and the 
 
 ## Cross-session state recovery
 
-If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history (current branch + recent main), open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability. Cheap to run; prevents the failure mode where the agent proposes work that's already shipped.
-
-If multiple plan files are present in `docs/plans/`, `make status` prints a loud WARN listing the top 3 by mtime — pass `make status PLAN_FILE=docs/plans/<active>.md` when the auto-detect might be wrong.
+If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history, open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability — cheap to run, and it prevents proposing work that's already shipped. If `docs/plans/` holds multiple plan files, pass `make status PLAN_FILE=docs/plans/<active>.md` to override the mtime auto-detect.
 
 ## Self-improvement loop (LESSONS.md)
 
-At session start: read `LESSONS.md` "Active" section. Apply the rules during this session.
+At session start: read `LESSONS.md` "Active" section and apply the rules.
 
-**Reviewer (you) is a read-only context for `LESSONS.md`**: this `AGENTS.md` is read by automated reviewers (Codex GitHub bot, `make review-plan-by-codex`, `make review-commit-by-claude`, and any session told "Do NOT edit files"). Appending to `LESSONS.md` from such a session would violate the read-only contract.
-
-- **If you (the reviewer) surface a new mistake-class** during a finding: propose the lesson in your review output (or in the plan's `## Lessons surfaced` section if reviewing a plan). The driver triages reviewer-proposed lessons in a later writable session — appends real ones to `LESSONS.md`; rejects duplicates or project-local noise.
-- **Do NOT edit `LESSONS.md` directly from a review session.**
-
-(Writable-session drivers append directly per the same instructions in `CLAUDE.md`.)
+This `AGENTS.md` is a **read-only context** for `LESSONS.md` — it is read by automated reviewers and any session told "Do NOT edit files". If you (the reviewer) surface a new mistake-class, propose the lesson in your review output (or the plan's `## Lessons surfaced` section); do NOT edit `LESSONS.md` directly. The driver triages reviewer-proposed lessons in a later writable session — real ones land in `LESSONS.md`, duplicates and project-local noise are rejected.
 
 ## Tone
 
