@@ -8,6 +8,33 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from the info-architecture refactor
+
+### Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2)
+
+**Status**: parked. **Source**: scoped out of the info-architecture refactor PR (`refactor/tighten-info-architecture`, 2026-05-21).
+
+**Why parked**: that PR added the gh-repo-create hint to the **v1**
+`--apply` post-apply success block in `bootstrap_lib/cli.py` (inside
+`if args.github_review != "none":`). The adopt-mode apply path
+(`_main_apply_adopt`, `bootstrap_lib/cli.py:589`) has its own success
+printout and does NOT print the hint. Mirroring it there was deliberately
+left as a separate follow-up to keep the IA-refactor PR focused (per that
+plan's NOT-in-scope list and the iter-3 Codex 1 decision: "out of scope
+regardless of merge order").
+
+**Triggers to pick up**: a user runs `--apply --mode=adopt` with
+`--github-review != none` and is confused that no repo-creation hint
+appears, OR the next PR that touches `_main_apply_adopt`'s success block
+for any reason.
+
+**Rough effort**: ~30 min — extract the hint block into a small helper
+(it is already self-contained) and call it from both `main()`'s v1
+success path and `_main_apply_adopt`; add a parallel test in
+`tests/test_bootstrap_cli.py` or `tests/test_mode_adopt_smoke.py`.
+
+---
+
 ## Code-review follow-ups from PR #1
 
 ### `write_manifest` not atomic (imp-2)
@@ -445,9 +472,9 @@ intentional opt-in). Tests in `tests/test_bootstrap_cli.py`.
 
 ---
 
-### Update CLAUDE.md + shared/CLAUDE.md.tmpl: Codex GitHub bot IS configured (imp-2)
+### ✅ Update CLAUDE.md + shared/CLAUDE.md.tmpl: Codex GitHub bot IS configured (imp-2) — DONE
 
-**Status**: parked. **Source**: discovered 2026-05-19 during PR #16 Tier-2 review verification.
+**Status**: ✅ shipped 2026-05-21 — the info-architecture refactor PR (`refactor/tighten-info-architecture`) replaced the stale "Codex GitHub bot is NOT configured" caveat in `CLAUDE.md` + `shared/CLAUDE.md.tmpl` with a positive both-bots description (`claude[bot]` + `chatgpt-codex-connector[bot]`). **Source**: discovered 2026-05-19 during PR #16 Tier-2 review verification.
 
 **Why parked**: Both `CLAUDE.md:97` and `shared/CLAUDE.md.tmpl:131` (the
 generated-project template that dogfoods this) state "Codex GitHub bot
@@ -763,11 +790,11 @@ The pre-empirical "8 collisions" number from PR #6's plan was incorrect — it c
 
 ---
 
-### Tighten CLAUDE.md two-tier review wording from "or" to explicit same-AI / cross-AI split (imp-2)
+### ✅ Tighten CLAUDE.md two-tier review wording from "or" to explicit same-AI / cross-AI split (imp-2) — DONE
 
-**Status**: parked.
+**Status**: ✅ shipped 2026-05-21 — the info-architecture refactor PR (`refactor/tighten-info-architecture`) tightened the Tier-1 wording to "use the same AI as the implementer" in `CLAUDE.md` + `shared/CLAUDE.md.tmpl`'s Two-tier section, and replaced the bare `# or review-commit-by-codex` phrasing in `CONTRIBUTING.md` + `shared/CONTRIBUTING.md.tmpl` with the same-AI clarification.
 
-**Why parked**: CLAUDE.md's current "Tier-1 (after each focused commit, before push): `make review-commit-by-claude` or `make review-commit-by-codex`" presents both targets as equally valid options. The discipline (per LESSONS.md 2026-05-19 entry, surfaced via user push-back during PR #6 impl) is that Tier-1 uses the **same AI as the implementer** (Claude→Claude, Codex→Codex), and cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector). The "or" wording is too permissive and led to me using Codex for Tier-1 on Steps 2–3 before the user caught it.
+**Why parked** (historical): CLAUDE.md's former "Tier-1 (after each focused commit, before push): `make review-commit-by-claude` or `make review-commit-by-codex`" presents both targets as equally valid options. The discipline (per LESSONS.md 2026-05-19 entry, surfaced via user push-back during PR #6 impl) is that Tier-1 uses the **same AI as the implementer** (Claude→Claude, Codex→Codex), and cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector). The "or" wording is too permissive and led to me using Codex for Tier-1 on Steps 2–3 before the user caught it.
 
 **Triggers to pick up**:
 - Next plan-review session opens (this is a fundamental-shift candidate per LESSONS.md's "Promotion to CLAUDE.md only for FUNDAMENTAL shifts" rule).
