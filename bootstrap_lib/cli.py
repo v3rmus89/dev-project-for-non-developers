@@ -56,6 +56,15 @@ def _resolve_mode(args):
             bad.append("--github-repo")
         if args.package_manager is not None:
             bad.append("--package-manager")
+        # PR #7 Bucket A: --mode / --auto-accept-recommendations /
+        # --non-interactive are adopt-mode-only modifiers; rejected in
+        # restore mode.
+        if args.mode is not None:
+            bad.append("--mode")
+        if args.auto_accept_recommendations:
+            bad.append("--auto-accept-recommendations")
+        if args.non_interactive:
+            bad.append("--non-interactive")
         # --github-review has a default of 'none'; only flag it if user passed
         # a non-default — but we can't tell from args alone. Skip.
         if bad:
@@ -94,6 +103,43 @@ def _resolve_mode(args):
             2,
             f"--package-manager only valid with --language=python (got --language={args.language})",
         )
+
+    # PR #7 Bucket A: --mode=adopt validations.
+    if args.mode == "adopt":
+        if not args.apply:
+            raise CLIError(
+                2,
+                "--mode=adopt requires --apply "
+                "(for read-only inspection, use plain `--diff --language python`)",
+            )
+        if args.language != "python":
+            raise CLIError(
+                2,
+                "--mode=adopt is Python-only "
+                f"(got --language={args.language}; "
+                "adoption-mode for Node / Go is parked for a follow-up PR)",
+            )
+        if args.overwrite_existing:
+            raise CLIError(
+                2,
+                "--mode=adopt cannot be combined with --overwrite-existing — "
+                "adopt mode's per-file consent IS the consent model; "
+                "--overwrite-existing is the nuclear escape hatch for plain --apply",
+            )
+    else:
+        # --auto-accept-recommendations / --non-interactive only make sense
+        # under --mode=adopt; fail loud if used outside (silent no-op would
+        # mask a user's misunderstanding).
+        if args.auto_accept_recommendations:
+            raise CLIError(
+                2,
+                "--auto-accept-recommendations only valid with --mode=adopt",
+            )
+        if args.non_interactive:
+            raise CLIError(
+                2,
+                "--non-interactive only valid with --mode=adopt",
+            )
 
     if args.apply:
         return "apply"
