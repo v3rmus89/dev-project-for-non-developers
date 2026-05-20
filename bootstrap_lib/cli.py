@@ -785,14 +785,19 @@ def main(argv):
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")
     if args.github_review != "none":
-        # gh-repo-create hint. Two detection states: (a) no .git/ at all →
-        # the target needs `git init` first; (b) .git/ exists but no remote
+        # gh-repo-create hint. Two detection states: (a) no `.git` at all →
+        # the target needs `git init` first; (b) `.git` exists but no remote
         # → only remote creation is needed. Use `git -C ... remote`
         # (subprocess, not the gh CLI — gh is an optional prereq, git is
         # required). Detection fails open: any error → no hint, apply still
         # succeeds.
         git_dir = target_root / ".git"
-        has_git = git_dir.is_dir()
+        # `.exists()`, not `.is_dir()` — a linked `git worktree` (and a
+        # `--separate-git-dir` layout) stores `.git` as a FILE, not a
+        # directory. `git -C ... remote` below resolves the real gitdir
+        # correctly in both cases; treating a worktree as "no git" would
+        # wrongly tell the user to `git init` inside an existing repo.
+        has_git = git_dir.exists()
         has_remote = False
         if has_git:
             try:

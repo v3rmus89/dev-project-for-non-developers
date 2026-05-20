@@ -1115,3 +1115,59 @@ def test_gh_repo_hint_detection_fails_open_on_subprocess_error(tmp_path, monkeyp
     assert rc == 0, err  # apply must still succeed — detection fails open
     assert "apply successful" in out
     assert "gh repo create" in out
+
+
+def test_gh_repo_hint_treats_git_worktree_file_as_a_repo(tmp_path):
+    """A linked `git worktree` stores `.git` as a FILE, not a directory.
+    Detection must treat it as an existing repo — NOT instruct the user to
+    `git init` inside it (Tier-2 Codex P2 on PR #19)."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init")
+    _git(
+        main,
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=test",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "init",
+    )
+    target = tmp_path / "wt"
+    _git(main, "worktree", "add", str(target))
+    assert (target / ".git").is_file(), "sanity: a linked worktree's .git is a file"
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    # Worktree IS a git repo → no `git init`, just the remote-creation branch.
+    assert "git init" not in out
+    assert "isn't on GitHub yet" in out
+    assert "gh repo create" in out
+
+
+def test_gh_repo_hint_worktree_with_remote_suppresses_hint(tmp_path):
+    """A worktree whose shared repo already HAS a remote: `git -C <worktree>
+    remote` must resolve it through the `.git` worktree file, so the gh-hint
+    is fully suppressed (verifies remote detection works once `has_git` is
+    True for a worktree — Tier-1 review of the worktree fix)."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init")
+    _git(
+        main,
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "user.name=test",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "init",
+    )
+    _git(main, "remote", "add", "origin", "https://example.com/x/y.git")
+    target = tmp_path / "wt"
+    _git(main, "worktree", "add", str(target))
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "gh repo create" not in out
