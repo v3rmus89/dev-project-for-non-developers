@@ -32,38 +32,7 @@ Single source of truth for what's in scope and why:
 
 ## Plan review loop
 
-For substantive plans (multi-day work, cross-cutting changes, high-risk),
-write the plan to `docs/plans/YYYY-MM-DD-<slug>.md` rather than chat. Then
-run a local bidirectional review:
-
-```bash
-make review-plan-by-codex  PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
-make review-plan-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
-```
-
-Filename convention: outputs land at
-`/tmp/plan-review-<slug>-by-codex-iter-N.md` and `-by-claude-iter-N.md` so
-per-reviewer iteration counters stay independent. Read both, revise the
-plan, and repeat with `ITERATION=2` / `3` as needed.
-
-**Bootstrap exception**: PR #1's own plan was reviewed via Boxette's
-`make review-plan` (the precursor, Codex direction only) because the
-bidirectional loop is PART of what PR #1 ships. From PR #2 onward, this
-repo's `make review-plan-by-*` targets are the loop.
-
-**When to stop**:
-
-- No importance-3 findings remain, AND
-- Remaining 1/2 findings are either folded in or explicitly accepted as
-  trade-offs in the plan.
-
-**Pre-next-iter consistency self-check**: between folding an iteration's findings and invoking the next reviewer iteration, run:
-
-```bash
-make review-plan-consistency-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=N
-```
-
-(Where N matches the upcoming reviewer iter.) This is a narrow subagent that finds contradictions you may have introduced while folding — much cheaper than letting the next reviewer pass catch them. Fix any reported contradictions before triggering the next Codex/Claude review.
+For substantive plans (multi-day work, cross-cutting changes, high-risk), write the plan to `docs/plans/YYYY-MM-DD-<slug>.md` rather than chat, then run `make review-plan-by-codex` and `make review-plan-by-claude` (see the Commands table) and stop when no importance-3 findings remain. See `docs/plans/README.md` for the filename convention, the when-to-stop rule, and the `make review-plan-consistency-by-claude` self-check cadence.
 
 ## Triaging review findings
 
@@ -89,16 +58,14 @@ See `CONTRIBUTING.md` for the full triage discipline: imp-3 calibration and the 
 
 For substantive implementation PRs (multi-commit / cross-cutting), use BOTH tiers; neither catches what the other does.
 
-- **Tier-1 (after each focused commit, before push)**: `make review-commit-by-claude` or `make review-commit-by-codex`. Catches plan-impl drift, tests-passing-for-wrong-reason, contracts the author missed.
-- **Tier-2 (after push)**: `claude[bot]` auto-fires on PR open / draft→ready via `.github/workflows/claude-review.yml`. Re-trigger after subsequent pushes by commenting `@claude review this` on the PR. Catches "could only be discovered by running" class. (Codex GitHub bot is NOT configured in this project. Retroactively adding it is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag.)
+- **Tier-1 (after each focused commit, before push)**: `make review-commit-by-claude` or `make review-commit-by-codex` — use the same AI as the implementer. Catches plan-impl drift, tests-passing-for-wrong-reason, contracts the author missed.
+- **Tier-2 (after push)**: `claude[bot]` (via `.github/workflows/claude-review.yml`) + `chatgpt-codex-connector[bot]` auto-fire on PR open / draft→ready; re-trigger via `@claude review this` or `@codex review` comments. Catches the "could only be discovered by running" class.
 
-Both feed the same (a/b/c/d) triage rule above (with the four-questions check). Full pattern (prompt template + when-to-skip rules) in `CONTRIBUTING.md`.
+Both feed the same (a/b/c/d) triage rule above. Full pattern in `CONTRIBUTING.md`.
 
 ## Cross-session state recovery
 
-If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history (current branch + recent main), open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability. Cheap to run; prevents the failure mode where the agent proposes work that's already shipped.
-
-If multiple plan files are present in `docs/plans/`, `make status` prints a loud WARN listing the top 3 by mtime — pass `make status PLAN_FILE=docs/plans/<active>.md` when the auto-detect might be wrong.
+If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history, open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability — cheap to run, and it prevents proposing work that's already shipped. If `docs/plans/` holds multiple plan files, pass `make status PLAN_FILE=docs/plans/<active>.md` to override the mtime auto-detect.
 
 ## Pre-coding: regression safety + outcome measurement
 
@@ -112,32 +79,17 @@ Both go at the *start* of the task, not after the code is written.
 
 ## Self-improvement loop (LESSONS.md)
 
-At session start: read `LESSONS.md` "Active" section. Apply the rules during this session.
-
-**Writable-session-only append rule** — `AGENTS.md` is read by review-only contexts that explicitly cannot edit files; appending lessons from those contexts would violate the read-only contract:
-
-- **In a writable implementation session** (you're the driver, free to edit files): after ANY user push-back that changes your approach, OR any Tier-1/2 finding that surfaced a new mistake-class, append a new entry to `LESSONS.md` "Active" directly. Format: `### YYYY-MM-DD: <one-line mistake>` + **Trigger** + **Rule** + **Status**: Active. Commit alongside the implementation.
-- **In a read-only review session** (you're a reviewer running `make review-plan-by-codex`, `make review-commit-by-claude`, or any session that's been told "Do NOT edit files"): do NOT append to `LESSONS.md`. Instead, propose the lesson in your review output (or in the plan's `## Lessons surfaced` section if reviewing a plan). The driver triages reviewer-proposed lessons in a later writable session: appends real ones to `LESSONS.md`; rejects duplicates or project-local noise.
+At session start: read `LESSONS.md` "Active" section and apply the rules. In a **writable implementation session** (you're the driver, free to edit files): after any user push-back that changes your approach, OR any Tier-1/2 finding that surfaced a new mistake-class, append an entry to `LESSONS.md` "Active" directly — format `### YYYY-MM-DD: <one-line mistake>` + **Trigger** + **Rule** + **Status**: Active — and commit it alongside the implementation. In a **read-only review session** (you're a reviewer, or told "Do NOT edit files"): do NOT append to `LESSONS.md`; propose the lesson in your review output instead (see `AGENTS.md` for the reviewer-side protocol).
 
 Promote to `CLAUDE.md` only for FUNDAMENTAL shifts (rare; needs plan-review). Move to `LESSONS.md` "Archived" once the pattern hasn't fired for 3+ sessions OR the underlying problem is solved structurally.
 
 ## Mandatory human-approval gate
 
-After the loop converges and BEFORE any `git add` / `git commit`:
-
-1. Post a final-plan summary in chat: Scope, key decisions, anything the
-   user should push back on (especially decisions made autonomously during
-   folding).
-2. Wait for **approve** / **changes: …** / **read full file first**.
-3. If "changes": fold them, show the summary again.
-4. Only on **approve** proceed to commit + draft PR.
-
-See `docs/plans/README.md` step 3 for the canonical wording.
+After the loop converges and BEFORE any `git add` / `git commit`: (1) post a final-plan summary in chat (scope, key decisions, anything to push back on — especially autonomous fold decisions); (2) wait for **approve** / **changes: …** / **read full file first**; (3) on "changes", fold them and re-show the summary; (4) only on **approve** proceed to commit + draft PR. See `docs/plans/README.md` step 3 for the canonical wording.
 
 ## Focused commits
 
-Use **focused commits** — one logical change per commit. Imperative title,
-body explaining "why". Keep formatting-only commits separate from logic.
+Use **focused commits** — one logical change per commit, imperative title, body explaining "why". See `CONTRIBUTING.md` for the per-change checklist.
 
 ```bash
 git status
@@ -146,8 +98,7 @@ git commit -m "brief description of what changed"
 git push
 ```
 
-**Do NOT** use `git add .` — it can stage unrelated edits and produces
-unfocused commits. Always pick files explicitly.
+**Do NOT** use `git add .` — it stages unrelated edits and produces unfocused commits. Always pick files explicitly.
 
 ## Python version
 

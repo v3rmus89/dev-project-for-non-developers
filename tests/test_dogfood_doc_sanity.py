@@ -113,18 +113,21 @@ def test_triage_rule_present_in_dogfood(rel_path):
 
 
 def test_two_tier_section_present_in_dogfood_claude_md():
-    """PR #4 Tier-1 review #6: skill-repo's root `CLAUDE.md` is in `claude`
-    mode and must carry the Two-tier code review section. The selftest
-    (`tests/test_selftest_overlap.py`) doesn't cover root CLAUDE.md, so this
-    test catches drift between shared/CLAUDE.md.tmpl and the dogfood mirror."""
+    """PR #4 Tier-1 review #6: skill-repo's root `CLAUDE.md` must carry the
+    Two-tier code review section. The skill repo itself runs BOTH GitHub
+    review bots (`claude[bot]` + `chatgpt-codex-connector[bot]`, verified on
+    PR #16), so its dogfood Two-tier section describes both — intentionally
+    diverging from `shared/CLAUDE.md.tmpl`'s `claude`-mode Jinja branch,
+    which describes only `claude[bot]`. The selftest
+    (`tests/test_selftest_overlap.py`) doesn't cover root CLAUDE.md; this
+    test pins the dogfood section's content directly."""
     text = (SKILL_ROOT / "CLAUDE.md").read_text()
     assert "## Two-tier code review" in text, "Two-tier section missing from root CLAUDE.md"
-    # `claude` mode signals
-    assert "claude[bot]" in text, "claude-mode dogfood missing claude[bot] reference"
-    assert "@claude review" in text, "claude-mode dogfood missing @claude trigger"
-    # Should NOT mention Codex bot (skill repo is `claude` mode, not `both-docs`)
-    assert "@codex review" not in text, (
-        "root CLAUDE.md should not reference @codex review (skill repo is claude-mode, not both-docs)"
+    # Skill repo runs both bots — the dogfood Two-tier section describes both.
+    assert "claude[bot]" in text, "dogfood Two-tier missing claude[bot] reference"
+    assert "@claude review" in text, "dogfood Two-tier missing @claude trigger"
+    assert "@codex review" in text, (
+        "dogfood Two-tier missing @codex trigger (skill repo runs both bots — verified on PR #16)"
     )
     # Pointer to Tier-1 targets
     assert "review-commit-by-claude" in text or "review-commit-by-codex" in text
