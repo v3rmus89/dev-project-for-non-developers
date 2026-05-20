@@ -177,19 +177,30 @@ def load_manifest(path):
 
 
 def restore_from_manifest(m, stderr=None):
+    """Restore a target_root to its pre-apply state using the manifest.
+
+    Dispatches on `format_version`:
+      v1 → `_restore_v1` (PR #1 contract: created files removed, overwritten
+           files written back from `content_before_b64`).
+      v2 → `_restore_v2` (Bucket B per-policy matrix: WRITE deletes,
+           OVERWRITE writes back, WRITE_NEW removes the `.new` file,
+           APPEND_MERGE truncates to `pre_append_length`. SKIP entries
+           don't appear in v2 manifests per the mutation-only contract).
+
+    Both paths return (n_restored, n_removed, n_skipped, n_rejected).
+    """
     if stderr is None:
         stderr = sys.stderr
+    if m.format_version == MANIFEST_FORMAT_V1:
+        return _restore_v1(m, stderr)
+    if m.format_version == MANIFEST_FORMAT_V2:
+        return _restore_v2(m, stderr)
+    # Constructor's _SUPPORTED_FORMAT_VERSIONS check guarantees we never reach
+    # here; defensive fail-loud for the impossible-but-someone-bypassed-init case.
+    raise ValueError(f"unsupported manifest format_version={m.format_version}")
 
-    # v1 manifests use the legacy restore semantics below (PR #1 contract).
-    # v2 manifests need the per-policy restore matrix (Bucket B) which lands in
-    # a follow-up commit; raise loud here rather than silently mis-restoring.
-    if m.format_version != MANIFEST_FORMAT_V1:
-        raise NotImplementedError(
-            f"manifest format_version={m.format_version} requires the v2 "
-            "per-policy restore matrix (Bucket B); not yet implemented in "
-            "this commit"
-        )
 
+def _restore_v1(m, stderr):
     target_root = Path(m.target_root).resolve()
     n_restored = 0
     n_removed = 0
@@ -272,6 +283,197 @@ def restore_from_manifest(m, stderr=None):
 
     stderr.write(
         f"{n_restored} files restored, {n_removed} files removed, {n_skipped} skipped due to modification, "
+        f"{n_rejected} rejected for path-safety\n"
+    )
+    return (n_restored, n_removed, n_skipped, n_rejected)
+
+
+# ─── v2 per-policy restore matrix (Bucket B) ────────────────────────────────
+#
+# Each per-policy handler returns one of:
+#   "restored" — file mutated back to pre-apply state
+#   "removed"  — file deleted (was a create that we're undoing)
+#   "skipped"  — left in place (SHA mismatch / missing / interrupted apply /
+#                unknown policy)
+#
+# v2 uses `target_path` + `sha256_before_target_path` / `sha256_after_target_path`
+# as the authoritative mutation surface (Bucket B): for WRITE_NEW these point
+# at the `.new` file, not the original; for APPEND_MERGE they point at the
+# original and `pre_append_length` says where to truncate. WRITE + OVERWRITE
+# always have `target_path == path` so the v2 fields collapse to the v1 SHAs.
+
+
+def _restore_v2_write(entry, target_root, stderr):
+    """WRITE was a create — restore by deleting if SHA matches `sha256_after_target_path`.
+
+    Missing file → assume user already removed it (no-op skip, no warning).
+    SHA mismatch → user edited the file we created (preserve their edit).
+    """
+    target_path_str = entry["target_path"]
+    target_path = target_root / target_path_str
+    if not target_path.exists():
+        stderr.write(f"SKIP {target_path_str}: file missing; already removed (no-op)\n")
+        return "skipped"
+    current_sha = _sha256(target_path.read_bytes())
+    if current_sha == entry["sha256_after_target_path"]:
+        target_path.unlink()
+        return "removed"
+    stderr.write(f"SKIP {target_path_str}: user edit detected; left in place\n")
+    return "skipped"
+
+
+def _restore_v2_overwrite(entry, target_root, stderr):
+    """OVERWRITE modified an existing file — restore by writing
+    `content_before_b64` back atomically and restoring `mode_before`.
+
+    SHA == `sha256_after_target_path` → apply succeeded; restore.
+    SHA == `sha256_before_target_path` → apply was interrupted; no-op.
+    Otherwise → user edit; SKIP with warning.
+    """
+    target_path_str = entry["target_path"]
+    target_path = target_root / target_path_str
+    if not target_path.exists():
+        stderr.write(
+            f"SKIP {target_path_str}: file missing; left absent (user deletion "
+            "or interrupted apply — restore is conservative)\n"
+        )
+        return "skipped"
+    current_sha = _sha256(target_path.read_bytes())
+    if current_sha == entry["sha256_after_target_path"]:
+        content = base64.b64decode(entry["content_before_b64"])
+        bio.atomic_write(target_path, content)
+        os.chmod(target_path, entry["mode_before"])
+        return "restored"
+    if current_sha == entry["sha256_before_target_path"]:
+        # Apply was interrupted before this entry's write; nothing to undo.
+        return "skipped"
+    stderr.write(f"SKIP {target_path_str}: user edit detected; left in place\n")
+    return "skipped"
+
+
+def _restore_v2_write_new(entry, target_root, stderr):
+    """WRITE_NEW created `<path>.new` next to the original; original untouched.
+
+    SHA-check is on `target_path` (the `.new` file). Missing `.new` → benign
+    (user already removed the `.new`); no warning. SHA mismatch → user edited
+    the `.new`; preserve it.
+    """
+    target_path_str = entry["target_path"]
+    target_path = target_root / target_path_str
+    if not target_path.exists():
+        stderr.write(f"SKIP {target_path_str}: .new file missing; user already removed (no-op)\n")
+        return "skipped"
+    current_sha = _sha256(target_path.read_bytes())
+    if current_sha == entry["sha256_after_target_path"]:
+        target_path.unlink()
+        return "removed"
+    stderr.write(f"SKIP {target_path_str}: .new file edited; preserving user changes\n")
+    return "skipped"
+
+
+def _restore_v2_append_merge(entry, target_root, stderr):
+    """APPEND_MERGE appended lines to the original — restore by truncating
+    to `pre_append_length` bytes.
+
+    SHA == `sha256_after_target_path` → apply succeeded; truncate.
+    SHA == `sha256_before_target_path` → apply was interrupted; no-op.
+    Otherwise → user edit; SKIP with warning.
+    """
+    target_path_str = entry["target_path"]
+    target_path = target_root / target_path_str
+    if not target_path.exists():
+        stderr.write(
+            f"SKIP {target_path_str}: file missing; left absent (user deletion "
+            "or interrupted apply — restore is conservative)\n"
+        )
+        return "skipped"
+    current_sha = _sha256(target_path.read_bytes())
+    if current_sha == entry["sha256_after_target_path"]:
+        # Truncate to pre-append length.
+        with open(target_path, "rb+") as f:
+            f.truncate(entry["pre_append_length"])
+            f.flush()
+            os.fsync(f.fileno())
+        return "restored"
+    if current_sha == entry["sha256_before_target_path"]:
+        # Apply was interrupted before the append; nothing to undo.
+        return "skipped"
+    stderr.write(f"SKIP {target_path_str}: user edit detected; left in place\n")
+    return "skipped"
+
+
+_V2_RESTORE_HANDLERS = {
+    "WRITE": _restore_v2_write,
+    "OVERWRITE": _restore_v2_overwrite,
+    "WRITE_NEW": _restore_v2_write_new,
+    "APPEND_MERGE": _restore_v2_append_merge,
+}
+
+
+def _restore_v2(m, stderr):
+    """Bucket B v2 restore matrix dispatcher.
+
+    SKIP entries don't appear in v2 manifests by contract (mutation-only); if
+    one shows up anyway, the dispatch hits the unknown-policy branch and
+    warn-and-skips rather than crashing the whole restore.
+    """
+    target_root = Path(m.target_root).resolve()
+    n_restored = 0
+    n_removed = 0
+    n_skipped = 0
+    n_rejected = 0
+
+    # Path-safety pre-flight: validate `target_path` (the actual mutation
+    # surface for v2) for every entry BEFORE any filesystem action.
+    for entry in m.entries:
+        try:
+            validate_target_path(target_root, entry["target_path"])
+        except PathSafetyError as e:
+            stderr.write(f"REJECT path-safety: {e}\n")
+            n_rejected += 1
+    for d in m.created_directories:
+        try:
+            validate_target_path(target_root, d)
+        except PathSafetyError as e:
+            stderr.write(f"REJECT directory path-safety: {e}\n")
+            n_rejected += 1
+    if n_rejected:
+        stderr.write(f"aborting restore: {n_rejected} entry/entries rejected for path-safety\n")
+        return (n_restored, n_removed, n_skipped, n_rejected)
+
+    # Per-policy dispatch
+    for entry in m.entries:
+        policy = entry.get("policy")
+        handler = _V2_RESTORE_HANDLERS.get(policy)
+        if handler is None:
+            target_path_str = entry.get("target_path") or entry.get("path", "?")
+            stderr.write(
+                f"SKIP {target_path_str}: unknown policy {policy!r}; "
+                "manifest may be from a future version or corrupted\n"
+            )
+            n_skipped += 1
+            continue
+        outcome = handler(entry, target_root, stderr)
+        if outcome == "restored":
+            n_restored += 1
+        elif outcome == "removed":
+            n_removed += 1
+        else:
+            n_skipped += 1
+
+    # Remove created_directories in reverse-depth order, only if empty.
+    # (Same contract as v1 — a directory created by apply that's now empty is
+    # an apply-side artifact; one that user dropped content into stays.)
+    sorted_dirs = sorted(m.created_directories, key=lambda p: (-len(Path(p).parts), p))
+    for d in sorted_dirs:
+        dir_path = target_root / d
+        if dir_path.is_dir():
+            with contextlib.suppress(OSError):
+                dir_path.rmdir()
+
+    stderr.write(
+        f"{n_restored} files restored, {n_removed} files removed, "
+        f"{n_skipped} skipped due to modification, "
         f"{n_rejected} rejected for path-safety\n"
     )
     return (n_restored, n_removed, n_skipped, n_rejected)

@@ -444,6 +444,35 @@ passes.
 
 ---
 
+### Adoption-mode: route APPEND_MERGE restore through atomic_write for parity with OVERWRITE (imp-2)
+
+**Status**: parked. **Source**: Tier-1 review on v2 restore matrix impl commit (PR #17).
+
+**Why parked**: `_restore_v2_append_merge` uses
+`open(path, "rb+").truncate(pre_append_length) + flush + fsync` to undo
+APPEND_MERGE applies. `truncate(N)` is atomic-at-inode-level on POSIX
+filesystems (the file length is old-or-new, never partial bytes), so
+the safety contract holds. But v1 OVERWRITE restore routes through
+`bio.atomic_write` (tmp + `os.replace`) per Codex iter-21 P1's
+"no in-place truncation" discipline, and APPEND_MERGE diverges from
+that pattern. Marginally weaker consistency story than "all restore
+paths route through atomic_write."
+
+The alternative (read `[:pre_append_length]` bytes + atomic_write)
+costs one extra read per APPEND_MERGE entry — negligible at PR #7's
+trial scale (1 collision file).
+
+**Triggers to pick up**:
+- First reported crash-during-restore bug that surfaces APPEND_MERGE
+  truncation state inconsistency.
+- A future audit of "all restore mutations route through atomic_write"
+  catching this divergence.
+
+**Rough effort**: ~30 min — replace truncate block with `data = full[:pre_append_length]; bio.atomic_write(target_path, data)`. Tests
+already assert post-restore content equality, no test changes needed.
+
+---
+
 ### Adoption-mode: orchestrator-level test for rule (a0) via subprocess git path (imp-1)
 
 **Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).

@@ -162,9 +162,9 @@ class TestManifestFormatVersion:
 
     v1 (default, `--apply` path) preserves PR #1-#6 backward-compat. v2
     (`--apply --mode=adopt` path) adds per-policy entry fields. Unknown
-    values raise ValueError at construction time. Restore of a v2 manifest
-    raises NotImplementedError in this commit (full v2 restore matrix lands
-    in a follow-up).
+    values raise ValueError at construction time. v2 restore matrix is
+    implemented (`TestRestoreV2` below); the older NotImplementedError
+    behavior was a chunk-1 stub.
     """
 
     def test_default_format_version_is_v1(self, tmp_path):
@@ -366,13 +366,10 @@ class TestManifestFormatVersion:
         with pytest.raises(ValueError, match="unsupported manifest format_version"):
             manifest_mod.Manifest.from_dict(data)
 
-    def test_restore_raises_not_implemented_for_v2(self, tmp_path):
-        """v2 restore matrix lands in a follow-up commit; until then, calling
-        restore on a v2 manifest must fail-loud, not silently fall through to
-        v1 semantics (which would do the wrong thing for WRITE_NEW / APPEND_MERGE)."""
+    def test_restore_v2_empty_manifest_no_op(self, tmp_path):
+        """An empty v2 manifest (no entries) returns all-zero counters
+        without crashing. The v2 dispatch is reachable from `restore_from_manifest`."""
         import io
-
-        import pytest
 
         m = manifest_mod.Manifest(
             target_root=str(tmp_path),
@@ -381,8 +378,10 @@ class TestManifestFormatVersion:
             created_directories=[],
             format_version=2,
         )
-        with pytest.raises(NotImplementedError, match="v2 per-policy restore matrix"):
-            manifest_mod.restore_from_manifest(m, stderr=io.StringIO())
+        n_restored, n_removed, n_skipped, n_rejected = manifest_mod.restore_from_manifest(
+            m, stderr=io.StringIO()
+        )
+        assert (n_restored, n_removed, n_skipped, n_rejected) == (0, 0, 0, 0)
 
     def test_restore_works_for_v1_unchanged(self, tmp_path, monkeypatch):
         """Regression guard: PR #7's format_version dispatch must not break
@@ -413,3 +412,515 @@ class TestManifestFormatVersion:
         assert n_removed == 1
         assert n_rejected == 0
         assert not (target_root / "Makefile").exists()
+
+
+def _v2_entry(
+    *,
+    policy: str,
+    path: str,
+    target_path: str | None = None,
+    sha256_after_target_path: str,
+    sha256_before_target_path: str | None = None,
+    content_before_b64: str | None = None,
+    pre_append_length: int | None = None,
+    mode_before: int | None = None,
+):
+    """Build a v2 manifest entry. Defaults to `target_path == path`."""
+    return {
+        "path": path,
+        "policy": policy,
+        "target_path": target_path if target_path is not None else path,
+        "existed_before": content_before_b64 is not None,
+        "content_before_b64": content_before_b64,
+        "mode_before": mode_before,
+        "sha256_before": sha256_before_target_path,
+        "sha256_after": sha256_after_target_path,
+        "sha256_before_target_path": sha256_before_target_path,
+        "sha256_after_target_path": sha256_after_target_path,
+        "pre_append_length": pre_append_length,
+        "mode_after": 0o644,
+    }
+
+
+def _v2_manifest(target_root, entries, created_directories=None):
+    return manifest_mod.Manifest(
+        target_root=str(target_root),
+        github_review_mode="none",
+        entries=entries,
+        created_directories=created_directories or [],
+        format_version=manifest_mod.MANIFEST_FORMAT_V2,
+    )
+
+
+def _restore(m):
+    import io
+
+    out = io.StringIO()
+    return manifest_mod.restore_from_manifest(m, stderr=out), out.getvalue()
+
+
+class TestRestoreV2:
+    """v2 per-policy restore matrix (Bucket B). Each row's three states are
+    pinned: happy path (SHA == sha256_after_target_path), interrupted-apply
+    (SHA == sha256_before_target_path), user-edit (SHA mismatch). Plus
+    missing-file edge cases and path-safety rejection."""
+
+    # ─── WRITE: created file; restore deletes if SHA matches ───
+    def test_v2_write_happy_path_removes_created_file(self, tmp_path):
+        content = b"# created by apply\n"
+        (tmp_path / "new.txt").write_bytes(content)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE",
+                    path="new.txt",
+                    sha256_after_target_path=_sha256(content),
+                )
+            ],
+        )
+        (counters, _out) = _restore(m)
+        n_restored, n_removed, n_skipped, n_rejected = counters
+        assert (n_restored, n_removed, n_skipped, n_rejected) == (0, 1, 0, 0)
+        assert not (tmp_path / "new.txt").exists()
+
+    def test_v2_write_user_edit_skip_with_warning(self, tmp_path):
+        """User edited the created file after apply → preserve their edit."""
+        (tmp_path / "new.txt").write_bytes(b"USER EDITED THIS\n")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE",
+                    path="new.txt",
+                    sha256_after_target_path=_sha256(b"original content\n"),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, n_removed, n_skipped, _ = counters
+        assert n_removed == 0
+        assert n_skipped == 1
+        assert (tmp_path / "new.txt").exists()
+        assert "user edit detected" in out
+
+    def test_v2_write_missing_file_noop(self, tmp_path):
+        """File missing → user already removed it; no-op skip (no warning)."""
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE",
+                    path="never_existed.txt",
+                    sha256_after_target_path="a" * 64,
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, n_removed, n_skipped, _ = counters
+        assert n_removed == 0
+        assert n_skipped == 1
+        assert "already removed" in out
+
+    # ─── OVERWRITE: modified existing file; restore writes content_before back ───
+    def test_v2_overwrite_happy_path_writes_content_before_back(self, tmp_path):
+        import base64
+
+        before = b"# original user content\n"
+        after = b"# applied skill content\n"
+        (tmp_path / "Makefile").write_bytes(after)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="OVERWRITE",
+                    path="Makefile",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(after),
+                    content_before_b64=base64.b64encode(before).decode("ascii"),
+                    mode_before=0o644,
+                )
+            ],
+        )
+        (counters, _out) = _restore(m)
+        n_restored, _, _, _ = counters
+        assert n_restored == 1
+        assert (tmp_path / "Makefile").read_bytes() == before
+
+    def test_v2_overwrite_interrupted_apply_noop(self, tmp_path):
+        """SHA matches `sha256_before_target_path` → apply was interrupted
+        before this entry's write; nothing to undo (silent skip)."""
+        import base64
+
+        before = b"# original\n"
+        after = b"# applied\n"
+        (tmp_path / "Makefile").write_bytes(before)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="OVERWRITE",
+                    path="Makefile",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(after),
+                    content_before_b64=base64.b64encode(before).decode("ascii"),
+                    mode_before=0o644,
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        n_restored, _n_removed, n_skipped, _ = counters
+        assert n_restored == 0
+        assert n_skipped == 1
+        # No warning text for interrupted-apply (it's a benign case)
+        assert "user edit" not in out
+        assert (tmp_path / "Makefile").read_bytes() == before
+
+    def test_v2_overwrite_user_edit_skip_with_warning(self, tmp_path):
+        import base64
+
+        before = b"# original\n"
+        (tmp_path / "Makefile").write_bytes(b"USER EDITED AFTER APPLY\n")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="OVERWRITE",
+                    path="Makefile",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(b"# applied\n"),
+                    content_before_b64=base64.b64encode(before).decode("ascii"),
+                    mode_before=0o644,
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, _, n_skipped, _ = counters
+        assert n_skipped == 1
+        assert "user edit detected" in out
+
+    def test_v2_overwrite_missing_file_conservative_skip(self, tmp_path):
+        """User deleted the file after apply → conservative SKIP (never undo
+        a user deletion). Matches PR #1's v1 contract."""
+        import base64
+
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="OVERWRITE",
+                    path="gone.txt",
+                    sha256_before_target_path=_sha256(b"x"),
+                    sha256_after_target_path=_sha256(b"y"),
+                    content_before_b64=base64.b64encode(b"x").decode("ascii"),
+                    mode_before=0o644,
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, _, n_skipped, _ = counters
+        assert n_skipped == 1
+        assert "file missing" in out
+
+    # ─── WRITE_NEW: created `.new` next to original; restore removes `.new` ───
+    def test_v2_write_new_happy_path_removes_new_file(self, tmp_path):
+        """`.new` file unmodified → remove it. Original CLAUDE.md untouched."""
+        original_content = b"# user's domain CLAUDE.md\n"
+        new_content = b"# skill template CLAUDE.md\n"
+        (tmp_path / "CLAUDE.md").write_bytes(original_content)
+        (tmp_path / "CLAUDE.md.new").write_bytes(new_content)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE_NEW",
+                    path="CLAUDE.md",
+                    target_path="CLAUDE.md.new",
+                    sha256_before_target_path=None,  # .new didn't exist pre-apply
+                    sha256_after_target_path=_sha256(new_content),
+                )
+            ],
+        )
+        (counters, _out) = _restore(m)
+        _, n_removed, _, _ = counters
+        assert n_removed == 1
+        assert not (tmp_path / "CLAUDE.md.new").exists()
+        # Original MUST be preserved.
+        assert (tmp_path / "CLAUDE.md").read_bytes() == original_content
+
+    def test_v2_write_new_user_edited_new_file_preserves_it(self, tmp_path):
+        """User edited the `.new` file → preserve their edit."""
+        original_content = b"# original\n"
+        (tmp_path / "CLAUDE.md").write_bytes(original_content)
+        (tmp_path / "CLAUDE.md.new").write_bytes(b"USER ANNOTATED THE NEW\n")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE_NEW",
+                    path="CLAUDE.md",
+                    target_path="CLAUDE.md.new",
+                    sha256_before_target_path=None,
+                    sha256_after_target_path=_sha256(b"# applied .new\n"),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, n_removed, n_skipped, _ = counters
+        assert n_removed == 0
+        assert n_skipped == 1
+        assert (tmp_path / "CLAUDE.md.new").exists()
+        assert "preserving user changes" in out
+        # Original still preserved.
+        assert (tmp_path / "CLAUDE.md").read_bytes() == original_content
+
+    def test_v2_write_new_missing_new_file_benign(self, tmp_path):
+        """User already removed the `.new`; no-op skip (no warning)."""
+        (tmp_path / "CLAUDE.md").write_bytes(b"# original\n")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE_NEW",
+                    path="CLAUDE.md",
+                    target_path="CLAUDE.md.new",
+                    sha256_before_target_path=None,
+                    sha256_after_target_path=_sha256(b"# anything\n"),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, n_removed, n_skipped, _ = counters
+        assert n_removed == 0
+        assert n_skipped == 1
+        # Original untouched
+        assert (tmp_path / "CLAUDE.md").read_bytes() == b"# original\n"
+        assert "user already removed" in out
+
+    # ─── APPEND_MERGE: appended lines; restore truncates to pre_append_length ───
+    def test_v2_append_merge_happy_path_truncates_to_pre_append_length(self, tmp_path):
+        before = b"venv/\n*.pyc\n"
+        after = b"venv/\n*.pyc\n__pycache__/\n.env\n"
+        (tmp_path / ".gitignore").write_bytes(after)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="APPEND_MERGE",
+                    path=".gitignore",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(after),
+                    pre_append_length=len(before),
+                    mode_before=0o644,
+                )
+            ],
+        )
+        (counters, _out) = _restore(m)
+        n_restored, _, _, _ = counters
+        assert n_restored == 1
+        # Truncated back to pre-append state.
+        assert (tmp_path / ".gitignore").read_bytes() == before
+
+    def test_v2_append_merge_interrupted_apply_noop(self, tmp_path):
+        """SHA == `sha256_before_target_path` → apply was interrupted before
+        the append; no-op (silent skip, no warning)."""
+        before = b"venv/\n"
+        (tmp_path / ".gitignore").write_bytes(before)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="APPEND_MERGE",
+                    path=".gitignore",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(b"venv/\n.env\n"),
+                    pre_append_length=len(before),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        n_restored, _, n_skipped, _ = counters
+        assert n_restored == 0
+        assert n_skipped == 1
+        assert "user edit" not in out
+        assert (tmp_path / ".gitignore").read_bytes() == before
+
+    def test_v2_append_merge_user_edit_skip_with_warning(self, tmp_path):
+        before = b"venv/\n"
+        (tmp_path / ".gitignore").write_bytes(b"COMPLETELY DIFFERENT USER CONTENT\n")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="APPEND_MERGE",
+                    path=".gitignore",
+                    sha256_before_target_path=_sha256(before),
+                    sha256_after_target_path=_sha256(b"venv/\n.env\n"),
+                    pre_append_length=len(before),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, _, n_skipped, _ = counters
+        assert n_skipped == 1
+        assert "user edit detected" in out
+
+    def test_v2_append_merge_missing_file_conservative_skip(self, tmp_path):
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="APPEND_MERGE",
+                    path="gone.gitignore",
+                    sha256_before_target_path=_sha256(b"x"),
+                    sha256_after_target_path=_sha256(b"y"),
+                    pre_append_length=1,
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, _, n_skipped, _ = counters
+        assert n_skipped == 1
+        assert "file missing" in out
+
+    # ─── Dispatcher + path-safety + unknown-policy ───
+    def test_v2_mixed_entries_all_policies_in_one_manifest(self, tmp_path):
+        """Sanity check: a single v2 manifest containing one entry per
+        mutating policy restores cleanly end-to-end. This is the call-details
+        shape — the realistic adopt-mode payload."""
+        import base64
+
+        # WRITE: created Makefile
+        makefile_content = b"all:\n\techo hi\n"
+        (tmp_path / "Makefile").write_bytes(makefile_content)
+        # OVERWRITE: modified pre-existing config
+        config_before = b"setting=old\n"
+        config_after = b"setting=new\n"
+        (tmp_path / "config.txt").write_bytes(config_after)
+        # WRITE_NEW: .new written next to original CLAUDE.md
+        claude_original = b"# user CLAUDE.md\n"
+        claude_new = b"# skill CLAUDE.md\n"
+        (tmp_path / "CLAUDE.md").write_bytes(claude_original)
+        (tmp_path / "CLAUDE.md.new").write_bytes(claude_new)
+        # APPEND_MERGE: appended .gitignore
+        gi_before = b"venv/\n"
+        gi_after = b"venv/\n.env\n"
+        (tmp_path / ".gitignore").write_bytes(gi_after)
+
+        entries = [
+            _v2_entry(
+                policy="WRITE",
+                path="Makefile",
+                sha256_after_target_path=_sha256(makefile_content),
+            ),
+            _v2_entry(
+                policy="OVERWRITE",
+                path="config.txt",
+                sha256_before_target_path=_sha256(config_before),
+                sha256_after_target_path=_sha256(config_after),
+                content_before_b64=base64.b64encode(config_before).decode("ascii"),
+                mode_before=0o644,
+            ),
+            _v2_entry(
+                policy="WRITE_NEW",
+                path="CLAUDE.md",
+                target_path="CLAUDE.md.new",
+                sha256_before_target_path=None,
+                sha256_after_target_path=_sha256(claude_new),
+            ),
+            _v2_entry(
+                policy="APPEND_MERGE",
+                path=".gitignore",
+                sha256_before_target_path=_sha256(gi_before),
+                sha256_after_target_path=_sha256(gi_after),
+                pre_append_length=len(gi_before),
+            ),
+        ]
+        m = _v2_manifest(tmp_path, entries)
+        (counters, _out) = _restore(m)
+        n_restored, n_removed, n_skipped, n_rejected = counters
+        # OVERWRITE + APPEND_MERGE restore via mutation; WRITE + WRITE_NEW remove.
+        assert n_restored == 2
+        assert n_removed == 2
+        assert n_skipped == 0
+        assert n_rejected == 0
+        # Verify each file's final state.
+        assert not (tmp_path / "Makefile").exists()  # WRITE removed
+        assert (tmp_path / "config.txt").read_bytes() == config_before  # OVERWRITE
+        assert not (tmp_path / "CLAUDE.md.new").exists()  # WRITE_NEW removed
+        assert (tmp_path / "CLAUDE.md").read_bytes() == claude_original  # untouched
+        assert (tmp_path / ".gitignore").read_bytes() == gi_before  # truncated
+
+    def test_v2_path_safety_rejection_aborts_before_mutation(self, tmp_path):
+        """A v2 entry whose `target_path` escapes target_root must be rejected
+        BEFORE any filesystem action, exactly like v1."""
+        evil_content = b"# pretend skill secret\n"
+        (tmp_path / "innocent.txt").write_bytes(evil_content)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE",
+                    path="innocent.txt",
+                    target_path="../escape.txt",  # path-traversal attempt
+                    sha256_after_target_path=_sha256(evil_content),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        n_restored, n_removed, _n_skipped, n_rejected = counters
+        assert n_rejected == 1
+        assert n_restored == 0
+        assert n_removed == 0
+        assert "REJECT path-safety" in out
+        # innocent.txt was never touched.
+        assert (tmp_path / "innocent.txt").read_bytes() == evil_content
+
+    def test_v2_unknown_policy_warn_and_skip(self, tmp_path):
+        """Defensive: an unrecognized policy (manifest from a future version
+        or corrupted) → warn-and-skip, NOT crash the whole restore."""
+        (tmp_path / "f.txt").write_bytes(b"x")
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WEIRD_FUTURE_POLICY",
+                    path="f.txt",
+                    sha256_after_target_path=_sha256(b"x"),
+                )
+            ],
+        )
+        (counters, out) = _restore(m)
+        _, _, n_skipped, _ = counters
+        assert n_skipped == 1
+        assert "unknown policy" in out
+        # File untouched
+        assert (tmp_path / "f.txt").exists()
+
+    def test_v2_created_directories_cleanup(self, tmp_path):
+        """Empty created directories are removed in reverse-depth order, same
+        as v1 (only if still empty at restore time)."""
+        # Synthetic scenario: apply created subdir/ + subdir/nested/file.txt.
+        sub = tmp_path / "subdir"
+        nested = sub / "nested"
+        nested.mkdir(parents=True)
+        f = nested / "file.txt"
+        content = b"x\n"
+        f.write_bytes(content)
+        m = _v2_manifest(
+            tmp_path,
+            [
+                _v2_entry(
+                    policy="WRITE",
+                    path="subdir/nested/file.txt",
+                    sha256_after_target_path=_sha256(content),
+                )
+            ],
+            created_directories=["subdir", "subdir/nested"],
+        )
+        (counters, _out) = _restore(m)
+        _, n_removed, _, _ = counters
+        assert n_removed == 1
+        # Both created dirs should now be gone (empty after file removal).
+        assert not nested.exists()
+        assert not sub.exists()
