@@ -520,6 +520,7 @@ separate docs-only commit)
 | short-sha | what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |---|---|---|---|
 | 3ceb492 | Shrank the "Triaging review findings" block across all 6 byte-identity surfaces; moved calibration + plateau prose into a new "(full discipline)" section in CONTRIBUTING.md + tmpl; tightened Tier-1 same-AI wording in CONTRIBUTING.md/tmpl | none (matches Scope items 1-2 / Bucket A) | Tier-1 imp-2 (commit-message-only): stale line ref + premature "closes" wording — fixed via `--amend` before this row |
+| 6530e38 | Tightened 6 CLAUDE.md sections (plan-review-loop, two-tier, cross-session, self-improvement, approval-gate, focused-commits) + mirrored to shared/CLAUDE.md.tmpl; flipped `test_dogfood_doc_sanity` Two-tier invariant to allow `@codex review` | none (matches Scope items 3-9, 13(ii) / Bucket B) | Tier-1 imp-2: re-added the `.github/workflows/claude-review.yml` pointer dropped from the CLAUDE.md Two-tier line — folded via `--amend` |
 
 ## Lessons surfaced
 
