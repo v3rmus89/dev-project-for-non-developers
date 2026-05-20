@@ -453,6 +453,44 @@ def recommend_policy(
     )
 
 
+def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> AdoptionPlan:
+    """Walk every planned file; compute TargetMeta + PolicyRecommendation for each.
+
+    The orchestrator that produces the full AdoptionPlan consumed by
+    `format_recommendation_report` (user-facing) and `plan_adoption_entries`
+    (apply-phase wiring per Bucket A `cli.py` row).
+
+    Stable ordering: planned_files keys are sorted lexicographically so the
+    user-facing report and downstream manifest entries are deterministic
+    across runs (matches the existing `--dry-run` / `--diff` ordering contract).
+
+    The function reads target files (via `_compute_target_meta` +
+    `recommend_policy`) but writes NOTHING — the analyze phase is pure
+    inspection per Architecture decision "Analyze phase reads target files but
+    writes NOTHING."
+
+    Caller contract: the caller (`cli.py`) is responsible for validating that
+    `target_root` is an existing directory AND that every `planned_files` key
+    is CLI-layer path-safe (no absolute paths, no `..` segments). Path-safety
+    enforcement lives in `cli.py` + `render.py` per Architecture decisions;
+    this engine assumes pre-validated inputs.
+    """
+    analyses: list[PlannedFileAnalysis] = []
+    for rel_path in sorted(planned_files):
+        skill_content = planned_files[rel_path]
+        target_meta = _compute_target_meta(target_root, rel_path)
+        target_path = target_root / rel_path
+        recommendation = recommend_policy(rel_path, target_path, skill_content, target_meta)
+        analyses.append(
+            PlannedFileAnalysis(
+                rel_path=rel_path,
+                target_meta=target_meta,
+                recommendation=recommendation,
+            )
+        )
+    return AdoptionPlan(target_root=target_root, analyses=tuple(analyses))
+
+
 __all__ = [
     "AdoptionPlan",
     "Confidence",
@@ -461,5 +499,6 @@ __all__ = [
     "PolicyRecommendation",
     "TargetMeta",
     "_compute_target_meta",  # exported for tests
+    "analyze_target",
     "recommend_policy",
 ]

@@ -444,6 +444,59 @@ passes.
 
 ---
 
+### Adoption-mode: orchestrator-level test for rule (a0) via subprocess git path (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+
+**Why parked**: `TestRecommendPolicyRules.test_rule_a0_...` exercises rule
+(a0) at the unit layer (feeds `ignored_by_git=".gitignore:..."` directly
+into TargetMeta). `TestAnalyzeTarget.test_call_details_shaped_fixture` is
+the only orchestrator-level integration test, and it doesn't `git init`
+`tmp_path` — so `_check_ignored_by_git` returns `None` for every file,
+and the (a0) path through the full subprocess pipeline is never exercised
+end-to-end. The git plumbing IS exercised by
+`TestComputeTargetMeta.test_ignored_by_git_for_missing_file`, so coverage
+isn't zero — just split.
+
+**Triggers to pick up**:
+- A future regression where the subprocess error-handling in
+  `_check_ignored_by_git` changes and breaks (a0)'s orchestrator path.
+- During the live `--apply --mode=adopt` trial against call-details if
+  AGENTS.md misfires.
+
+**Rough effort**: ~15 min — add one test that does `_git_init(tmp_path)`,
+writes `.gitignore` ignoring `Makefile`, then calls `analyze_target` with
+`{"Makefile": b"..."}` and asserts SKIP/manual_review=True via the full
+subprocess path.
+
+---
+
+### Adoption-mode: thread `target_content` from analyze_target to recommend_policy (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+
+**Why parked**: `_compute_target_meta` reads each existing target file
+once; `recommend_policy` re-reads the same file (for rules b/d/f/g that
+need bytes). For PR #7's call-details collision set (4 files), that's
+8 reads vs 4 — negligible. For a target with hundreds of colliding
+files, the double-read could matter. The current docstring on
+`recommend_policy` explains the design choice: TargetMeta is deliberately
+content-free per Scope #11 privacy boundary — but a separate `bytes`
+parameter wouldn't violate that.
+
+**Triggers to pick up**:
+- First user reports adopt-mode running noticeably slow against a large
+  target (>100 colliding files).
+- Performance benchmarks added to the CI run.
+
+**Rough effort**: ~1 hour — add `target_content: bytes | None = None`
+parameter to `recommend_policy`; `analyze_target` passes the buffer
+from `_compute_target_meta`'s read (via a small refactor of
+`_compute_target_meta` to optionally return content alongside meta).
+Update all existing `recommend_policy` callers in tests.
+
+---
+
 ### Adoption-mode rule (d): `.gitignore` order-aware merge for `!negation` patterns (imp-1)
 
 **Status**: parked. **Source**: Tier-1 review on `recommend_policy` impl commit (PR #17).

@@ -24,6 +24,7 @@ from bootstrap_lib.adopt import (
     PolicyRecommendation,
     TargetMeta,
     _compute_target_meta,
+    analyze_target,
     recommend_policy,
 )
 
@@ -635,3 +636,148 @@ class TestRecommendPolicyPrecedence:
         assert rec.manual_review_needed is True
         # (g)'s reason mentions the actual signal; (h)'s reason wouldn't.
         assert "pyproject.toml" in rec.reason or "tool" in rec.reason
+
+
+class TestAnalyzeTarget:
+    """`analyze_target` orchestrator — walks planned_files, builds AdoptionPlan."""
+
+    def test_empty_planned_files_returns_empty_plan(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {})
+        assert isinstance(plan, AdoptionPlan)
+        assert plan.target_root == tmp_path
+        assert plan.analyses == ()
+
+    def test_target_root_passed_through(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"f.txt": b"skill\n"})
+        assert plan.target_root == tmp_path
+
+    def test_single_missing_file_gets_write_recommendation(self, tmp_path: Path) -> None:
+        """No target file exists → rule (a) WRITE."""
+        plan = analyze_target(tmp_path, {"new.txt": b"skill content\n"})
+        assert len(plan.analyses) == 1
+        analysis = plan.analyses[0]
+        assert analysis.rel_path == "new.txt"
+        assert analysis.target_meta.exists is False
+        assert analysis.recommendation.policy == "WRITE"
+        assert analysis.recommendation.manual_review_needed is False
+
+    def test_single_byte_identical_file_gets_skip(self, tmp_path: Path) -> None:
+        """Existing target == skill content → rule (c) SKIP."""
+        content = b"matched\n"
+        (tmp_path / "f.txt").write_bytes(content)
+        plan = analyze_target(tmp_path, {"f.txt": content})
+        assert len(plan.analyses) == 1
+        analysis = plan.analyses[0]
+        assert analysis.target_meta.exists is True
+        assert analysis.recommendation.policy == "SKIP"
+        assert "byte-for-byte" in analysis.recommendation.reason
+
+    def test_multiple_files_each_gets_its_own_recommendation(self, tmp_path: Path) -> None:
+        """Mixed plan: missing + empty + byte-identical + unknown-non-empty."""
+        # (a) missing → WRITE
+        # (b) empty existing → OVERWRITE
+        # (c) byte-identical → SKIP
+        # (h) unknown existing non-empty → SKIP/manual_review
+        (tmp_path / "empty.txt").write_bytes(b"")
+        (tmp_path / "matched.txt").write_bytes(b"same content\n")
+        (tmp_path / "unknown.txt").write_bytes(b"some user content\n")
+        planned = {
+            "new.txt": b"new content\n",
+            "empty.txt": b"fill me\n",
+            "matched.txt": b"same content\n",
+            "unknown.txt": b"different skill content\n",
+        }
+        plan = analyze_target(tmp_path, planned)
+        assert len(plan.analyses) == 4
+
+        by_path = {a.rel_path: a for a in plan.analyses}
+        assert by_path["new.txt"].recommendation.policy == "WRITE"
+        assert by_path["empty.txt"].recommendation.policy == "OVERWRITE"
+        assert by_path["matched.txt"].recommendation.policy == "SKIP"
+        assert "byte-for-byte" in by_path["matched.txt"].recommendation.reason
+        assert by_path["unknown.txt"].recommendation.policy == "SKIP"
+        assert by_path["unknown.txt"].recommendation.manual_review_needed is True
+
+    def test_analyses_sorted_lexicographically(self, tmp_path: Path) -> None:
+        """Stable ordering so user-facing report is deterministic across runs.
+
+        Pass keys in non-sorted order; verify output is sorted regardless.
+        """
+        planned = {
+            "z.txt": b"z\n",
+            "a.txt": b"a\n",
+            "m.txt": b"m\n",
+        }
+        plan = analyze_target(tmp_path, planned)
+        rel_paths = [a.rel_path for a in plan.analyses]
+        assert rel_paths == ["a.txt", "m.txt", "z.txt"]
+
+    def test_call_details_shaped_fixture_exercises_full_rule_set(self, tmp_path: Path) -> None:
+        """Synthetic fixture matching the call-details collision shape (4
+        collisions: .gitignore + .python-version + CLAUDE.md + pyproject.toml).
+        Verifies every Scope #5 rule fires once end-to-end via analyze_target."""
+        # Target setup (4 collisions + 1 missing-create):
+        (tmp_path / ".gitignore").write_bytes(b"venv/\n*.pyc\n")
+        (tmp_path / ".python-version").write_bytes(b"3.10\n")  # mismatch with skill's 3.12
+        # CLAUDE.md: >20 lines → non-trivial → rule (f) WRITE_NEW
+        (tmp_path / "CLAUDE.md").write_bytes(b"# Project CLAUDE.md\n" + b"some line\n" * 30)
+        # pyproject.toml: has [tool.*] → non-trivial → rule (g) SKIP
+        (tmp_path / "pyproject.toml").write_bytes(
+            b'[project]\nname = "x"\n\n[tool.ruff]\nline-length = 100\n'
+        )
+
+        planned = {
+            ".gitignore": b"venv/\n*.pyc\n__pycache__/\n.env\n",  # 2 new patterns
+            ".python-version": b"3.12\n",  # version mismatch
+            "CLAUDE.md": b"# Skill template\nshort\n",  # short skill, long target
+            "pyproject.toml": b'[project]\nname = "y"\n',  # trivial skill, non-trivial target
+            "Makefile": b"all:\n\techo hi\n",  # MISSING — rule (a) WRITE
+        }
+        plan = analyze_target(tmp_path, planned)
+        by_path = {a.rel_path: a for a in plan.analyses}
+
+        # Rule (d) — APPEND_MERGE
+        assert by_path[".gitignore"].recommendation.policy == "APPEND_MERGE"
+        assert by_path[".gitignore"].recommendation.manual_review_needed is False
+
+        # Rule (e) — SKIP with mismatch note
+        assert by_path[".python-version"].recommendation.policy == "SKIP"
+        assert by_path[".python-version"].recommendation.manual_review_needed is False
+        assert "different Python version" in by_path[".python-version"].recommendation.reason
+
+        # Rule (f) — WRITE_NEW (target has >20 lines)
+        assert by_path["CLAUDE.md"].recommendation.policy == "WRITE_NEW"
+        assert by_path["CLAUDE.md"].recommendation.manual_review_needed is True
+
+        # Rule (g) — SKIP with manual_review (target has [tool.*])
+        assert by_path["pyproject.toml"].recommendation.policy == "SKIP"
+        assert by_path["pyproject.toml"].recommendation.manual_review_needed is True
+
+        # Rule (a) — WRITE (missing file, not git-ignored — no .git in tmp_path)
+        assert by_path["Makefile"].recommendation.policy == "WRITE"
+        assert by_path["Makefile"].recommendation.manual_review_needed is False
+
+    def test_target_meta_carries_per_file_shape(self, tmp_path: Path) -> None:
+        """analyze_target attaches the right TargetMeta to each analysis."""
+        (tmp_path / "exists.txt").write_bytes(b"hello\n")
+        plan = analyze_target(tmp_path, {"exists.txt": b"different\n", "missing.txt": b"skill\n"})
+        by_path = {a.rel_path: a for a in plan.analyses}
+        assert by_path["exists.txt"].target_meta.exists is True
+        assert by_path["exists.txt"].target_meta.size == len(b"hello\n")
+        assert by_path["missing.txt"].target_meta.exists is False
+        assert by_path["missing.txt"].target_meta.sha256 is None
+
+    def test_does_not_write_to_target(self, tmp_path: Path) -> None:
+        """Architecture decision: analyze phase reads files but writes NOTHING.
+
+        Snapshot tmp_path contents before + after; verify no new files appeared.
+        """
+        (tmp_path / "existing.txt").write_bytes(b"untouched\n")
+        before = sorted(p.name for p in tmp_path.iterdir())
+        plan = analyze_target(tmp_path, {"existing.txt": b"skill\n", "missing.txt": b"skill\n"})
+        after = sorted(p.name for p in tmp_path.iterdir())
+        assert before == after, (
+            "analyze_target wrote a file to target_root — violates pure-analyze contract"
+        )
+        # Sanity check that we DID analyze
+        assert len(plan.analyses) == 2
