@@ -110,10 +110,10 @@ Tier-1 review per commit before push. Total estimated 3-5 hours including loop o
 | 6 | Tighten `CLAUDE.md` ## Mandatory human-approval gate from 12 lines → ~6 lines: keep the 4-step rule (summary→wait→fold→commit), drop the per-step elaboration. **End with**: "See `docs/plans/README.md` step 3 for the canonical wording" (already canonical there, iter-1 fold). | `CLAUDE.md` |
 | 7 | Tighten `CLAUDE.md` ## Focused commits from 14 lines → ~6 lines: keep the rule + 4-line bash example + "Don't `git add .`" warning. Pointer to CONTRIBUTING.md per-change checklist. | `CLAUDE.md` |
 | 8 | Mirror items 3, 5, 6, 7 to `shared/CLAUDE.md.tmpl` in the SAME commit (Claude 2-4 fold — avoid drift). **Item 4 (Two-tier section) does NOT mirror as-is** (iter-2 fold Codex 3-2 + Claude 3-2): in the template, the Two-tier section is conditional on `github_review_mode`. Update: (i) `claude` branch: drop the stale "Codex bot NOT configured" caveat; describe only `claude[bot]` positively; (ii) `both-docs` branch: describe both bots positively (`claude[bot]` + `chatgpt-codex-connector[bot]`); (iii) `none` branch: existing minimal mention stays. Preserve all other Jinja conditionals (`{% if package_manager %}`, etc.). | `shared/CLAUDE.md.tmpl` |
-| 9 | Tighten `AGENTS.md` (skill's own): keep "What to flag with high confidence" + "What NOT to flag" + "Local quality gate" + "Plan Review Guidance" + "Tone" sections (reviewer-specific; CAN'T move without losing purpose). Tighten "Cross-session state recovery" (5 → 4) + "Self-improvement loop" (10 → 6, mirror CLAUDE.md item 5). | `AGENTS.md` |
+| 9 | Tighten `AGENTS.md` (skill's own): keep "What to flag with high confidence" + "What NOT to flag" + "Local quality gate" + "Plan Review Guidance" + "Tone" sections (reviewer-specific; CAN'T move without losing purpose). Tighten "Cross-session state recovery" (5 → 4) + "Self-improvement loop" (10 → 6 — AGENTS.md keeps just the read-only-reviewer protocol; the LESSONS format-spec lives in CLAUDE.md per item 5's 8-line target, not mirrored here). | `AGENTS.md` |
 | 10 | **Mirror ONLY the Cross-session-recovery + Self-improvement shrinks** from item 9 to `shared/AGENTS.md.tmpl` in the SAME commit (iter-2 fold Claude 2-5: the template's other sections ("What to flag", "Plan Review Guidance") have structurally different content from the dogfood — they're a generic baseline vs the dogfood's skill-repo-specific 35-line block). The triage block already shrinks via Bucket A's Commit 1 across both surfaces. | `shared/AGENTS.md.tmpl` |
 | 11 | Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply success block (lines 358-378 on main). Detection: distinguish "no `.git/` directory" (target needs `git init`) vs "`.git/` exists but no remote" (only needs remote creation). **Safe-pattern hint**: use `git status` + explicit-paths checklist (NEVER literal `git add -A` / `git add .` substrings — iter-2 fold Claude 3-1: hint warning text would self-trip the regression-guard test; reword to "stage files explicitly with `git add <path>`; never stage everything blind"). **Plus iter-2 fold per user direction**: when `args.github_review == "both-docs"`, the hint ALSO surfaces the Codex web-UI setup step (one-time per repo; no CLI as of 2026-05). For `--github-review=claude`: only gh-hint + OAuth token hint (existing). For `--github-review=none`: only gh-hint if no remote. See Bucket D for the exact code. **Implementation note**: also add `import subprocess` to `cli.py`'s import block (iter-2 fold Codex 3 / Claude 2-2). | `bootstrap_lib/cli.py` |
-| 12 | Tests: extend `tests/test_bootstrap_cli.py` with four tests (one per detection-state branch — see Bucket E test list) + a regression guard that no `git add -A` ever appears in the hint output. Plus: `tests/test_selftest_overlap.py::test_overlap_docs_plans_readme` must continue to pass (iter-1 fold: this test IS impacted by Commit 1's triage shrink to `docs/plans/README.md`). | `tests/test_bootstrap_cli.py` |
+| 12 | Tests: (i) extend `tests/test_bootstrap_cli.py` with **3 detection-state tests** (no-`.git/`, `.git/`-no-remote, has-remote-no-fire) + **1 regression guard** that no literal `git add -A` ever appears in the hint output. = **4 NEW tests** total. (ii) Update `tests/test_dogfood_doc_sanity.py:125` invariant to allow `@codex review` in root CLAUDE.md (per Scope item 4's positive-framing fold). (iii) `tests/test_selftest_overlap.py::test_overlap_docs_plans_readme` must continue to pass (impacted by Commit 1's triage shrink). | `tests/test_bootstrap_cli.py`, `tests/test_dogfood_doc_sanity.py` |
 
 ### NOT in scope
 
@@ -167,8 +167,8 @@ edits are byte-identical lockstep.
 | Commands table | 22 | 22 | Full table | (nothing) |
 | What this repo is | 8 | 8 | Full content | (nothing) |
 | Plan review loop | 34 | 6 | Lead rule + 2-line invocation + 1-line "stop when no imp-3" + 1-line pointer | Filename convention, bootstrap exception, when-to-stop bullets, consistency self-check paragraph → POINT AT `docs/plans/README.md` (already canonical there; iter-1 fold) |
-| Triaging review findings | 23 | 17 | (covered by Bucket A) | Calibration + plateau + evidence-table format → `CONTRIBUTING.md` (Bucket A) |
-| Two-tier code review | 8 | 6 | Tier-1 + Tier-2 rules | "Both feed the same…" sentence (already implied) |
+| Triaging review findings | 23 | 17 | (covered by Bucket A) | Calibration + plateau → `CONTRIBUTING.md` (Bucket A; evidence-table format stays inside the (a/b/c/d) bullets which remain in the short block — iter-2 fold Claude 2-3) |
+| Two-tier code review | 8 | 6 | Tier-1 (same-AI as implementer) + Tier-2 positive description (both bots in dogfood; per-mode conditional in template) | Negative "Codex bot NOT configured" caveat removed; "Both feed the same…" sentence (already implied); same-AI Tier-1 ambiguity tightened (iter-2 refold) |
 | Cross-session state recovery | 5 | 4 | First paragraph compressed | "If multiple plan files…" elaboration |
 | Pre-coding gate | 9 | 9 | Full content | (nothing — dense already) |
 | Self-improvement loop | 10 | 8 | "Read LESSONS.md at session start" + writable-vs-read-only summary + LESSONS.md entry-format spec + promote/archive rule + pointer to AGENTS.md | (nothing — iter-2 fold Claude 2-4: preserved format spec + promote/archive in CLAUDE.md; the savings come from removing prose padding, not dropping content) |
@@ -194,7 +194,7 @@ edits are byte-identical lockstep.
 | Self-improvement loop | 10 | 6 | Read LESSONS at session start + Reviewer-is-read-only rule + Do-NOT-edit + propose-not-append-in-review | Drop prose elaboration / `(Writable-session drivers…)` cross-ref line. **(iter-2 fold Claude 2-4: NOT "promote/archive elaboration" — that text isn't in AGENTS.md, it's only in CLAUDE.md; description corrected to match actual section content.)** |
 | Tone | 6 | 6 | Full content | (nothing) |
 
-**Current total** (iter-1.5 fold: arithmetic corrected — section headings + content + blanks): 10+35+5+5+37+23+5+10+6 = 136 content lines + ~5 between-section blanks = **141 lines** (matches `wc -l`). **Estimated new total**: 10+35+5+5+37+17+4+6+6 = 125 + ~9 separator blanks (after triage + self-improvement shrink) = **~134 lines**. Modest ~7-line reduction.
+**Current total** (iter-1.5 fold: arithmetic corrected — section headings + content + blanks): 10+35+5+5+37+23+5+10+6 = 136 content lines + ~5 between-section blanks = **141 lines** (matches `wc -l`). **Estimated new total**: 10+35+5+5+37+17+4+6+6 = 125 + ~9 separator blanks (after triage + self-improvement shrink) = **~134-135 lines** (range accommodates separator-blank uncertainty). Modest ~6-7-line reduction.
 
 **(d)-class decision flagged for human-approval gate**: AGENTS.md cannot hit the
 pre-loop ~80-100 target without cutting the 35-line "What to flag" or 37-line "Plan
@@ -207,11 +207,14 @@ for IA refactor).
 
 In `bootstrap_lib/cli.py`'s `main()`, the v1 `--apply` success block at **lines 358-378
 on main** (iter-1 fold: corrected from "598-610" which was PR-#17-branch-relative).
-Insert new block AFTER existing success prints but BEFORE the `if args.github_review !=
-"none":` CLAUDE_CODE_OAUTH_TOKEN block:
+Insert the gh-hint detection + print logic **INSIDE the existing `if args.github_review
+!= "none":` block** (iter-2 fold Claude 1-1: no second conditional), BEFORE the existing
+OAuth-token prints:
 
 ```python
-if args.github_review != "none":
+# (existing) inside the if args.github_review != "none" block,
+# BEFORE the existing CLAUDE_CODE_OAUTH_TOKEN prints, add:
+
     # Detect: does target_root have a git remote already?
     # Two states: (a) no .git/ at all → user needs `git init` first;
     # (b) .git/ exists but no remote → user only needs remote creation
@@ -280,7 +283,7 @@ flags (cli.py:84). They can never be None at this point.
 |---|---|
 | `test_triage_byte_identity.py::test_triage_block_byte_identical_across_six_surfaces` | Continues to pass — new short block is byte-identical across all 6 surfaces. |
 | `test_triage_byte_identity.py::test_four_questions_extension_present` | Continues to pass — 4 question substrings preserved verbatim. |
-| `test_dogfood_doc_sanity.py` | Continues to pass — triage heading still exists. |
+| `test_dogfood_doc_sanity.py` | **MUST be updated** (iter-2.5 fold consistency #2): the `claude`-mode invariant at line 125 currently asserts root CLAUDE.md does NOT mention `@codex review`. Scope item 4 adds the `@codex review` keyword to CLAUDE.md (skill repo's dogfood acknowledges both bots active). Update the invariant to allow the mention. The shared-template invariant in `test_shared_templates.py:404` stays unchanged. |
 | `test_selftest_overlap.py::test_overlap_docs_plans_readme` | Continues to pass after Commit 1 — `shared/docs-plans-README.md.tmpl` and `docs/plans/README.md` get the same triage shrink in lockstep (iter-1 fold: previously claimed unaffected, false). |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_no_git_dir` | Apply to a fresh target with no `.git/`, assert `git init` + `gh repo create` appear in stdout when --github-review=claude. |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_git_no_remote` | Pre-`git init` the target, apply, assert ONLY `gh repo create` (no `git init` re-run) appears. |
@@ -297,7 +300,7 @@ flags (cli.py:84). They can never be None at this point.
   exception, when-to-stop rule, consistency self-check cadence, human-approval-gate
   wording) — CLAUDE.md POINTS at it for these topics. `CONTRIBUTING.md` is the
   canonical home for **per-change workflow detail** (Tier-1 prompt templates,
-  per-change checklist, triage calibration + plateau + evidence-table format) —
+  per-change checklist, triage calibration + plateau) —
   CLAUDE.md POINTS at it for these.
 - **AGENTS.md vs CONTRIBUTING.md**: AGENTS.md is read by *review-only* agents that
   may not be able to read other docs mid-review. So AGENTS.md carries reviewer-specific
@@ -317,7 +320,7 @@ flags (cli.py:84). They can never be None at this point.
   "no conflict expected" claim is downgraded to "verify at impl time" — the line
   numbers cited in v0 of this plan were measured against PR #17's branch (not main).
 - **Self-improvement protocol stays in CLAUDE.md compressed** (iter-1 fold) — no new
-  CONTRIBUTING.md section needed; the protocol fits in 6 lines of CLAUDE.md +
+  CONTRIBUTING.md section needed; the protocol fits in 8 lines of CLAUDE.md (raised from 6 at iter-2 to preserve LESSONS.md entry-format spec + promote/archive rule) +
   reference to AGENTS.md for read-only-context detail.
 
 ## Risks + mitigations
@@ -353,7 +356,7 @@ flags (cli.py:84). They can never be None at this point.
 3. **Per-commit Tier-1 review** (`make review-commit-by-{claude,codex}` — same AI
    as implementer per iter-2 fold of BACKLOG.md:557) clean (no imp-3 findings) before
    push. **Then** append the Tier-1-suggested impl-log row to the `## Implementation
-   log (this PR)` section above via a SEPARATE docs-only commit (per CONTRIBUTING.md:116).
+   log (this PR)` section (located AFTER the Evidence table; see the section heading below) via a SEPARATE docs-only commit (per CONTRIBUTING.md:116).
 4. **`make check` passes** (full pytest + ruff suite).
 5. **`test_triage_byte_identity.py` passes** — triage byte-identity across 6 surfaces.
 6. **`test_dogfood_doc_sanity.py` passes** — triage heading still present.
@@ -385,11 +388,12 @@ flags (cli.py:84). They can never be None at this point.
 | 1 (codex) | 2 imp-3 + 3 imp-2 | do not implement yet — see iter-1 fold log below |
 | 1 (claude) | 2 imp-3 + 5 imp-2 + 4 imp-1 | needs another iteration — see iter-1 fold log below |
 | 1-fold | All (a)-folds applied: gh-hint safe-pattern (Codex #1), content-destination rerouted to `docs/plans/README.md` (Codex #2 / Claude 3-1+3-2), selftest_overlap test added (Codex #3 / Claude 2-3), AGENTS.md target revised + arithmetic fixed (Codex #5 / Claude 2-5), cli.py line numbers corrected to 358-378 (Claude 2-1), subprocess timeout + broader except (Claude 2-2), atomic Commits 2/3 (Claude 2-4), branch prefix `refactor/...` (Claude 1-1), dead-code fallbacks dropped (Claude 1-2), gh-hint two-state detection (Claude 1-3). Codex #4 (Codex-bot wording) rejected as out-of-scope. Claude 1-4 (line-count estimates hand-wavy) rejected as already covered by acceptance band. |
-| 1.5 consistency | 10 internal drifts after iter-1 fold (tmpl gate target, AGENTS.md arithmetic, gh-hint test count, triage 23 not 24 lines, README.md no-content-change reconciliation, Bucket C ref, sequencing wording, code comment match) | All folded as wording/arithmetic corrections |
+| 1.5 consistency | 8 internal drifts after iter-1 fold (tmpl gate target, AGENTS.md arithmetic, gh-hint test count, triage 23 not 24 lines, README.md no-content-change reconciliation, Bucket C ref, sequencing wording, code comment match) | All folded as wording/arithmetic corrections |
 | 1.5 (d)-decisions | User direction: AGENTS.md target ~134-141 accepted; content-destination via `docs/plans/README.md` confirmed; **Codex-bot wording fold revised from (c) reject → (a) fold** (closes BACKLOG.md:416) | Folded into Scope item 4 |
 | 2 (codex) | 3 imp-3 + 2 imp-2 | do not implement yet — see iter-2 fold log below |
 | 2 (claude) | 2 imp-3 + 5 imp-2 + 2 imp-1 | needs another iteration — see iter-2 fold log below |
 | 2-fold | All (a)-folds applied. **User-direction refold on Codex-bot scope** (per "should we have negative caveats at all?"): drop the "Codex bot NOT configured" negative caveat entirely; replace with positive description of what IS active. Dogfood (CLAUDE.md): "both bots". Template (shared/CLAUDE.md.tmpl): conditional on `github_review_mode` — `claude` branch describes only `claude[bot]`, `both-docs` describes both. **User-direction expansion on gh-hint**: when `--github-review=both-docs`, also surface the manual Codex web-UI setup step (one-time per repo). Plus mechanical (a)-folds: subprocess import (Codex 3 / Claude 2-2), hint text reworded to avoid literal "git add -A" substring (Claude 3-1), Two-tier same-AI ambiguity tightened (Codex 4), Implementation log section added (Codex 5), evidence-table-format phantom content dropped (Claude 2-3), self-improvement target 6→8 to preserve format-spec (Claude 2-4), AGENTS dogfood/tmpl conflation clarified (Claude 2-5), two-consecutive-ifs merged (Claude 1-1), PR #17 merge direction both-ways (Claude 1-2). Codex 2 + Claude 2-1 (internal contradictions) folded by NOT-in-scope cleanup. |
+| 2.5 consistency | 11 internal drifts after iter-2 fold: Bucket D placement contradiction (intro vs code sample vs placement note), test_dogfood_doc_sanity stale "continues to pass" claim, evidence-table-format phantom still in 3 stale spots, self-improvement 6 vs 8 in Arch decisions, AGENTS.md target stale ~125-135 in evidence table, 134/135 range drift, Scope item 12 test count discrepancy, Scope item 9 cross-ref to wrong item-5 number, Bucket B Two-tier row didn't reflect iter-2 refold, gate 3 "above" vs actual "below" Implementation log location, "10 drifts" listed only 8. | All folded as wording/arithmetic corrections |
 
 ## Evidence table — what was folded and where
 
@@ -399,7 +403,7 @@ flags (cli.py:84). They can never be None at this point.
 | Codex iter-1 #2 / Claude 3-1+3-2 | "No content loss" contradicts NOT-in-scope; verbose detail already in `docs/plans/README.md`, not CONTRIBUTING.md | **(a) major refold** | Buckets A+B re-routed: plan-loop / human-approval detail → POINT AT `docs/plans/README.md`; self-improvement protocol → stays in CLAUDE.md compressed; only triage calibration/plateau/evidence-table → CONTRIBUTING.md |
 | Codex iter-1 #3 / Claude 2-3 | NOT-in-scope falsely says selftest_overlap unaffected | **(a) fold** | Bucket E test list now includes `test_overlap_docs_plans_readme`; Phase 2 gate 7 added; NOT-in-scope claim removed |
 | Codex iter-1 #4 | Codex-bot wording is stale in files we touch | **(a) fold** (iter-1.5 revision per user direction) | Scope item 4 now includes the Codex-bot wording fix: "Tier-2 runs both `claude[bot]` + `chatgpt-codex-connector[bot]`" in CLAUDE.md, with proper Jinja-conditional in `shared/CLAUDE.md.tmpl` for `github_review_mode`. Closes BACKLOG.md:416. |
-| Codex iter-1 #5 / Claude 2-5 | AGENTS.md target ~80-100 unachievable; arithmetic doesn't add up | **(a) fold + (d) surface to human** | Pre-loop constraint revised: AGENTS.md ~125-135 acceptable; Bucket C arithmetic corrected; (d)-decision flagged for human-approval gate |
+| Codex iter-1 #5 / Claude 2-5 | AGENTS.md target ~80-100 unachievable; arithmetic doesn't add up | **(a) fold + (d) surface to human** | Pre-loop constraint revised: AGENTS.md ~134-141 acceptable; Bucket C arithmetic corrected; (d)-decision flagged for human-approval gate |
 | Claude 2-1 | cli.py line numbers wrong (598-610 is PR-#17-branch, not main) | **(a) fold** | Bucket D: "lines 358-378 on main"; Risks row downgraded "no-conflict" claim to "verify at impl time" |
 | Claude 2-2 | gh-hint subprocess missing `timeout=` + can't catch TimeoutExpired | **(a) fold** | Bucket D code includes `timeout=5` + `except (..., subprocess.SubprocessError)`; Risks row reconciled |
 | Claude 2-4 | No byte-identity test for non-triage CLAUDE.md↔tmpl drift | **(a) fold** | Sequencing reduced 5 → 4 commits (Commits 2+3 merged atomic; same for 4). Phase 2 gates 10+11 added for manual diff check |
