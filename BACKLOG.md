@@ -444,6 +444,39 @@ passes.
 
 ---
 
+### Adoption-mode: align line-ending handling between gitignore normalization and append-merge (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `plan_adoption_entries` impl
+commit (PR #17).
+
+**Why parked**: `_normalize_gitignore_lines` (used by rule (d) membership
+check in `recommend_policy`) decodes UTF-8 and uses `str.splitlines()`,
+which handles `\r\n`/`\r`/`\v`/`\f` line endings. But
+`compute_append_merge_bytes` (used to compute the post-apply bytes and
+the apply-time write) operates in bytes and uses `bytes.split(b"\n")`,
+which only splits on `\n` and leaves `\r` in each line.
+
+For a CRLF-terminated target `.gitignore` (Windows-cloned repo, mixed
+toolchain), rule (d)'s membership check matches `b"venv/"` (post-strip),
+but the merge function's appended `raw_line` retains the `\r`, producing
+a mixed `\r\n` + `\n` output on the next apply.
+
+The PR #7 scope (call-details/ trial on macOS) uses LF-terminated
+gitignore, so this doesn't fire. Real-but-deferrable.
+
+**Triggers to pick up**:
+- First user reports `.gitignore` mojibake or churn on a Windows-
+  cloned repo using `--mode=adopt`.
+- A test failure on a CI matrix that runs on Windows (not currently
+  configured).
+
+**Rough effort**: ~30 min — either (a) align both to bytes-split on
+`\n` with `\r` stripped before processing, or (b) align both to
+`str.splitlines()` after UTF-8 decode. Tests in `TestComputeAppendMergeBytes`
+need one CRLF round-trip test added.
+
+---
+
 ### Adoption-mode: route APPEND_MERGE restore through atomic_write for parity with OVERWRITE (imp-2)
 
 **Status**: parked. **Source**: Tier-1 review on v2 restore matrix impl commit (PR #17).

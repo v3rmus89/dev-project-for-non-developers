@@ -6,6 +6,8 @@ import base64
 import hashlib
 import json
 
+import pytest
+
 from bootstrap_lib import manifest as manifest_mod
 
 
@@ -924,3 +926,311 @@ class TestRestoreV2:
         # Both created dirs should now be gone (empty after file removal).
         assert not nested.exists()
         assert not sub.exists()
+
+
+class TestPlanAdoptionEntries:
+    """`plan_adoption_entries` — entry-builder for v2 manifests.
+
+    Per-policy contract per Scope #7: SKIP → no entry; WRITE/OVERWRITE/
+    WRITE_NEW/APPEND_MERGE → one entry each with the right per-policy
+    fields; `.new` collision → AdoptionCollisionError. Round-trips end-
+    to-end through write + load + v2 restore.
+    """
+
+    def _build_plan(self, target_root, planned_files):
+        """Helper: synthesize an AdoptionPlan by running analyze_target."""
+        from bootstrap_lib.adopt import analyze_target
+
+        return analyze_target(target_root, planned_files)
+
+    def test_empty_plan_returns_empty_entries(self, tmp_path):
+        from bootstrap_lib.adopt import AdoptionPlan
+
+        plan = AdoptionPlan(target_root=tmp_path, analyses=())
+        entries, created_dirs = manifest_mod.plan_adoption_entries(tmp_path, {}, plan)
+        assert entries == []
+        assert created_dirs == []
+
+    def test_skip_policy_produces_no_entry(self, tmp_path):
+        """Rule (h) default-SKIP / rule (c) byte-identical / rule (e)
+        python-version → no manifest entry. Mutation-only contract."""
+        # Byte-identical → rule (c) SKIP/manual_review=False
+        content = b"hello\n"
+        (tmp_path / "f.txt").write_bytes(content)
+        plan = self._build_plan(tmp_path, {"f.txt": content})
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {"f.txt": content}, plan)
+        assert entries == []
+
+    def test_write_entry_fields(self, tmp_path):
+        """Missing file → rule (a) WRITE. Entry has target_path=path,
+        sha256_after_target_path=sha256(skill), no content_before."""
+        skill = b"# new\n"
+        plan = self._build_plan(tmp_path, {"Makefile": skill})
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {"Makefile": skill}, plan)
+        assert len(entries) == 1
+        e = entries[0]
+        assert e["policy"] == "WRITE"
+        assert e["path"] == "Makefile"
+        assert e["target_path"] == "Makefile"
+        assert e["existed_before"] is False
+        assert e["content_before_b64"] is None
+        assert e["mode_before"] is None
+        assert e["sha256_before"] is None
+        assert e["sha256_after"] == _sha256(skill)
+        assert e["sha256_before_target_path"] is None
+        assert e["sha256_after_target_path"] == _sha256(skill)
+        assert e["pre_append_length"] is None
+
+    def test_overwrite_entry_fields(self, tmp_path):
+        """Empty/whitespace-only file → rule (b) OVERWRITE. Entry has
+        content_before_b64, mode_before, both pre/post SHAs."""
+        target_content = b""
+        (tmp_path / "empty.txt").write_bytes(target_content)
+        skill = b"# filled by skill\n"
+        plan = self._build_plan(tmp_path, {"empty.txt": skill})
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {"empty.txt": skill}, plan)
+        assert len(entries) == 1
+        e = entries[0]
+        assert e["policy"] == "OVERWRITE"
+        assert e["existed_before"] is True
+        assert e["content_before_b64"] == base64.b64encode(target_content).decode("ascii")
+        assert e["sha256_before"] == _sha256(target_content)
+        assert e["sha256_after"] == _sha256(skill)
+        assert e["sha256_before_target_path"] == _sha256(target_content)
+        assert e["sha256_after_target_path"] == _sha256(skill)
+        assert e["mode_before"] is not None  # actual file mode
+
+    def test_write_new_entry_fields(self, tmp_path):
+        """Non-trivial CLAUDE.md → rule (f) WRITE_NEW. target_path =
+        path.new; sha256_before_target_path=None (.new didn't exist)."""
+        target_content = b"# domain CLAUDE.md\n" + b"line\n" * 25
+        (tmp_path / "CLAUDE.md").write_bytes(target_content)
+        skill = b"# skill template\n"
+        plan = self._build_plan(tmp_path, {"CLAUDE.md": skill})
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {"CLAUDE.md": skill}, plan)
+        assert len(entries) == 1
+        e = entries[0]
+        assert e["policy"] == "WRITE_NEW"
+        assert e["path"] == "CLAUDE.md"
+        assert e["target_path"] == "CLAUDE.md.new"
+        assert e["sha256_before_target_path"] is None  # .new didn't exist
+        assert e["sha256_after_target_path"] == _sha256(skill)
+        assert e["content_before_b64"] is None  # original untouched
+        assert e["pre_append_length"] is None
+
+    def test_write_new_collision_raises_adoption_collision_error(self, tmp_path):
+        """Scope #7 `.new` collision rule: existing `<path>.new` → fail-loud."""
+        from bootstrap_lib.adopt import AdoptionCollisionError
+
+        # Make a CLAUDE.md that triggers rule (f)
+        (tmp_path / "CLAUDE.md").write_bytes(b"# domain\n" + b"line\n" * 25)
+        # Pre-existing .new (the collision)
+        (tmp_path / "CLAUDE.md.new").write_bytes(b"# user already started merging\n")
+        skill = b"# skill\n"
+        plan = self._build_plan(tmp_path, {"CLAUDE.md": skill})
+        with pytest.raises(AdoptionCollisionError, match=r"CLAUDE\.md\.new already exists"):
+            manifest_mod.plan_adoption_entries(tmp_path, {"CLAUDE.md": skill}, plan)
+
+    def test_write_new_collision_message_includes_user_guidance(self, tmp_path):
+        from bootstrap_lib.adopt import AdoptionCollisionError
+
+        (tmp_path / "CLAUDE.md").write_bytes(b"# domain\n" + b"line\n" * 25)
+        (tmp_path / "CLAUDE.md.new").write_bytes(b"existing\n")
+        plan = self._build_plan(tmp_path, {"CLAUDE.md": b"# skill\n"})
+        try:
+            manifest_mod.plan_adoption_entries(tmp_path, {"CLAUDE.md": b"# skill\n"}, plan)
+        except AdoptionCollisionError as e:
+            assert "rename or remove it" in str(e)
+            assert "--mode=adopt" in str(e)
+        else:
+            pytest.fail("expected AdoptionCollisionError")
+
+    def test_append_merge_entry_fields(self, tmp_path):
+        """`.gitignore` with missing patterns → rule (d) APPEND_MERGE.
+        Entry has pre_append_length + both target_path SHAs reflecting
+        pre and post-append state."""
+        from bootstrap_lib.adopt import compute_append_merge_bytes
+
+        target = b"venv/\n*.pyc\n"
+        (tmp_path / ".gitignore").write_bytes(target)
+        skill = b"venv/\n*.pyc\n__pycache__/\n.env\n"
+        plan = self._build_plan(tmp_path, {".gitignore": skill})
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {".gitignore": skill}, plan)
+        assert len(entries) == 1
+        e = entries[0]
+        assert e["policy"] == "APPEND_MERGE"
+        assert e["target_path"] == ".gitignore"
+        assert e["pre_append_length"] == len(target)
+        assert e["sha256_before_target_path"] == _sha256(target)
+        merged = compute_append_merge_bytes(target, skill)
+        assert e["sha256_after_target_path"] == _sha256(merged)
+        # Merged contains the new patterns + original ones
+        assert b"__pycache__/" in merged and b".env" in merged
+
+    def test_write_creates_parent_dirs(self, tmp_path):
+        """WRITE in a nested subdir adds parent dirs to created_directories."""
+        skill = b"# new\n"
+        plan = self._build_plan(tmp_path, {"a/b/c/file.txt": skill})
+        _entries, created_dirs = manifest_mod.plan_adoption_entries(
+            tmp_path, {"a/b/c/file.txt": skill}, plan
+        )
+        assert "a" in created_dirs
+        assert "a/b" in created_dirs
+        assert "a/b/c" in created_dirs
+
+    def test_skip_does_not_create_parent_dirs(self, tmp_path):
+        """SKIP entries don't write anything → don't add to created_dirs."""
+        # Byte-identical → SKIP via rule (c). And the file exists in a nested
+        # dir which we set up so the dir IS pre-existing.
+        (tmp_path / "subdir").mkdir()
+        content = b"existing\n"
+        (tmp_path / "subdir" / "f.txt").write_bytes(content)
+        plan = self._build_plan(tmp_path, {"subdir/f.txt": content})
+        _entries, created_dirs = manifest_mod.plan_adoption_entries(
+            tmp_path, {"subdir/f.txt": content}, plan
+        )
+        # subdir was pre-existing; even if it weren't, SKIP wouldn't add it.
+        assert "subdir" not in created_dirs
+
+    def test_planned_file_missing_from_dict_raises_value_error(self, tmp_path):
+        """Defensive: if the adoption plan references a rel_path not in
+        planned_files, fail-loud (signals a bug in the caller's wiring)."""
+        from bootstrap_lib.adopt import (
+            AdoptionPlan,
+            PlannedFileAnalysis,
+            PolicyRecommendation,
+            TargetMeta,
+        )
+
+        # Synthesize an analysis that references a file NOT in planned_files
+        meta = TargetMeta(
+            exists=False,
+            size=0,
+            sha256=None,
+            line_count=None,
+            heading_count=None,
+            has_dependency_groups=False,
+            python_version_pin=None,
+            ignored_by_git=None,
+        )
+        rec = PolicyRecommendation(
+            policy="WRITE", reason="x", confidence="high", manual_review_needed=False
+        )
+        plan = AdoptionPlan(
+            target_root=tmp_path,
+            analyses=(
+                PlannedFileAnalysis(rel_path="phantom.txt", target_meta=meta, recommendation=rec),
+            ),
+        )
+        with pytest.raises(ValueError, match="no matching planned_files entry"):
+            manifest_mod.plan_adoption_entries(tmp_path, {}, plan)
+
+    def test_mixed_plan_all_policies_produce_correct_entries(self, tmp_path):
+        """Realistic call-details-shaped fixture: WRITE + OVERWRITE +
+        WRITE_NEW + APPEND_MERGE + SKIP in one plan. Verify entry counts +
+        policies."""
+        # WRITE: missing
+        # OVERWRITE: empty existing
+        (tmp_path / "empty.txt").write_bytes(b"")
+        # WRITE_NEW: long markdown domain file (rule f)
+        (tmp_path / "CLAUDE.md").write_bytes(b"# domain\n" + b"line\n" * 25)
+        # APPEND_MERGE: .gitignore with missing patterns
+        (tmp_path / ".gitignore").write_bytes(b"venv/\n")
+        # SKIP: byte-identical
+        matched = b"matched\n"
+        (tmp_path / "matched.txt").write_bytes(matched)
+
+        planned = {
+            "Makefile": b"# new makefile\n",  # WRITE
+            "empty.txt": b"filled\n",  # OVERWRITE
+            "CLAUDE.md": b"# skill\n",  # WRITE_NEW
+            ".gitignore": b"venv/\n*.pyc\n",  # APPEND_MERGE
+            "matched.txt": matched,  # SKIP
+        }
+        plan = self._build_plan(tmp_path, planned)
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, planned, plan)
+
+        # 5 planned files, 1 SKIP → 4 entries
+        assert len(entries) == 4
+        policies = {e["policy"] for e in entries}
+        assert policies == {"WRITE", "OVERWRITE", "WRITE_NEW", "APPEND_MERGE"}
+        # No entry for the SKIP'd file
+        assert all(e["path"] != "matched.txt" for e in entries)
+
+    def test_entries_round_trip_through_write_load_restore(self, tmp_path, monkeypatch):
+        """End-to-end: plan_adoption_entries → write_manifest → load_manifest
+        → restore_from_manifest correctly undoes the mutations. Simulates
+        apply by manually applying each entry's planned change."""
+        import tempfile
+
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+        # Set up target as it would be PRE-apply
+        target_root = tmp_path / "proj"
+        target_root.mkdir()
+        (target_root / "empty.txt").write_bytes(b"")  # OVERWRITE target
+        (target_root / ".gitignore").write_bytes(b"venv/\n")  # APPEND_MERGE target
+        (target_root / "CLAUDE.md").write_bytes(b"# domain\n" + b"line\n" * 25)  # WRITE_NEW target
+
+        planned = {
+            "Makefile": b"# new\n",  # WRITE
+            "empty.txt": b"filled\n",  # OVERWRITE
+            ".gitignore": b"venv/\n*.pyc\n",  # APPEND_MERGE
+            "CLAUDE.md": b"# skill\n",  # WRITE_NEW
+        }
+        plan = self._build_plan(target_root, planned)
+        entries, created_dirs = manifest_mod.plan_adoption_entries(target_root, planned, plan)
+
+        # MANUALLY simulate apply (replaces _apply_adoption_writes from chunk 4).
+        # This is the contract the apply step must follow.
+        from bootstrap_lib.adopt import compute_append_merge_bytes
+
+        for e in entries:
+            tp = target_root / e["target_path"]
+            if e["policy"] in ("WRITE", "OVERWRITE", "WRITE_NEW"):
+                tp.write_bytes(planned[e["path"]])
+            elif e["policy"] == "APPEND_MERGE":
+                target_content = tp.read_bytes()
+                tp.write_bytes(compute_append_merge_bytes(target_content, planned[e["path"]]))
+
+        # Pre-restore snapshot
+        assert (target_root / "Makefile").read_bytes() == b"# new\n"
+        assert (target_root / "empty.txt").read_bytes() == b"filled\n"
+        assert (target_root / ".gitignore").read_bytes() == b"venv/\n*.pyc\n"
+        assert (target_root / "CLAUDE.md.new").read_bytes() == b"# skill\n"
+        # Original CLAUDE.md untouched by WRITE_NEW
+        assert (target_root / "CLAUDE.md").read_bytes() == b"# domain\n" + b"line\n" * 25
+
+        # Write manifest + load + restore
+        m = manifest_mod.Manifest(
+            target_root=str(target_root),
+            github_review_mode="none",
+            entries=entries,
+            created_directories=created_dirs,
+            format_version=manifest_mod.MANIFEST_FORMAT_V2,
+        )
+        path = manifest_mod.write_manifest(m)
+        loaded = manifest_mod.load_manifest(path)
+        assert loaded.format_version == 2
+
+        import io
+
+        out = io.StringIO()
+        n_restored, n_removed, n_skipped, n_rejected = manifest_mod.restore_from_manifest(
+            loaded, stderr=out
+        )
+        # OVERWRITE + APPEND_MERGE restore via mutation; WRITE + WRITE_NEW remove.
+        assert n_restored == 2
+        assert n_removed == 2
+        assert n_skipped == 0
+        assert n_rejected == 0
+
+        # Post-restore: target should be back to pre-apply state.
+        assert not (target_root / "Makefile").exists()  # WRITE undone
+        assert (target_root / "empty.txt").read_bytes() == b""  # OVERWRITE undone
+        assert (target_root / ".gitignore").read_bytes() == b"venv/\n"  # truncated
+        assert not (target_root / "CLAUDE.md.new").exists()  # WRITE_NEW undone
+        assert (
+            target_root / "CLAUDE.md"
+        ).read_bytes() == b"# domain\n" + b"line\n" * 25  # original was untouched throughout

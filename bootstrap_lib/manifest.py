@@ -160,6 +160,169 @@ def plan_entries(target_root, planned_files):
     return entries, created_directories
 
 
+def _build_v2_write_entry(rel_path, skill_content):
+    skill_sha = _sha256(skill_content)
+    return {
+        "path": rel_path,
+        "policy": "WRITE",
+        "target_path": rel_path,
+        "existed_before": False,
+        "content_before_b64": None,
+        "mode_before": None,
+        "sha256_before": None,
+        "sha256_after": skill_sha,
+        "sha256_before_target_path": None,
+        "sha256_after_target_path": skill_sha,
+        "pre_append_length": None,
+        "mode_after": default_mode_for(rel_path),
+    }
+
+
+def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content):
+    existing = target_full_path.read_bytes()
+    existing_mode = os.stat(target_full_path).st_mode & 0o777
+    target_sha = _sha256(existing)
+    skill_sha = _sha256(skill_content)
+    return {
+        "path": rel_path,
+        "policy": "OVERWRITE",
+        "target_path": rel_path,
+        "existed_before": True,
+        "content_before_b64": base64.b64encode(existing).decode("ascii"),
+        "mode_before": existing_mode,
+        "sha256_before": target_sha,
+        "sha256_after": skill_sha,
+        "sha256_before_target_path": target_sha,
+        "sha256_after_target_path": skill_sha,
+        "pre_append_length": None,
+        "mode_after": default_mode_for(rel_path),
+    }
+
+
+def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content):
+    skill_sha = _sha256(skill_content)
+    return {
+        "path": rel_path,
+        "policy": "WRITE_NEW",
+        "target_path": new_rel_path,
+        # The ORIGINAL at `path` is left untouched by WRITE_NEW. The
+        # before/after SHAs for `path` aren't load-bearing (restore SHA-checks
+        # `target_path`, the `.new` file). Captured as None so the v2 restore
+        # matrix can't accidentally use them.
+        "existed_before": True,
+        "content_before_b64": None,
+        "mode_before": None,
+        "sha256_before": None,
+        "sha256_after": skill_sha,
+        # The `.new` file is created by apply. Restore SHA-checks it.
+        "sha256_before_target_path": None,
+        "sha256_after_target_path": skill_sha,
+        "pre_append_length": None,
+        "mode_after": default_mode_for(rel_path),
+    }
+
+
+def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content):
+    # Import locally to avoid a module-load cycle if manifest.py is imported
+    # before adopt.py is fully initialised.
+    from bootstrap_lib.adopt import compute_append_merge_bytes
+
+    existing = target_full_path.read_bytes()
+    existing_mode = os.stat(target_full_path).st_mode & 0o777
+    target_sha = _sha256(existing)
+    merged = compute_append_merge_bytes(existing, skill_content)
+    merged_sha = _sha256(merged)
+    return {
+        "path": rel_path,
+        "policy": "APPEND_MERGE",
+        "target_path": rel_path,
+        "existed_before": True,
+        "content_before_b64": None,  # v2 APPEND_MERGE restore uses truncation
+        "mode_before": existing_mode,
+        "sha256_before": target_sha,
+        "sha256_after": merged_sha,
+        "sha256_before_target_path": target_sha,
+        "sha256_after_target_path": merged_sha,
+        "pre_append_length": len(existing),
+        "mode_after": default_mode_for(rel_path),
+    }
+
+
+def plan_adoption_entries(target_root, planned_files, adoption_plan):
+    """Build v2 manifest entries from an AdoptionPlan + planned_files (Bucket B
+    Scope #7).
+
+    SKIP-policy analyses produce NO manifest entry (mutation-only contract;
+    SKIP decisions live in the adoption report instead). Each mutating policy
+    has its own builder above.
+
+    `.new` collision rule (Scope #7): if `<original>.new` already exists at
+    plan-time for a WRITE_NEW entry, raise `AdoptionCollisionError`. The
+    caller (`cli.py`) converts to `CLIError(exit_code=2)` with the user-facing
+    "rename or remove it before running --mode=adopt" message. Fail-loud
+    rather than risk overwriting a file the user authored or already-merged.
+
+    Returns `(entries, created_directories)` matching `plan_entries`' shape.
+    Only WRITE entries can introduce new parent directories (OVERWRITE /
+    APPEND_MERGE / WRITE_NEW all target files whose parent dirs must exist).
+    """
+    # Local import to avoid an at-import-time cycle.
+    from bootstrap_lib.adopt import AdoptionCollisionError
+
+    root = Path(target_root)
+    entries = []
+    pre_existing_dirs = set()
+    if root.exists():
+        for dirpath, _dirnames, _filenames in os.walk(root):
+            rel = Path(dirpath).relative_to(root)
+            if str(rel) != ".":
+                pre_existing_dirs.add(str(rel))
+
+    needed_dirs = set()
+    for analysis in adoption_plan.analyses:
+        rel_path = analysis.rel_path
+        policy = analysis.recommendation.policy
+        if policy == "SKIP":
+            continue
+
+        if rel_path not in planned_files:
+            raise ValueError(
+                f"adoption_plan analysis for {rel_path!r} has no matching planned_files entry"
+            )
+        skill_content = planned_files[rel_path]
+        target_full_path = root / rel_path
+
+        if policy == "WRITE":
+            parent = Path(rel_path).parent
+            while str(parent) not in (".", ""):
+                if str(parent) not in pre_existing_dirs:
+                    needed_dirs.add(str(parent))
+                parent = parent.parent
+            entries.append(_build_v2_write_entry(rel_path, skill_content))
+        elif policy == "OVERWRITE":
+            entries.append(_build_v2_overwrite_entry(target_full_path, rel_path, skill_content))
+        elif policy == "WRITE_NEW":
+            new_rel_path = f"{rel_path}.new"
+            new_full_path = root / new_rel_path
+            if new_full_path.exists():
+                raise AdoptionCollisionError(
+                    f"{new_rel_path} already exists — rename or remove it before "
+                    "running `--mode=adopt`; bootstrap will NOT overwrite an "
+                    "existing `.new` file"
+                )
+            entries.append(_build_v2_write_new_entry(rel_path, new_rel_path, skill_content))
+        elif policy == "APPEND_MERGE":
+            entries.append(_build_v2_append_merge_entry(target_full_path, rel_path, skill_content))
+        else:
+            raise ValueError(
+                f"unknown policy {policy!r} for {rel_path!r} (expected one of "
+                "WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/SKIP)"
+            )
+
+    created_directories = sorted(needed_dirs, key=lambda p: (len(Path(p).parts), p))
+    return entries, created_directories
+
+
 def write_manifest(m):
     path = manifest_path()
     payload = json.dumps(m.to_dict(), indent=2, sort_keys=True).encode("utf-8")

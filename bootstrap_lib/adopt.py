@@ -238,6 +238,52 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
     )
 
 
+class AdoptionCollisionError(Exception):
+    """Raised when apply-time invariants for adoption-mode are violated.
+
+    The current trigger is the Scope #7 `.new` collision rule: if
+    `<original>.new` already exists at apply time, fail-loud rather than
+    overwrite a file the user may have authored or already-merged.
+    `cli.py` catches this and converts to `CLIError(exit_code=2)`.
+    """
+
+
+def compute_append_merge_bytes(target_content: bytes, skill_content: bytes) -> bytes:
+    """Return the post-merge bytes for an APPEND_MERGE apply.
+
+    Line-level idempotent merge: for each meaningful (non-empty, non-comment)
+    line in skill_content, append it ONLY if its stripped form is not already
+    present in target_content. Comments + blank lines are skipped (they're
+    not patterns). Running twice on the same inputs produces the same result.
+
+    Operates in bytes throughout — no UTF-8 round-trip — so the post-apply
+    content is exactly what gets written to disk and what `sha256_after_*`
+    will hash. Both rule (d)'s `recommend_policy` heuristic and apply-time
+    write must agree on the post-merge bytes; this is the single source of
+    truth for both.
+    """
+    target_lines: set[bytes] = set()
+    for raw_line in target_content.split(b"\n"):
+        stripped = raw_line.strip()
+        if stripped and not stripped.startswith(b"#"):
+            target_lines.add(stripped)
+
+    appended: list[bytes] = []
+    for raw_line in skill_content.split(b"\n"):
+        stripped = raw_line.strip()
+        if stripped and not stripped.startswith(b"#") and stripped not in target_lines:
+            appended.append(raw_line)
+            target_lines.add(stripped)  # de-dupe within skill content itself
+
+    if not appended:
+        return target_content  # idempotent: nothing new to add
+
+    suffix = b"\n".join(appended) + b"\n"
+    if target_content and not target_content.endswith(b"\n"):
+        return target_content + b"\n" + suffix
+    return target_content + suffix
+
+
 def _normalize_gitignore_lines(content_bytes: bytes) -> set[str]:
     """Return the set of meaningful (non-empty, non-comment) `.gitignore` lines.
 
@@ -597,6 +643,7 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
 
 
 __all__ = [
+    "AdoptionCollisionError",
     "AdoptionPlan",
     "Confidence",
     "PlannedFileAnalysis",
@@ -605,6 +652,7 @@ __all__ = [
     "TargetMeta",
     "_compute_target_meta",  # exported for tests
     "analyze_target",
+    "compute_append_merge_bytes",
     "format_recommendation_report",
     "recommend_policy",
 ]
