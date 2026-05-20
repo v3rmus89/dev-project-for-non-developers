@@ -90,15 +90,20 @@ sub-tasks → 4 commits):
 
 1. **Commit 1**: Triage section shrink across all 6 byte-identity surfaces + add the
    "## Triaging review findings (full discipline)" section to `CONTRIBUTING.md` +
-   `shared/CONTRIBUTING.md.tmpl`. byte-identity test + selftest_overlap test must
-   pass after.
+   `shared/CONTRIBUTING.md.tmpl` + the same-AI Tier-1 wording fix in CONTRIBUTING.md
+   lines 111/190 + tmpl 196/251 (iter-4 fold Codex 2). byte-identity test +
+   selftest_overlap test must pass after.
 2. **Commit 2**: Tighten CLAUDE.md other sections AND mirror to `shared/CLAUDE.md.tmpl`
    in the SAME commit (closes Claude 2-4 imp-2 — no byte-identity test guards
-   non-triage CLAUDE.md↔tmpl consistency, so atomic edit prevents drift).
+   non-triage CLAUDE.md↔tmpl consistency, so atomic edit prevents drift). **This
+   commit also updates `tests/test_dogfood_doc_sanity.py` lines 127-130 + docstring**
+   (iter-4 fold Claude 2.2) — Commit 2 introduces `@codex review` to CLAUDE.md, so the
+   test that forbids it must be updated in the SAME commit or Commit 2 leaves pytest
+   red at its own Tier-1 review.
 3. **Commit 3**: Tighten AGENTS.md (skill's own) + mirror to `shared/AGENTS.md.tmpl`
    atomic.
 4. **Commit 4**: Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply
-   success path + tests.
+   success path + the 8 NEW `test_bootstrap_cli.py` gh-hint tests.
 
 Tier-1 review per commit before push. Total estimated 3-5 hours including loop overhead.
 
@@ -109,7 +114,7 @@ Tier-1 review per commit before push. Total estimated 3-5 hours including loop o
 | # | Change | Where |
 |---|---|---|
 | 1 | Shrink "## Triaging review findings" verbose block (23 lines) → short version (~17 lines): 4-option bullets compressed to 1 sentence each, drop "The loop converges faster…" filler, drop "These four questions add ~30 seconds…" filler, drop the Calibration paragraph (moves to CONTRIBUTING.md), drop the plateau-rule paragraph (moves to CONTRIBUTING.md). Keep the 4 options + the 4 questions (with exact substring text per byte-identity test). End with: "See `CONTRIBUTING.md` for the full triage discipline: imp-3 calibration and the plateau rule." **Accepted dropped-content trade-off** (iter-3 fold Claude 5 per user direction): the (d) bullet's operational guardrails — `"Default is NOT (d)"`, the "30 seconds before merge, would they be surprised" heuristic, "Note (d) outcomes in the evidence table as `surfaced:`" — are dropped (not routed to CONTRIBUTING.md) since the (d) bullet compresses to one sentence. The keyword + brief description of (d) remain; the operational nuance is lost. Acceptable because the 4-questions check + the (a/b/c/d) bullet keywords carry the bulk of the discipline. | `CLAUDE.md`, `AGENTS.md`, `docs/plans/README.md`, `shared/CLAUDE.md.tmpl`, `shared/AGENTS.md.tmpl`, `shared/docs-plans-README.md.tmpl` (all 6 byte-identity surfaces) |
-| 2 | Add new section "## Triaging review findings (full discipline)" to `CONTRIBUTING.md` + `shared/CONTRIBUTING.md.tmpl`, placed BEFORE the existing "## Tier-1 review — prompt template for in-session subagents". Includes ONLY: the calibration paragraph (imp-3 definition) and the plateau rule (iter-2.5 / iter-3.5 fold: NO "evidence-table format guidance" — that was phantom content; the actual format reference stays inside the (a/b/c/d) bullets which remain in the short CLAUDE.md/AGENTS.md block). Also update CONTRIBUTING.md line 114 of existing per-change checklist to reference "the (a/b/c/d) framework below in this document". | `CONTRIBUTING.md`, `shared/CONTRIBUTING.md.tmpl` |
+| 2 | Add new section "## Triaging review findings (full discipline)" to `CONTRIBUTING.md` + `shared/CONTRIBUTING.md.tmpl`, placed BEFORE the existing "## Tier-1 review — prompt template for in-session subagents". Includes ONLY: the calibration paragraph (imp-3 definition) and the plateau rule (iter-2.5 / iter-3.5 fold: NO "evidence-table format guidance" — that was phantom content; the actual format reference stays inside the (a/b/c/d) bullets which remain in the short CLAUDE.md/AGENTS.md block). **(iter-4 fold Codex 1)**: do NOT update CONTRIBUTING.md line 111 (formerly cited as :114) — its current pointer "the (a/b/c/d) framework in `CLAUDE.md`" remains correct after this PR (the (a/b/c/d) bullets stay in CLAUDE.md compressed; only calibration+plateau move to CONTRIBUTING.md). Earlier plan-text claiming "below in this document" was a broken cross-ref since the framework is NOT moving here. **(iter-4 fold Codex 2)**: ALSO update CONTRIBUTING.md lines 111 + 190 + tmpl lines 196 + 251 — replace `# or review-commit-by-codex` / "or `make review-commit-by-codex`" with same-AI Tier-1 wording: "Tier-1 uses the same AI as the implementer (closes BACKLOG.md:557; cross-AI review is Tier-2's job)." | `CONTRIBUTING.md`, `shared/CONTRIBUTING.md.tmpl` |
 | 3 | Tighten `CLAUDE.md` ## Plan review loop section from 34 lines → ~6 lines: keep the rule ("write to `docs/plans/...`, run review-plan-by-codex + claude, stop when no imp-3 remain"), drop the detailed iteration cadence + filename convention + bootstrap-exception. **End with**: "See `docs/plans/README.md` for filename convention, bootstrap exception, when-to-stop rule, and consistency self-check cadence" — pointing at the existing canonical surface, NOT duplicating to CONTRIBUTING.md (iter-1 fold). | `CLAUDE.md` |
 | 4 | Tighten `CLAUDE.md` ## Two-tier code review from 8 lines → ~6 lines, with **iter-2 user-direction refold (positive-framing not negative-caveats)**: the current text contains a NEGATIVE caveat "(Codex GitHub bot is NOT configured in this project. Retroactively adding it is non-trivial today — see BACKLOG for the planned `--enable-github-review` flag.)" — DROP this caveat entirely. Replace with positive description of what IS active: "Tier-2 (after push): `claude[bot]` + `chatgpt-codex-connector[bot]` auto-fire on PR open / draft→ready; re-trigger via `@claude review this` or `@codex review` comments." (Skill repo has both bots active; positive description matches reality without naming what's missing.) Closes BACKLOG.md:416. Also fold **iter-2 Codex #4** at same time: tighten the Tier-1 same-AI ambiguity — "use the same AI as the implementer" (BACKLOG.md:557). | `CLAUDE.md` |
 | 5 | Tighten `CLAUDE.md` ## Self-improvement loop (LESSONS.md) from 10 lines → **~8 lines** (iter-2 fold Claude 2-4: target raised from 6 to 8 to preserve the LESSONS.md entry-format spec at CLAUDE.md:123 and promote/archive rules at line 126 — the format spec is the only place a driver learns how to write a LESSONS entry; can't drop silently). Keep: "read LESSONS.md at session start" + 1-line writable-vs-read-only summary + entry-format spec (`### YYYY-MM-DD: <mistake>` + Trigger/Rule/Status) + promote/archive rule + pointer to AGENTS.md for read-only-context details. NO new CONTRIBUTING.md section. | `CLAUDE.md` |
@@ -119,8 +124,8 @@ Tier-1 review per commit before push. Total estimated 3-5 hours including loop o
 | 9 | Mirror items 3, 5, 6, 7, 8 to `shared/CLAUDE.md.tmpl` in the SAME commit (Claude 2-4 fold — avoid drift). **Item 4 (Two-tier section) does NOT mirror as-is** (iter-2 fold Codex 3-2 + Claude 3-2): in the template, the Two-tier section is conditional on `github_review_mode`. Update: (i) `claude` branch: drop the stale "Codex bot NOT configured" caveat; describe only `claude[bot]` positively; (ii) `both-docs` branch: describe both bots positively (`claude[bot]` + `chatgpt-codex-connector[bot]`); (iii) `none` branch: existing minimal mention stays. Preserve all other Jinja conditionals (`{% if package_manager %}`, etc.). | `shared/CLAUDE.md.tmpl` |
 | 10 | Tighten `AGENTS.md` (skill's own): keep "What to flag with high confidence" + "What NOT to flag" + "Local quality gate" + "Plan Review Guidance" + "Tone" sections (reviewer-specific; CAN'T move without losing purpose). Tighten "Cross-session state recovery" (5 → 4) + "Self-improvement loop" (10 → 6 — AGENTS.md keeps just the read-only-reviewer protocol; the LESSONS format-spec lives in CLAUDE.md per item 5's 8-line target, not mirrored here). | `AGENTS.md` |
 | 11 | **Mirror ONLY the Cross-session-recovery + Self-improvement shrinks** from item 10 to `shared/AGENTS.md.tmpl` in the SAME commit (iter-2 fold Claude 2-5: the template's other sections ("What to flag", "Plan Review Guidance") have structurally different content from the dogfood — they're a generic baseline vs the dogfood's skill-repo-specific 35-line block). The triage block already shrinks via Bucket A's Commit 1 across both surfaces. | `shared/AGENTS.md.tmpl` |
-| 12 | Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply success block (lines 358-378 on main). Detection: distinguish "no `.git/` directory" (target needs `git init`) vs "`.git/` exists but no remote" (only needs remote creation). **Safe-pattern hint**: use `git status` + explicit-paths checklist (NEVER literal `git add -A` / `git add .` substrings — iter-2 fold Claude 3-1: hint warning text would self-trip the regression-guard test; reword to "stage files explicitly with `git add <path>`; never stage everything blind"). **`gh repo create` visibility**: print `<--private\|--public>` placeholder (iter-3 fold Codex 3 per user direction — `--public` default risks accidentally exposing secrets for the non-coder audience; explicit placeholder forces a deliberate choice). **For `--github-review=both-docs`**: hint additionally points at the existing `docs/codex-github-review-setup.md` for the Codex web-UI setup (iter-3 fold Claude 4 — don't duplicate the 3-step block in cli.py; the doc is the single source of truth that handles UI-label drift). **For `--github-review=claude`**: gh-hint + existing OAuth-token hint. **For `--github-review=none`**: NO gh-hint (iter-3 fold per user direction — `none` mode means no GitHub assumptions; user didn't supply `--github-owner`/`--github-repo` so a hint can't be specific). **Implementation note**: also add `import subprocess` to `cli.py`'s import block. | `bootstrap_lib/cli.py` |
-| 13 | Tests: (i) extend `tests/test_bootstrap_cli.py` with **7 NEW tests** total: 3 detection-state (no-`.git/`, `.git/`-no-remote, has-remote-no-fire), 1 regression guard (no literal `git add -A`/`.`), 1 visibility-placeholder guard (no hardcoded `--public`), 1 none-mode-no-hint guard, 1 both-docs-points-at-setup-doc check. (ii) Update `tests/test_dogfood_doc_sanity.py:125` invariant to allow `@codex review` in root CLAUDE.md (Scope item 4). (iii) `tests/test_selftest_overlap.py::test_overlap_docs_plans_readme` must continue to pass (Commit 1 impacts it). (iv) **Must-preserve-token discipline** (iter-3 fold Claude 2): the 4 existing `test_dogfood_doc_sanity.py` substring tests + the `test_shared_templates.py` Two-tier parametrize must all keep passing — substring constraints listed inline in Bucket E test table; preserve-tokens added to Scope items 4/5/7/9/10. | `tests/test_bootstrap_cli.py`, `tests/test_dogfood_doc_sanity.py` |
+| 12 | Add gh-repo-create hint to `bootstrap_lib/cli.py`'s v1 post-apply success block (lines 358-378 on main). Detection: distinguish "no `.git/` directory" (target needs `git init`) vs "`.git/` exists but no remote" (only needs remote creation). **Safe-pattern hint**: use `git status` + explicit-paths checklist (NEVER literal `git add -A` / `git add .` substrings — iter-2 fold Claude 3-1: hint warning text would self-trip the regression-guard test; reword to "stage files explicitly with `git add <path>`; never stage everything blind"). **`gh repo create` visibility (iter-4 fold Codex 4)**: print TWO explicit alternative command lines (`--private` and `--public`) under a "choose ONE" comment + a closing "no default — pick deliberately" note. Original iter-3 placeholder `<--private|--public>` was shell-metacharacter unsafe (`<` `|` `>` would be parsed as redirection/pipe on copy-paste). Two explicit lines preserves the iter-3 intent (force deliberate choice; no `--public` default) AND is copy-paste safe for the non-coder audience. **For `--github-review=both-docs`** (iter-4 fold Claude 2.3 — corrected placement): hint additionally points at the existing `docs/codex-github-review-setup.md` for the Codex web-UI setup; this pointer prints whenever `github_review == "both-docs"`, INDEPENDENT of `has_remote` (Codex bot enablement is a web-UI step orthogonal to repo creation). Don't duplicate the 3-step block in cli.py; the doc is the single source of truth (iter-3 fold Claude 4). **For `--github-review=claude`**: gh-hint + existing OAuth-token hint. **For `--github-review=none`**: NO gh-hint (iter-3 fold per user direction — `none` mode means no GitHub assumptions; user didn't supply `--github-owner`/`--github-repo` so a hint can't be specific). **Lint cleanliness (iter-4 fold Claude 2.1)**: drop the `f` prefix on `print(...)` lines without `{…}` interpolation (F541); simplify `except` tuple to `(OSError, subprocess.SubprocessError)` — `FileNotFoundError` is a subclass of `OSError`, redundant. **Implementation note**: also add `import subprocess` to `cli.py`'s import block. | `bootstrap_lib/cli.py` |
+| 13 | Tests: (i) extend `tests/test_bootstrap_cli.py` with **8 NEW tests** total (iter-4 fold Claude 2.3 adds one): 3 detection-state (no-`.git/`, `.git/`-no-remote, has-remote-no-fire), 1 regression guard (no literal `git add -A`/`.`), 1 visibility-two-alternatives test (iter-4 fold Codex 4 — assert BOTH `--private` and `--public` command lines appear AND a "choose ONE" guidance line AND NO `<--private|--public>` shell-metacharacter substring AND no bare `--push` line lacking a `--private`/`--public` flag), 1 none-mode-no-hint guard, 1 both-docs-points-at-setup-doc check **with target lacking a remote** (iter-3), 1 NEW both-docs-points-at-setup-doc check **with target ALREADY having a remote** (iter-4 fold Claude 2.3 — proves pointer prints regardless of `has_remote`). (ii) Update `tests/test_dogfood_doc_sanity.py` invariant at **lines 127-130** (iter-4 fold Claude 1.1 — was incorrectly cited as `:125` in iter-3; line 125 is the `claude[bot]` assertion, the `@codex review` block is 127-130) to allow `@codex review` in root CLAUDE.md (Scope item 4). ALSO reconcile the function's docstring (lines 116-119) which currently says "selftest catches drift between shared/CLAUDE.md.tmpl and the dogfood mirror" — after Scope item 4, dogfood Two-tier deliberately diverges from template's `claude` branch; docstring must reflect this. **(iter-4 fold Claude 2.2)**: this test update lands in **Commit 2** (the same commit that introduces `@codex review` to CLAUDE.md), NOT Commit 4 — otherwise Commit 2 leaves pytest red at Tier-1 review time. (iii) `tests/test_selftest_overlap.py::test_overlap_docs_plans_readme` must continue to pass (Commit 1 impacts it). (iv) **Must-preserve-token discipline** (iter-3 fold Claude 2): the 4 existing `test_dogfood_doc_sanity.py` substring tests + the `test_shared_templates.py` Two-tier parametrize must all keep passing — substring constraints listed inline in Bucket E test table; preserve-tokens added to Scope items 4/5/7/9/10. | `tests/test_bootstrap_cli.py`, `tests/test_dogfood_doc_sanity.py` |
 
 ### NOT in scope
 
@@ -159,8 +164,8 @@ Tier-1 review per commit before push. Total estimated 3-5 hours including loop o
 | `shared/CLAUDE.md.tmpl` | Replace the triage section with the same new short version. |
 | `shared/AGENTS.md.tmpl` | Replace the triage section with the same new short version. |
 | `shared/docs-plans-README.md.tmpl` | Replace the triage section with the same new short version. |
-| `CONTRIBUTING.md` | Add new section "## Triaging review findings (full discipline)" BEFORE the existing "## Tier-1 review — prompt template" section. Content: **moved verbatim** — calibration paragraph (current CLAUDE.md line 88) + plateau rule (current CLAUDE.md line 90). No "evidence-table format guidance" — that's referenced inside the (a/b/c/d) bullets which STAY in the short block (iter-2 fold Claude 2-3: phantom content corrected). Also update line 114 to "the (a/b/c/d) framework below in this document". |
-| `shared/CONTRIBUTING.md.tmpl` | Mirror the new section + line-114 update. |
+| `CONTRIBUTING.md` | Add new section "## Triaging review findings (full discipline)" BEFORE the existing "## Tier-1 review — prompt template" section. Content: **moved verbatim** — calibration paragraph (current CLAUDE.md line 88) + plateau rule (current CLAUDE.md line 90). No "evidence-table format guidance" — that's referenced inside the (a/b/c/d) bullets which STAY in the short block (iter-2 fold Claude 2-3: phantom content corrected). **(iter-4 fold)**: line-111 pointer to CLAUDE.md framework stays — it is NOT updated (iter-4 Codex 1: the framework isn't moving to CONTRIBUTING.md, so the pointer remains correct). ALSO (iter-4 fold Codex 2): edit lines 111 + 190 to replace `# or review-commit-by-codex` / "or `make review-commit-by-codex`" with same-AI Tier-1 wording — closes BACKLOG.md:557. |
+| `shared/CONTRIBUTING.md.tmpl` | Mirror the new section. Also mirror the same-AI Tier-1 edits at tmpl lines 196 + 251 (iter-4 fold Codex 2). No line-111-equivalent pointer change (iter-4 fold Codex 1: framework stays in CLAUDE.md). |
 
 **Selftest_overlap impact** (iter-1 fold): `tests/test_selftest_overlap.py:81-85` checks
 `shared/docs-plans-README.md.tmpl` byte-renders to `docs/plans/README.md`. Both files
@@ -238,10 +243,10 @@ OAuth-token prints:
                 capture_output=True, text=True, check=False, timeout=5,
             )
             has_remote = result.returncode == 0 and bool(result.stdout.strip())
-        except (FileNotFoundError, OSError, subprocess.SubprocessError):
-            # iter-1 fold: Claude 2-2 — `subprocess.TimeoutExpired` subclasses
-            # `SubprocessError` (NOT `OSError`); the broader catch ensures the
-            # hint detection never crashes the apply itself.
+        except (OSError, subprocess.SubprocessError):
+            # iter-4 fold Claude 2.1: drop redundant FileNotFoundError
+            # (subclass of OSError). SubprocessError covers TimeoutExpired
+            # (which does NOT subclass OSError).
             has_remote = False
 
     if not has_remote:
@@ -249,36 +254,46 @@ OAuth-token prints:
         # iter-2 fold Claude 3-1: warning text MUST NOT contain literal
         # "git add -A" or "git add ." substrings (would self-trip the
         # regression test that asserts those substrings never appear).
-        # Use "stage explicitly with git add <path>" wording instead.
+        # iter-4 fold Claude 2.1: drop `f` prefix on lines without {…}
+        # interpolation (F541 lint).
+        # iter-4 fold Codex 4: visibility = two explicit alternatives
+        # (no shell-metacharacter placeholder `<--private|--public>` —
+        # `<` `|` `>` would be parsed as redirection/pipe if copy-pasted).
         print("")
         if not has_git:
-            print(f"create the GitHub repo + push:")
+            print("create the GitHub repo + push:")
             print(f"  cd {target_root}")
-            print(f"  git init")
-            print(f"  git status --short                 # review what's about to be staged")
-            print(f"  git add <path1> <path2> ...        # stage explicitly per `git status` output")
-            print(f"  git commit -m 'initial bootstrap'")
-            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push <--private|--public>")
+            print("  git init")
+            print("  git status --short                 # review what's about to be staged")
+            print("  git add <path1> <path2> ...        # stage explicitly per `git status` output")
+            print("  git commit -m 'initial bootstrap'")
+            print("  # choose ONE — copy the line for the visibility you want:")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --private    # private (recommended for new code with secrets)")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --public     # public (anyone can see)")
         else:
-            print(f"your repo isn't on GitHub yet — create the remote + push:")
+            print("your repo isn't on GitHub yet — create the remote + push:")
             print(f"  cd {target_root}")
-            print(f"  git status --short                 # review uncommitted changes first")
-            print(f"  git add <path1> <path2> ...        # stage explicitly")
-            print(f"  git commit -m 'initial bootstrap'  # only if there are pending changes")
-            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push <--private|--public>")
-        print(f"  (placeholder `<--private|--public>` forces a deliberate choice; requires `gh` CLI authenticated)")
-        # iter-3 fold Claude 4 + user-direction: when --github-review=both-docs,
-        # point at the existing canonical doc (shared/docs-codex-github-review-
-        # setup.md.tmpl renders to <out>/docs/codex-github-review-setup.md) for
-        # Codex setup steps. Don't inline the 3-step block — it would create a
-        # second source of truth that drifts with ChatGPT's UI changes.
-        if args.github_review == "both-docs":
-            print("")
-            print(f"  then enable Codex GitHub review for the new repo:")
-            print(f"    see {target_root}/docs/codex-github-review-setup.md  (one-time, web-UI; no CLI)")
+            print("  git status --short                 # review uncommitted changes first")
+            print("  git add <path1> <path2> ...        # stage explicitly")
+            print("  git commit -m 'initial bootstrap'  # only if there are pending changes")
+            print("  # choose ONE — copy the line for the visibility you want:")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --private    # private (recommended for new code with secrets)")
+            print(f"  gh repo create {args.github_owner}/{args.github_repo} --source=. --push --public     # public (anyone can see)")
+        print("  (requires `gh` CLI authenticated; no default — pick deliberately)")
+
+    # iter-4 fold Claude 2.3: Codex setup pointer moved OUT of the
+    # `if not has_remote:` block. Codex GitHub review is a one-time web-UI
+    # step, orthogonal to repo creation — print it whenever
+    # github_review == "both-docs", whether the target has a remote yet
+    # or not. (Doc-rendering invariant: docs/codex-github-review-setup.md
+    # is rendered only in both-docs mode per render.py.)
+    if args.github_review == "both-docs":
+        print("")
+        print("  enable Codex GitHub review for this repo (one-time, web-UI):")
+        print(f"    see {target_root}/docs/codex-github-review-setup.md")
 ```
 
-**Placement**: INSIDE the existing `if args.github_review != "none":` block (iter-2 fold Claude 1-1: avoid two consecutive identical conditionals), BEFORE the OAuth-token prints — because creating the repo logically comes first (repo-creation → push → workflows fire → OAuth token needed for `claude[bot]` to post).
+**Placement**: INSIDE the existing `if args.github_review != "none":` block (iter-2 fold Claude 1-1: avoid two consecutive identical conditionals), BEFORE the OAuth-token prints — because creating the repo logically comes first (repo-creation → push → workflows fire → OAuth token needed for `claude[bot]` to post). **(iter-4 fold Claude 2.3)**: the both-docs Codex-setup pointer is INSIDE `!= "none"` but OUTSIDE `if not has_remote:` — both-docs setup is web-UI and orthogonal to remote existence.
 
 **Iter-1 fold (Claude 1-2)**: dropped the `or "<owner>"` / `or args.project_name`
 fallbacks — when `--github-review != none`, `_resolve_mode` already requires both
@@ -290,15 +305,16 @@ flags (cli.py:84). They can never be None at this point.
 |---|---|
 | `test_triage_byte_identity.py::test_triage_block_byte_identical_across_six_surfaces` | Continues to pass — new short block is byte-identical across all 6 surfaces. |
 | `test_triage_byte_identity.py::test_four_questions_extension_present` | Continues to pass — 4 question substrings preserved verbatim. |
-| `test_dogfood_doc_sanity.py` | **MUST be updated** (iter-2.5 fold consistency #2): the `claude`-mode invariant at line 125 currently asserts root CLAUDE.md does NOT mention `@codex review`. Scope item 4 adds the `@codex review` keyword to CLAUDE.md (skill repo's dogfood acknowledges both bots active). Update the invariant to allow the mention. The shared-template invariant in `test_shared_templates.py:404` stays unchanged. |
+| `test_dogfood_doc_sanity.py` | **MUST be updated in Commit 2** (iter-4 fold Claude 2.2): the `claude`-mode invariant at **lines 127-130** (iter-4 fold Claude 1.1 line-ref correction; `:125` is the `claude[bot]` assertion, not the `@codex review` one) currently asserts root CLAUDE.md does NOT mention `@codex review`. Scope item 4 adds the `@codex review` keyword to CLAUDE.md (skill repo's dogfood, both bots active — verified via PR #16 reviews). Update the assertion. ALSO reconcile the function's docstring (lines 116-119) — "catches drift between shared/CLAUDE.md.tmpl and the dogfood mirror" no longer holds for the Two-tier section since it intentionally diverges (Scope item 9). The shared-template invariant in `test_shared_templates.py:404` stays unchanged. |
 | `test_selftest_overlap.py::test_overlap_docs_plans_readme` | Continues to pass after Commit 1 — `shared/docs-plans-README.md.tmpl` and `docs/plans/README.md` get the same triage shrink in lockstep (iter-1 fold: previously claimed unaffected, false). |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_no_git_dir` | Apply to a fresh target with no `.git/`, assert `git init` + `gh repo create` appear in stdout when --github-review=claude. |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_when_git_no_remote` | Pre-`git init` the target, apply, assert ONLY `gh repo create` (no `git init` re-run) appears. |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_absent_when_remote_exists` | Pre-init + add a remote, apply, assert NO gh-hint appears. |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_never_uses_bulk_add` | Apply to a fresh target, assert NEITHER `git add -A` NOR `git add .` appears in stdout. (iter-1 fold: Codex #1 — safety regression guard.) |
-| NEW `test_bootstrap_cli.py::test_gh_repo_hint_visibility_placeholder_not_hardcoded_public` | Apply to a fresh target, assert `<--private` OR `--public>` placeholder appears AND no bare `--public` appears as the final arg (iter-3 fold Codex 3 — safety regression guard for the visibility default). |
+| NEW `test_bootstrap_cli.py::test_gh_repo_hint_visibility_two_alternatives` | Apply to a fresh target (iter-4 fold Codex 4 — renamed from `_visibility_placeholder_not_hardcoded_public`). Assert BOTH a `--private` command line AND a `--public` command line appear; assert "choose ONE" guidance line appears; assert the literal string `<--private|--public>` does NOT appear (shell-metacharacter safety); assert no command line ends at `--push` lacking a visibility flag (no silent default). |
 | NEW `test_bootstrap_cli.py::test_gh_repo_hint_absent_in_none_mode` | Apply with `--github-review=none` to a fresh target, assert NO gh-hint appears (iter-3 fold per user direction — `none` mode skips the hint entirely). |
-| NEW `test_bootstrap_cli.py::test_both_docs_mode_points_at_codex_setup_doc` | Apply with `--github-review=both-docs`, assert stdout references `docs/codex-github-review-setup.md` (NOT inlined steps — iter-3 fold Claude 4). |
+| NEW `test_bootstrap_cli.py::test_both_docs_mode_points_at_codex_setup_doc_no_remote` | Apply with `--github-review=both-docs` to a fresh (no-remote) target, assert stdout references `docs/codex-github-review-setup.md` (NOT inlined steps — iter-3 fold Claude 4). |
+| NEW `test_bootstrap_cli.py::test_both_docs_mode_points_at_codex_setup_doc_with_remote` | Apply with `--github-review=both-docs` to a target that ALREADY has a remote (iter-4 fold Claude 2.3 — Codex web-UI setup is orthogonal to repo creation; pointer must print whether the target has a remote or not). Assert stdout references `docs/codex-github-review-setup.md`. |
 | `test_shim_cli_help_consistency.py` | Continues to pass — no `_flags.py` changes. |
 | `test_dogfood_doc_sanity.py::test_self_improvement_loop_instruction_present` (iter-3 fold Claude 2) | Must continue to pass — CLAUDE.md compressed self-improvement section preserves substrings `"writable implementation session"` (or `"writable-session"`) AND `"read-only"`; AGENTS.md preserves `"read-only"` AND (`"do not edit"` OR `"do not append"`). **Must-preserve-tokens added to Scope items 5 and 10** (iter-3.5 renumber). |
 | `test_dogfood_doc_sanity.py::test_cross_session_recovery_instruction_present` (iter-3 fold Claude 2) | Must keep `## Cross-session state recovery` heading AND `"make status"` substring. |
@@ -325,10 +341,15 @@ flags (cli.py:84). They can never be None at this point.
 - **gh-hint is informational + safe**: prints a hint; user runs `gh` themselves.
   Detection distinguishes no-`.git/` vs `.git/-but-no-remote` (iter-1 fold: Claude 1-3).
   Hint NEVER includes `git add -A` / `git add .` (iter-1 fold: Codex #1; contradicts
-  `LESSONS.md:48`). User explicitly picks files.
+  `LESSONS.md:48`). User explicitly picks files. `gh repo create` visibility is shown
+  as TWO explicit alternative lines (`--private` / `--public`) — no shell-metacharacter
+  placeholder, no silent default (iter-4 fold Codex 4).
 - **Atomic CLAUDE.md+tmpl and AGENTS.md+tmpl commits** (iter-1 fold: Claude 2-4) —
   no byte-identity test guards non-triage drift between dogfood and templates, so the
-  commit boundary itself prevents drift.
+  commit boundary itself prevents drift. **Exception** (iter-4 fold Claude 2.4): the
+  Two-tier section intentionally diverges between dogfood CLAUDE.md (both bots) and the
+  template's `claude` Jinja branch (`claude[bot]` only) — the atomic commit still bundles
+  them, but the manual-diff gate treats that section's divergence as by-design.
 - **PR #17 merge handling**: independent of PR #17. Follow-up PR after PR #17 merges
   mirrors gh-hint into adopt-mode's `_main_apply_adopt`. Iter-1 fold: the original
   "no conflict expected" claim is downgraded to "verify at impl time" — the line
@@ -346,13 +367,13 @@ flags (cli.py:84). They can never be None at this point.
 | Selftest_overlap test fails because `docs/plans/README.md` and `shared/docs-plans-README.md.tmpl` drift | Bucket A applies the same triage shrink to both files in lockstep; run `test_selftest_overlap.py` after Commit 1. |
 | Wording drift in moved-to-CONTRIBUTING.md content vs original CLAUDE.md (e.g. silent meaning change) | Move-not-rewrite discipline: text moved to CONTRIBUTING.md (calibration + plateau only — iter-3.5 fold) is moved verbatim from current CLAUDE.md lines 88 + 90. |
 | CLAUDE.md cross-refs to `docs/plans/README.md` become broken if README.md is restructured | Future README.md restructure proposals should grep for cross-refs (e.g. `rg "docs/plans/README.md"`) before changing section headings. Trade-off: this isn't enforced by a test; relies on author discipline. |
-| gh-hint subprocess call hangs on slow filesystems (NFS, etc.) | `subprocess.run(check=False, timeout=5)` + broad `except (FileNotFoundError, OSError, subprocess.SubprocessError)` catches `TimeoutExpired` (iter-1 fold: Claude 2-2). Detection failure → no hint printed; apply still succeeds. |
+| gh-hint subprocess call hangs on slow filesystems (NFS, etc.) | `subprocess.run(check=False, timeout=5)` + `except (OSError, subprocess.SubprocessError)` (iter-4 fold Claude 2.1: dropped redundant `FileNotFoundError` — subclass of `OSError`; `SubprocessError` covers `TimeoutExpired`). Detection failure → no hint printed; apply still succeeds. |
 | User runs the hint's bulk-paste command, accidentally commits secrets | Mitigated by Codex #1 fold: the hint NEVER uses `git add -A`. It uses `git status --short` + `git add <files>` pattern. Test `test_gh_repo_hint_never_uses_bulk_add` enforces. |
 | Test `test_gh_repo_hint_*` flaky on CI without `gh` CLI | Detection uses `git -C <out> remote`, not `gh`. `git` is already hard prereq. Test asserts hint-text appears, doesn't run `gh`. |
 | PR #17's cli.py changes conflict with the gh-hint addition on merge | **Iter-3 fold Codex 1: scope decision made** — adopt-mode gh-hint is **always out of scope for this PR**, regardless of merge order. PR #17 lands first OR this PR lands first: in either case, the gh-hint mirror into `_main_apply_adopt` is a SEPARATE follow-up PR (small, focused). Avoids silent scope expansion based on timing. Verify at impl time that PR #17 doesn't modify the v1 success block (lines 358-378 on main); if it does, rebase. |
-| GitLab / non-GitHub remote suppresses the gh-hint | **Accepted limitation** (iter-3 fold Codex 6): detection uses `git remote` (any remote suppresses). A GitLab/local-only remote would suppress the GitHub-creation hint even though GitHub auto-review won't work without a GitHub remote. **Trade-off**: precise GitHub-remote detection (parsing `git remote -v` for `github.com` URLs) adds complexity; current detection serves the common case (`--github-review != none` users typically push to GitHub). Document in CLAUDE.md / shared/CLAUDE.md.tmpl tooling-prerequisites note: "gh-hint detection assumes any remote = GitHub." |
+| GitLab / non-GitHub remote suppresses the gh-hint | **Accepted UNDOCUMENTED limitation** (iter-3 fold Codex 6; iter-4 fold Codex 5 — corrected: the earlier text claimed a CLAUDE.md doc note, but no Scope item or Bucket implements it, so the claim was dishonest). Detection uses `git remote` (any remote suppresses). A GitLab/local-only remote would suppress the GitHub-creation hint even though GitHub auto-review won't work without a GitHub remote. **Trade-off**: precise GitHub-remote detection (parsing `git remote -v` for `github.com` URLs) adds complexity; current detection serves the common case (`--github-review != none` users typically push to GitHub). No doc note is added in this PR — the edge case is rare for the non-coder Python-bootstrap audience and the hint fails-open (no hint ≠ broken apply). If a real user hits this, a follow-up adds precise detection. |
 | `CONTRIBUTING.md` ↔ `shared/CONTRIBUTING.md.tmpl` drift (iter-3 fold Claude 7) | No byte-identity test guards this pair. Atomic Commit 1 (bundles CONTRIBUTING.md + tmpl edits) prevents intermediate drift. Manual diff during Tier-1 review verifies cuts mirror. Parity with the CLAUDE.md/AGENTS.md atomic-commit rationale. |
-| Non-triage CLAUDE.md ↔ shared/CLAUDE.md.tmpl drift (no byte-identity test) | Atomic Commit 2 (CLAUDE.md + tmpl in same commit) prevents intermediate drift. Manual diff during Tier-1 review verifies the cuts mirror. |
+| Non-triage CLAUDE.md ↔ shared/CLAUDE.md.tmpl drift (no byte-identity test) | Atomic Commit 2 (CLAUDE.md + tmpl in same commit) prevents intermediate drift. Manual diff during Tier-1 review verifies the cuts mirror — **EXCEPT the Two-tier section, which intentionally diverges** (iter-4 fold Claude 2.4): dogfood CLAUDE.md describes both bots; the template's `claude` Jinja branch describes only `claude[bot]` (per Scope item 9). The manual diff must treat that section's divergence as expected, not drift. |
 
 ## Verification (acceptance criteria)
 
@@ -367,8 +388,10 @@ flags (cli.py:84). They can never be None at this point.
 
 1. **Draft Implementation PR opened** on branch `refactor/tighten-info-architecture`
    (iter-1 fold: was `impl/...`, not in CONTRIBUTING.md branch convention).
-2. **All 4 focused commits land** in order: triage shrink + CONTRIBUTING absorb,
-   CLAUDE.md+tmpl atomic tightening, AGENTS.md+tmpl atomic tightening, gh-hint code.
+2. **All 4 focused commits land** in order: triage shrink + CONTRIBUTING absorb +
+   same-AI Tier-1 wording fix; CLAUDE.md+tmpl atomic tightening + `test_dogfood_doc_sanity.py`
+   `@codex review` invariant update; AGENTS.md+tmpl atomic tightening; gh-hint code +
+   8 tests.
 3. **Per-commit Tier-1 review** (`make review-commit-by-{claude,codex}` — same AI
    as implementer per iter-2 fold of BACKLOG.md:557) clean (no imp-3 findings) before
    push. **Then** append the Tier-1-suggested impl-log row to the `## Implementation
@@ -378,23 +401,31 @@ flags (cli.py:84). They can never be None at this point.
 6. **`test_dogfood_doc_sanity.py` passes** — triage heading still present.
 7. **`test_selftest_overlap.py` passes** — `docs-plans-README.md.tmpl` byte-identical
    to `docs/plans/README.md` (iter-1 fold: was incorrectly excluded; this gate is new).
-8. **New `test_bootstrap_cli.py` gh-hint tests pass** — 7 tests:
+8. **New `test_bootstrap_cli.py` gh-hint tests pass** — 8 tests (iter-4 fold Claude 2.3
+   adds the with-remote both-docs variant):
    (i) no-`.git/`, (ii) `.git/`-no-remote, (iii) has-remote (no fire),
-   (iv) never-uses-bulk-add regression guard, (v) visibility-placeholder guard
-   (no hardcoded `--public`), (vi) `--github-review=none` no-hint guard,
-   (vii) `--github-review=both-docs` points at `docs/codex-github-review-setup.md`.
+   (iv) never-uses-bulk-add regression guard, (v) visibility-two-alternatives
+   (both `--private` and `--public` lines present, "choose ONE" guidance, no
+   `<--private|--public>` shell-metacharacter substring, no silent default),
+   (vi) `--github-review=none` no-hint guard, (vii) `--github-review=both-docs`
+   points at `docs/codex-github-review-setup.md` with a no-remote target,
+   (viii) `--github-review=both-docs` points at the same doc with an
+   already-has-remote target.
 9. **Final line counts measured**:
    - `CLAUDE.md` (skill): 120-130 (acceptable: 115-140)
    - `AGENTS.md` (skill): ~135 (down from 141 — modest, **(d)-decision accepted**
      per pre-loop revision)
-   - `shared/CLAUDE.md.tmpl`: ~170-180 (down from 228; mirrors the CLAUDE.md ~55-line cut; renders to ~130-145 for typical Python+uv context — the rendered output is shorter than the template because Jinja conditionals trim language-specific branches)
-   - `shared/AGENTS.md.tmpl`: ~115 (down from 119)
+   - `shared/CLAUDE.md.tmpl`: ~170-180 (down from 228; mirrors the CLAUDE.md ~55-line cut; renders to ~130-145 for typical Python+uv context — the rendered output is shorter than the template because Jinja conditionals trim language-specific branches; iter-4 fold Claude 1.2: this ~130-145 band is the single agreed rendered-size figure — the Critical-files note is synced to it)
+   - `shared/AGENTS.md.tmpl`: ~109-113 (down from 119 — iter-4 fold Claude 1.2: the triage shrink alone removes ~6 lines, 23→17, before the self-improvement shrink; the earlier "~115" estimate undercounted)
    - `CONTRIBUTING.md`: ~205-220 (up from 190; absorbs only triage-section
      full-discipline — iter-1 fold: NOT also absorbing plan-loop/human-approval which
      stay in `docs/plans/README.md`)
    - `shared/CONTRIBUTING.md.tmpl`: ~265-280 (up from 252)
 10. **Manual diff CLAUDE.md vs shared/CLAUDE.md.tmpl** — non-triage sections mirror
-    in shape (atomic Commit 2 prevents drift; this gate is the human-discipline check).
+    in shape (atomic Commit 2 prevents drift; this gate is the human-discipline check),
+    **except the Two-tier section, which intentionally diverges per Scope item 9**
+    (iter-4 fold Claude 2.4 — dogfood = both bots; template `claude` branch =
+    `claude[bot]` only). That divergence is expected, not a gate failure.
 11. **Manual diff AGENTS.md vs shared/AGENTS.md.tmpl** — non-triage sections mirror.
 12. **PR ready-for-review** triggers `claude[bot]` Tier-2 auto-review.
 13. **Tier-2 findings triaged** per (a/b/c/d) with 4-questions check.
@@ -417,6 +448,9 @@ flags (cli.py:84). They can never be None at this point.
 | 3 (claude) | 1 imp-3 + 4 imp-2 + 2 imp-1 | needs another iteration — see iter-3 fold below |
 | 3-fold | All (a)-folds applied. **(d)-decisions per user direction**: `none` mode skips gh-hint entirely (Codex 2 / Claude 1 both reviewers' Option A); `gh repo create` visibility = `<--private\|--public>` placeholder, no `--public` default (Codex 3); bootstrap-exception dropped from CLAUDE.md (Claude 3 — not equivalent to README.md's bootstrap exception; accepted dropped historical trivia); (a/b/c/d) bullets compress to 1 sentence each with (d) operational guardrails dropped (Claude 5 — accepted trade-off). Plus mechanical folds: adopt-mode out-of-scope regardless of merge order (Codex 1 — eliminates scope flip-flop); Codex 4 evidence-table-format phantom continued cleanup; both-docs Codex setup → cross-ref existing doc (Claude 4); GitLab/non-GitHub remote accepted as limitation (Codex 6); 4 must-preserve-token tests added to Bucket E with substring constraints (Claude 2); CONTRIBUTING.md ↔ tmpl drift row added to Risks (Claude 7); cli.py + LESSONS.md line numbers cleanup (Claude 6). |
 | 3.5 consistency | 5 internal drifts after iter-3 fold: AGENTS.md target range ~135-141 vs ~134-141 (pre-loop misquoted Bucket C), evidence-table-format phantom STILL stale in Scope item 2 + Risks row (missed by iter-2.5/iter-3 cleanup), Phase 2 gate 8 says "7 tests" but enumerated only 4, CLAUDE.md Cross-session-recovery shrink (5→4) had no Scope item — Bucket B covered it but Scope items 3-7 omitted; added as new Scope item 7 with renumber 7-12 → 8-13; cosmetic evidence-table commit-merge wording. | All folded; renumbered cross-refs (Scope items 8→9, 10→11, 11→12, 12→13 + token-preservation lines updated) |
+| 4 (codex) | 3 imp-3 + 2 imp-2 | do not implement yet — see iter-4 fold below |
+| 4 (claude) | 0 imp-3 + 4 imp-2 + 2 imp-1 | ready after minor edits — see iter-4 fold below |
+| 4-fold | **2 real imp-3** (one Codex imp-3 rejected — see below). (a)-folds: CONTRIBUTING.md:111 pointer NOT changed — framework stays in CLAUDE.md, the planned "below in this document" edit was a broken cross-ref (Codex 1); same-AI Tier-1 wording fix added to CONTRIBUTING.md 111/190 + tmpl 196/251, closes BACKLOG.md:557 properly (Codex 2 — earlier plan claimed closure via CLAUDE.md edit alone, but CONTRIBUTING.md still had the ambiguity); `gh repo create` visibility = TWO explicit `--private`/`--public` lines instead of shell-metacharacter-unsafe `<--private\|--public>` placeholder (Codex 4); GitLab-remote limitation corrected to "accepted UNDOCUMENTED" — earlier text claimed a CLAUDE.md doc note that no Scope item delivered (Codex 5); Bucket D code lint fixes — drop `f` on no-interpolation prints (F541), `except` tuple simplified to `(OSError, subprocess.SubprocessError)` (Claude 2.1); `test_dogfood_doc_sanity.py` `@codex review` update assigned to Commit 2 + line-ref corrected 125→127-130 + docstring reconciliation (Claude 2.2 + 1.1); both-docs Codex-setup pointer moved OUT of `if not has_remote:` — fires whenever both-docs regardless of remote (Claude 2.3); Two-tier intentional-divergence carve-out added to Gate 10 + Risks + Architecture (Claude 2.4); line-count estimates synced — `shared/AGENTS.md.tmpl` ~109-113, `shared/CLAUDE.md.tmpl` rendered band ~130-145 single figure (Claude 1.2). **Codex 3 REJECTED (c)**: claimed skill-repo dogfood is claude-only (PR template lists only `claude[bot]`) — premise wrong; verified via `gh pr view 16` that PR #16 was reviewed by BOTH `chatgpt-codex-connector` + `claude` bots. The PR template IS stale (missing Codex bot) — flagged as a separate follow-up, out of scope for the IA refactor. Test count 7 → 8 NEW (Claude 2.3 with-remote variant). |
 
 ## Evidence table — what was folded and where
 
@@ -446,6 +480,17 @@ flags (cli.py:84). They can never be None at this point.
 | Claude iter-2 1-1 | Bucket D produces two consecutive identical `if args.github_review != "none":` blocks | **(a) fold** | Bucket D placement note: gh-hint goes INSIDE existing `if`, before OAuth prints |
 | Claude iter-2 1-2 | PR #17 merge ordering covered only one direction | **(a) fold** | Risks row updated: states which PR lands first OR notes both directions |
 | User direction (iter-2 expansion) | gh-hint should include Codex web-UI setup step | **(a) fold** | Bucket D adds conditional block: when `args.github_review == "both-docs"`, print 3-line Codex setup instructions (URL + nav steps) |
+| Codex iter-4 #1 | Plan's CONTRIBUTING.md line-114 edit ("the (a/b/c/d) framework below in this document") is a broken cross-ref — the framework is NOT moving to CONTRIBUTING.md | **(a) fold** | Scope item 2 + Bucket A: line-111 pointer to CLAUDE.md stays unchanged; planned edit dropped |
+| Codex iter-4 #2 | Plan claims to close BACKLOG.md:557 but CONTRIBUTING.md still has `# or review-commit-by-codex` same-AI Tier-1 ambiguity (lines 111 + 190; tmpl 196 + 251) | **(a) fold** | Scope item 2 extended: edit those 4 lines to same-AI Tier-1 wording in Commit 1; verified against `LESSONS.md` 2026-05-19 entry |
+| Codex iter-4 #3 | Claims skill-repo dogfood is `claude`-only (PR template lists only `claude[bot]`); plan's "both bots active" claim is wrong | **(c) reject — premise wrong** | Verified `gh pr view 16`: PR #16 reviewed by BOTH `chatgpt-codex-connector` + `claude` bots — both ARE active. The `.github/pull_request_template.md` IS stale (missing Codex bot row); flagged as separate follow-up, out of scope for the IA refactor |
+| Codex iter-4 #4 | `gh repo create ... <--private\|--public>` placeholder is shell-metacharacter unsafe (`<` `\|` `>`) for copy-paste | **(a) fold** | Bucket D: print TWO explicit `--private` / `--public` command lines under "choose ONE"; preserves the iter-3 "force deliberate choice / no `--public` default" intent. Test renamed `_visibility_two_alternatives` |
+| Codex iter-4 #5 | Risks row claims GitLab-limitation is documented in CLAUDE.md, but no Scope item delivers that doc note | **(a) fold** | Risks row corrected to "accepted UNDOCUMENTED limitation" — honest; the edge case is rare for the audience and fails-open |
+| Claude iter-4 2.1 | Bucket D code sample trips F541 (`print(f"…")` without `{}`) + redundant `FileNotFoundError` in `except` | **(a) fold** | Bucket D: `f` prefix dropped on no-interpolation prints; `except (OSError, subprocess.SubprocessError)`; Risks row re-synced |
+| Claude iter-4 2.2 | `test_dogfood_doc_sanity.py` `@codex review` update not assigned to a commit — Commit 2 introduces the keyword, leaving pytest red | **(a) fold** | Scope item 13(ii) + Sequencing: test update lands in Commit 2 |
+| Claude iter-4 2.3 | both-docs Codex-setup pointer nested inside `if not has_remote:` — both-docs targets that already have a remote get no pointer | **(a) fold** | Bucket D: pointer moved OUT of `if not has_remote:`, fires whenever `github_review == "both-docs"`; NEW 8th test for the with-remote case |
+| Claude iter-4 2.4 | Plan contradicts itself: Scope item 9 makes Two-tier intentionally diverge dogfood↔template, but Gate 10 / Risks / Architecture assert non-triage sections mirror | **(a) fold** | Carve-out clause added to Gate 10, Risks row, Architecture-decisions atomic-commit bullet |
+| Claude iter-4 1.1 | `test_dogfood_doc_sanity.py:125` line-ref wrong (125 is `claude[bot]` assertion; `@codex` block is 127-130); stale docstring | **(a) fold** | Line-ref corrected throughout; docstring reconciliation added to Scope item 13(ii) |
+| Claude iter-4 1.2 | Line-count estimates internally inconsistent (`shared/AGENTS.md.tmpl` −4 vs actual ~−6-10; `shared/CLAUDE.md.tmpl` rendered ~140-160 vs ~130-145) | **(a) fold** | `shared/AGENTS.md.tmpl` → ~109-113; rendered band unified to ~130-145 in gate 9 + Critical-files |
 
 ## Implementation log (this PR)
 
@@ -480,6 +525,11 @@ separate docs-only commit)
   updates) — out of scope; this PR scopes the Codex-bot wording fix to *describing
   what IS active* (skill repo's dogfood) without changing the skill's `--github-review`
   default emission.
+- **`.github/pull_request_template.md` Codex-bot row** (iter-4 fold Codex 3) — the
+  skill repo's PR template lists only `claude[bot]` in its AI-reviewer checklist, even
+  though `chatgpt-codex-connector[bot]` also auto-reviews (verified via PR #16). That
+  template is genuinely stale, but fixing it is a separate one-line follow-up — not
+  part of the CLAUDE.md/AGENTS.md/CONTRIBUTING.md IA refactor this PR scopes.
 
 ## Critical files to read before each iter's review
 
@@ -488,7 +538,7 @@ separate docs-only commit)
 - `CONTRIBUTING.md` (skill repo's own) — current 190 lines
 - `docs/plans/README.md` — current 157 lines (already canonical for plan-loop;
   CLAUDE.md will POINT here)
-- `shared/CLAUDE.md.tmpl` — current 228 lines (rendered output varies by context: ~140-160 for typical Python+uv adoption-mode runs per PR #7 trial; the 228 line count is the unrendered template with Jinja conditionals)
+- `shared/CLAUDE.md.tmpl` — current 228 lines (rendered output varies by context: ~130-145 for typical Python+uv runs — iter-4 fold Claude 1.2: synced to the single agreed band in Phase-2 gate 9; the 228 line count is the unrendered template with Jinja conditionals)
 - `shared/AGENTS.md.tmpl` — current 119 lines
 - `shared/CONTRIBUTING.md.tmpl` — current 252 lines
 - `shared/docs-plans-README.md.tmpl` — current 157 lines
@@ -502,7 +552,7 @@ separate docs-only commit)
 - `LESSONS.md:48` — the don't-bulk-add lesson the gh-hint must respect
 - `BACKLOG.md:416` — the Codex-bot wording entry, **folded by this PR** (Scope item 4); will be marked ✅ Done in impl PR's BACKLOG.md edit.
 - `BACKLOG.md:557` — the same-AI Tier-1 ambiguity entry, **folded by this PR** (Scope item 4 also); marked ✅ Done at impl time.
-- `tests/test_dogfood_doc_sanity.py:125` — the dogfood invariant that asserts root CLAUDE.md does NOT mention `@codex review`; must be updated to ALLOW the mention (positive Codex-bot description in Scope item 4 includes `@codex review` keyword).
+- `tests/test_dogfood_doc_sanity.py` **lines 127-130** (iter-4 fold Claude 1.1 — `:125` was the wrong line; 125 is the `claude[bot]` assertion, the `@codex review` block is 127-130) — the dogfood invariant that asserts root CLAUDE.md does NOT mention `@codex review`; must be updated to ALLOW the mention (positive Codex-bot description in Scope item 4 includes `@codex review` keyword). The function docstring (lines 116-119) must also be reconciled — see Scope item 13(ii).
 - `tests/test_shared_templates.py:404` — the template-side invariant for `claude` mode; stays unchanged (template's `claude` branch only describes `claude[bot]`, no `@codex`).
 - PR #17 (open) — the adoption-mode work in flight; this PR is independent but its
   gh-hint will need a mirror-edit in `_main_apply_adopt` after PR #17 merges (verify
