@@ -10,6 +10,33 @@ Newer items at the top.
 
 ## Follow-ups from the info-architecture refactor
 
+### gh-repo-create hint: harden git detection against a stray non-gitlink `.git` file (imp-2)
+
+**Status**: parked. **Source**: Tier-1 review of the worktree-detection fix on PR #19.
+
+**Why parked**: the gh-hint detects an existing repo with
+`(target_root / ".git").exists()`. That correctly handles the three real
+cases — no `.git`, a `.git` directory, and a `.git` worktree /
+`--separate-git-dir` file. But a stray non-gitlink file literally named
+`.git` (a leftover or editor artifact) also makes `exists()` True →
+`has_git=True`; the `git remote` subprocess then fails and the hint takes
+the "repo exists, just add a remote" branch — omitting `git init`. The
+user is told to `git add` / `git commit` in a directory that is not a git
+repo. It fails loud (git errors clearly) and is non-destructive, and the
+precondition is unusual, so it was parked rather than folded into the
+worktree fix.
+
+**Triggers to pick up**: a real user reports the wrong hint branch on a
+non-repo target, OR the next PR that touches the gh-hint detection block.
+
+**Rough effort**: ~30 min — replace the `.git` filesystem heuristic with a
+single authoritative probe: `git -C <target> rev-parse --is-inside-work-tree`
+(rc 0 → `has_git`; non-zero / error → `has_git` False, fails open as
+today). That collapses the two detection layers into one and handles
+worktrees, `--separate-git-dir`, and stray-`.git` files uniformly. Note it
+would also change behavior when the target is nested inside a parent repo
+— decide that case deliberately.
+
 ### Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2)
 
 **Status**: parked. **Source**: scoped out of the info-architecture refactor PR (`refactor/tighten-info-architecture`, 2026-05-21).
