@@ -1094,19 +1094,18 @@ def test_both_docs_mode_points_at_codex_setup_doc_with_remote(tmp_path):
 
 
 def test_gh_repo_hint_detection_fails_open_on_subprocess_error(tmp_path, monkeypatch):
-    """If the `git remote` detection subprocess raises (timeout, git missing,
-    OSError), detection fails open: apply still succeeds and the hint still
-    prints (has_remote stays False, so the no-remote branch fires)."""
+    """If a git detection subprocess raises (timeout, git missing, OSError),
+    detection fails open: apply still succeeds and the hint still prints (the
+    detection call is treated as "no git", so the full git-init hint fires)."""
     target = tmp_path / "proj"
     target.mkdir()
-    _git(target, "init")  # has_git=True, so the detection subprocess runs
 
     real_run = subprocess.run
 
     def _boom(cmd, *args, **kwargs):
-        # Sabotage only the `git remote` detection call; let any other
-        # subprocess use during apply proceed normally.
-        if isinstance(cmd, list) and "remote" in cmd:
+        # Sabotage the git detection calls (`rev-parse`, `remote`); let any
+        # other subprocess use during apply proceed normally.
+        if isinstance(cmd, list) and ("rev-parse" in cmd or "remote" in cmd):
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
         return real_run(cmd, *args, **kwargs)
 
@@ -1114,6 +1113,22 @@ def test_gh_repo_hint_detection_fails_open_on_subprocess_error(tmp_path, monkeyp
     rc, out, err = run_cli(_gh_apply_args(target))
     assert rc == 0, err  # apply must still succeed — detection fails open
     assert "apply successful" in out
+    assert "gh repo create" in out
+
+
+def test_gh_repo_hint_target_inside_parent_repo_no_git_init(tmp_path):
+    """A target that is a subdirectory of an existing parent git repo has no
+    local `.git`, but `git rev-parse --is-inside-work-tree` walks up and finds
+    the parent. The hint must NOT suggest `git init` — that would create an
+    unintended nested repo (Tier-2 Codex P2 on PR #19)."""
+    parent = tmp_path / "monorepo"
+    parent.mkdir()
+    _git(parent, "init")
+    target = parent / "subproject"  # inside the parent repo, no own .git
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "git init" not in out
+    assert "isn't on GitHub yet" in out
     assert "gh repo create" in out
 
 

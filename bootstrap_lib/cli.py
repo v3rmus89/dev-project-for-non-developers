@@ -785,20 +785,34 @@ def main(argv):
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")
     if args.github_review != "none":
-        # gh-repo-create hint. Two detection states: (a) no `.git` at all →
-        # the target needs `git init` first; (b) `.git` exists but no remote
-        # → only remote creation is needed. Use `git -C ... remote`
-        # (subprocess, not the gh CLI — gh is an optional prereq, git is
-        # required). Detection fails open: any error → no hint, apply still
-        # succeeds.
-        git_dir = target_root / ".git"
-        # `.exists()`, not `.is_dir()` — a linked `git worktree` (and a
-        # `--separate-git-dir` layout) stores `.git` as a FILE, not a
-        # directory. `git -C ... remote` below resolves the real gitdir
-        # correctly in both cases; treating a worktree as "no git" would
-        # wrongly tell the user to `git init` inside an existing repo.
-        has_git = git_dir.exists()
+        # gh-repo-create hint. Two detection states: (a) the target is not in
+        # a git work tree → it needs `git init` first; (b) it IS in one but
+        # has no remote → only remote creation is needed.
+        #
+        # `has_git` is derived from `git rev-parse --is-inside-work-tree`, not
+        # a filesystem `.git` check. Only git itself is authoritative: a
+        # `.git` path check misclassifies linked worktrees / `--separate-git-dir`
+        # layouts (`.git` is a FILE), a subdirectory of an existing parent
+        # repo (no local `.git` — would wrongly suggest a nested `git init`),
+        # and a stray non-gitlink file named `.git`. git is a hard prereq;
+        # gh is optional, so this never shells out to gh. Detection fails
+        # open: any error → treat as "no git" and print the full hint; apply
+        # still succeeds.
+        has_git = False
         has_remote = False
+        try:
+            inside = subprocess.run(
+                ["git", "-C", str(target_root), "rev-parse", "--is-inside-work-tree"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            has_git = inside.returncode == 0 and inside.stdout.strip() == "true"
+        except (OSError, subprocess.SubprocessError):
+            # FileNotFoundError (git missing) is a subclass of OSError;
+            # SubprocessError covers TimeoutExpired (not an OSError subclass).
+            has_git = False
         if has_git:
             try:
                 result = subprocess.run(
@@ -810,8 +824,6 @@ def main(argv):
                 )
                 has_remote = result.returncode == 0 and bool(result.stdout.strip())
             except (OSError, subprocess.SubprocessError):
-                # FileNotFoundError is a subclass of OSError; SubprocessError
-                # covers TimeoutExpired (which does NOT subclass OSError).
                 has_remote = False
 
         if not has_remote:
