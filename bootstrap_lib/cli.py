@@ -3,6 +3,7 @@ import difflib
 import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -784,6 +785,79 @@ def main(argv):
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")
     if args.github_review != "none":
+        # gh-repo-create hint. Two detection states: (a) no .git/ at all →
+        # the target needs `git init` first; (b) .git/ exists but no remote
+        # → only remote creation is needed. Use `git -C ... remote`
+        # (subprocess, not the gh CLI — gh is an optional prereq, git is
+        # required). Detection fails open: any error → no hint, apply still
+        # succeeds.
+        git_dir = target_root / ".git"
+        has_git = git_dir.is_dir()
+        has_remote = False
+        if has_git:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(target_root), "remote"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+                has_remote = result.returncode == 0 and bool(result.stdout.strip())
+            except (OSError, subprocess.SubprocessError):
+                # FileNotFoundError is a subclass of OSError; SubprocessError
+                # covers TimeoutExpired (which does NOT subclass OSError).
+                has_remote = False
+
+        if not has_remote:
+            # Safe-pattern hint: `git status` + explicit `git add <path>` —
+            # never bulk-add (`git add -A` / `git add .`), which can stage
+            # secrets or throwaway files (LESSONS.md). Visibility is shown as
+            # two explicit alternatives (no shell-metacharacter placeholder).
+            print("")
+            if not has_git:
+                print("create the GitHub repo + push:")
+                print(f"  cd {target_root}")
+                print("  git init")
+                print("  git status --short                 # review what's about to be staged")
+                print(
+                    "  git add <path1> <path2> ...        # stage explicitly per `git status` output"
+                )
+                print("  git commit -m 'initial bootstrap'")
+                print("  # choose ONE — copy the line for the visibility you want:")
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --private    # private (recommended for new code with secrets)"
+                )
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --public     # public (anyone can see)"
+                )
+            else:
+                print("your repo isn't on GitHub yet — create the remote + push:")
+                print(f"  cd {target_root}")
+                print("  git status --short                 # review uncommitted changes first")
+                print("  git add <path1> <path2> ...        # stage explicitly")
+                print("  git commit -m 'initial bootstrap'  # only if there are pending changes")
+                print("  # choose ONE — copy the line for the visibility you want:")
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --private    # private (recommended for new code with secrets)"
+                )
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --public     # public (anyone can see)"
+                )
+            print("  (requires `gh` CLI authenticated; no default — pick deliberately)")
+
+        if args.github_review == "both-docs":
+            # Codex GitHub review is a one-time web-UI step, orthogonal to
+            # repo creation — print it whenever both-docs, whether or not the
+            # target already has a remote.
+            print("")
+            print("  enable Codex GitHub review for this repo (one-time, web-UI):")
+            print(f"    see {target_root}/docs/codex-github-review-setup.md")
+
         # Surface the required-secret step right where the user sees the
         # other next-steps — most discoverable spot before they push to
         # GitHub. Without this secret, the emitted claude-review workflow

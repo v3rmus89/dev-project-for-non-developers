@@ -969,3 +969,149 @@ class TestModeAdoptFlagValidation:
         assert mode == "apply"
         assert args.auto_accept_recommendations is True
         assert args.non_interactive is True
+
+
+# --- gh-repo-create hint (refactor/tighten-info-architecture, Bucket D/E) ---
+
+
+def _gh_apply_args(target, github_review="claude"):
+    """Standard --apply argv for a Python project in a given github-review mode."""
+    argv = [
+        "--apply",
+        "--language",
+        "python",
+        "--project-name",
+        "test",
+        "--out",
+        str(target),
+        "--github-review",
+        github_review,
+    ]
+    if github_review != "none":
+        argv += ["--github-owner", "x", "--github-repo", "y"]
+    return argv
+
+
+def _git(target, *args):
+    """Run a git subcommand in `target`, suppressing output."""
+    subprocess.run(["git", *args], cwd=target, check=True, capture_output=True)
+
+
+def test_gh_repo_hint_when_no_git_dir(tmp_path):
+    """Fresh target with no .git/ — the hint walks through `git init`, the
+    safe `git status --short` review step, and `gh repo create`."""
+    target = tmp_path / "proj"
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "git init" in out
+    assert "git status --short" in out
+    assert "gh repo create" in out
+
+
+def test_gh_repo_hint_when_git_no_remote(tmp_path):
+    """Target is already a git repo but has no remote — the hint creates the
+    remote only; it must NOT tell the user to re-run `git init`."""
+    target = tmp_path / "proj"
+    target.mkdir()
+    _git(target, "init")
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "gh repo create" in out
+    assert "git init" not in out
+    assert "isn't on GitHub yet" in out
+
+
+def test_gh_repo_hint_absent_when_remote_exists(tmp_path):
+    """Target already has a git remote — no gh-hint at all."""
+    target = tmp_path / "proj"
+    target.mkdir()
+    _git(target, "init")
+    _git(target, "remote", "add", "origin", "https://example.com/x/y.git")
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "gh repo create" not in out
+
+
+def test_gh_repo_hint_never_uses_bulk_add(tmp_path):
+    """Safety regression guard (LESSONS.md don't-bulk-add): the hint must
+    never suggest `git add -A` or `git add .` — bulk-add can stage secrets."""
+    target = tmp_path / "proj"
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "git add -A" not in out
+    assert "git add ." not in out
+
+
+def test_gh_repo_hint_visibility_two_alternatives(tmp_path):
+    """Visibility is shown as two explicit command lines (--private and
+    --public) under a 'choose ONE' guidance line — no shell-metacharacter
+    placeholder, and no `gh repo create` line that silently omits a
+    visibility flag."""
+    target = tmp_path / "proj"
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err
+    assert "--source=. --push --private" in out
+    assert "--source=. --push --public" in out
+    assert "choose ONE" in out
+    assert "<--private|--public>" not in out
+    for line in out.splitlines():
+        if "gh repo create" in line and "--push" in line:
+            assert "--private" in line or "--public" in line, (
+                f"gh repo create line lacks a visibility flag: {line!r}"
+            )
+
+
+def test_gh_repo_hint_absent_in_none_mode(tmp_path):
+    """--github-review=none makes no GitHub assumptions (no --github-owner/
+    --github-repo supplied), so the gh-hint must not appear."""
+    target = tmp_path / "proj"
+    rc, out, err = run_cli(_gh_apply_args(target, github_review="none"))
+    assert rc == 0, err
+    assert "gh repo create" not in out
+
+
+def test_both_docs_mode_points_at_codex_setup_doc_no_remote(tmp_path):
+    """--github-review=both-docs on a fresh (no-remote) target points at the
+    Codex web-UI setup doc rather than inlining the steps."""
+    target = tmp_path / "proj"
+    rc, out, err = run_cli(_gh_apply_args(target, github_review="both-docs"))
+    assert rc == 0, err
+    assert "docs/codex-github-review-setup.md" in out
+
+
+def test_both_docs_mode_points_at_codex_setup_doc_with_remote(tmp_path):
+    """The Codex web-UI setup is orthogonal to repo creation — the both-docs
+    pointer must print even when the target already has a remote (so the
+    gh-hint itself is suppressed)."""
+    target = tmp_path / "proj"
+    target.mkdir()
+    _git(target, "init")
+    _git(target, "remote", "add", "origin", "https://example.com/x/y.git")
+    rc, out, err = run_cli(_gh_apply_args(target, github_review="both-docs"))
+    assert rc == 0, err
+    assert "docs/codex-github-review-setup.md" in out
+    assert "gh repo create" not in out
+
+
+def test_gh_repo_hint_detection_fails_open_on_subprocess_error(tmp_path, monkeypatch):
+    """If the `git remote` detection subprocess raises (timeout, git missing,
+    OSError), detection fails open: apply still succeeds and the hint still
+    prints (has_remote stays False, so the no-remote branch fires)."""
+    target = tmp_path / "proj"
+    target.mkdir()
+    _git(target, "init")  # has_git=True, so the detection subprocess runs
+
+    real_run = subprocess.run
+
+    def _boom(cmd, *args, **kwargs):
+        # Sabotage only the `git remote` detection call; let any other
+        # subprocess use during apply proceed normally.
+        if isinstance(cmd, list) and "remote" in cmd:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(cli.subprocess, "run", _boom)
+    rc, out, err = run_cli(_gh_apply_args(target))
+    assert rc == 0, err  # apply must still succeed — detection fails open
+    assert "apply successful" in out
+    assert "gh repo create" in out
