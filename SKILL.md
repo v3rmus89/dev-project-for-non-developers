@@ -1,6 +1,6 @@
 # dev-project-setup
 
-> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 added **Go** (gofumpt + golangci-lint + native git hooks); PR #6 added **uv** support for Python (greenfield default; pip-mode kept for adoption + explicit opt-out). All three v1 languages now supported.
+> Bootstrap a working dev workflow into Python / Node-TS / Go projects. PR #1 shipped Python; PR #2 added Node-TS (Biome + vitest + TypeScript + Husky); PR #3 added **Go** (gofumpt + golangci-lint + native git hooks); PR #6 added **uv** support for Python (greenfield default; pip-mode kept for adoption + explicit opt-out); PR #7 added **`--mode=adopt`** — per-file analyze-then-decide-with-owner UX for safely adopting the skill into existing Python projects. All three v1 languages now supported.
 
 ## When to invoke
 
@@ -25,6 +25,9 @@ cd ~/.claude/skills/dev-project-setup
     --project-name <slug> \
     --out <target-dir> \
     [--package-manager {uv,pip}] \
+    [--mode adopt] \
+    [--auto-accept-recommendations] \
+    [--non-interactive] \
     [--github-review {none,claude,both-docs}] \
     [--github-owner <owner>] \
     [--github-repo <repo>] \
@@ -36,6 +39,12 @@ cd ~/.claude/skills/dev-project-setup
 
 `--package-manager` is **Python-only**. Default `uv` for greenfield; auto-detect for adoption (positive markers: `uv.lock`, `[tool.uv]`, `uv_build` backend > `requirements*.txt` for pip). Pass `--package-manager=pip` to opt out and stay on pip+venv.
 
+`--mode=adopt` is an **adoption modifier of `--apply`** (NOT a fifth mode). Requires `--apply`; rejected with `--dry-run` / `--diff` / `--restore` / `--language != python` / `--overwrite-existing`. Enables per-file analyze-then-decide-with-owner UX for safe adoption into existing projects — see `docs/usage.md`'s "Adoption mode" section. For read-only inspection, use `--diff` (plain `--diff --language python` annotates the unified diff with policy recommendations).
+
+`--auto-accept-recommendations` (with `--mode=adopt` only): auto-applies every policy with `manual_review_needed=false` without a prompt; `manual_review_needed=true` files still need a decision.
+
+`--non-interactive` (with `--mode=adopt` only): any required prompt becomes a fail-loud exit 2. Combine with `--auto-accept-recommendations` for the CI contract: accept everything safe, fail on anything needing review.
+
 **One-time setup:** the skill's venv lives at `~/.claude/skills/dev-project-setup/venv/`. If it doesn't exist yet, run `make install` in that dir once.
 
 ## Safety contract
@@ -43,8 +52,9 @@ cd ~/.claude/skills/dev-project-setup
 - Default mode is **dry-run**. No flag means no writes.
 - `--diff` prints a unified diff against any existing files at `--out`. Still no writes.
 - `--apply` writes files atomically (per-file `.bootstrap-tmp` + rename) AFTER fsync'ing a JSON restore manifest to `$TMPDIR`.
-- `--apply` aborts non-zero if any target file already exists, unless `--overwrite-existing` is passed (explicit consent).
-- `--restore <manifest>` reverses an apply: written content goes back, created files are removed, created directories are removed (only if empty). User edits since apply are SKIPPED with a warning — never clobbered.
+- **Plain `--apply`** aborts non-zero if any target file already exists, unless `--overwrite-existing` is passed (explicit consent — nuclear escape hatch for greenfield bootstraps that drifted).
+- **`--apply --mode=adopt`** uses per-file recommendations (analyze-then-decide-with-owner). Collisions are NOT a hard abort — instead the analyzer recommends a policy per file (`SKIP` / `WRITE` / `OVERWRITE` / `WRITE_NEW` / `APPEND_MERGE`) and the user decides on flagged files via stdin prompts. The default rule (Scope #5 rule h) for any unrecognized existing file is `SKIP` with manual review required — never destructive `WRITE`. **`WRITE_NEW`** writes `<path>.new` alongside the original so the user can `diff -u <path> <path>.new` before manually merging; the original is never touched. **`APPEND_MERGE`** is restricted to `.gitignore` (line-level idempotent merge).
+- `--restore <manifest>` reverses an apply for both v1 (plain) and v2 (adopt-mode) manifests. v1: written content goes back, created files removed, empty created dirs removed. v2: per-policy restore matrix — `WRITE` deletes, `OVERWRITE` writes the pre-apply snapshot back, `WRITE_NEW` removes the `.new` file (original untouched throughout), `APPEND_MERGE` truncates the file to its pre-append length. User edits since apply are SKIPPED with a warning across both versions — never clobbered.
 
 After `--apply` succeeds, the printed `to rollback:` line is a self-contained command you can re-run from anywhere to roll back.
 

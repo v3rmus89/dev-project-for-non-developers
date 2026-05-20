@@ -387,6 +387,38 @@ plan-vs-repo factual mismatches.
 
 ## PR #7 follow-ups
 
+### Annotate `--diff` headers with adopt-mode policy recommendations (imp-2)
+
+**Status**: parked. **Source**: Tier-1 doc review on Bucket F docs commit (PR #17).
+
+**Why parked**: Plan PR #16 Scope #8 + Bucket A row 8 specified that
+plain `bootstrap.py --diff --language python` should run the analyzer
+in read-only mode and annotate each unified-diff header with the
+recommended policy (e.g. `--- a/CLAUDE.md (target: 96 lines)` /
+`+++ b/CLAUDE.md (recommendation: WRITE_NEW)`). PR #7's impl path
+focused on `--apply --mode=adopt` end-to-end; the `--diff` annotator
+was not shipped. Plain `--diff` currently produces standard
+`difflib.unified_diff` headers without policy annotations.
+
+The Bucket F docs reference this caveat inline in the worked example;
+the recommendation report (Step 2 of adopt-mode) shows the policy
+per file, so the user-facing gap is only in the read-only-preview
+workflow.
+
+**Triggers to pick up**:
+- A user requests inline policy annotations during `--diff` preview.
+- Bucket E live trial surfaces the read-only-preview UX gap as a
+  blocker to confident adopt-mode adoption.
+
+**Rough effort**: ~2 hours — extend `_print_diff` in `bootstrap_lib/cli.py`
+to call `adopt.analyze_target` when `args.language == "python"` (no
+manifest, no writes), then inject policy strings into the `fromfile`/
+`tofile` arg shape. Tests in `tests/test_bootstrap_cli.py` + new
+fixture in `tests/test_mode_adopt_smoke.py` for the annotated diff
+shape.
+
+---
+
 ### Path-safety validation for `--mode=adopt` against sensitive target paths (imp-2)
 
 **Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #1).
@@ -662,15 +694,44 @@ some failed — verify cleanup state).
 
 ---
 
-### Adoption-mode UX redesign (analyze-then-decide-with-owner)
+### ✅ Adoption-mode UX redesign (analyze-then-decide-with-owner) — DONE in PR #7
 
-**Status**: parked. **Ships in PR #7 (hybrid: trial + adoption mode together) per user decision 2026-05-19.**
+**Status**: done.
 
-**Why parked**: PR #6 keeps the existing PR #1 collision-abort contract unchanged (`--apply` aborts on any collision unless `--overwrite-existing`). The real redesign is content-driven: a 4-phase `--mode=adopt` flag — (1) **Analyze** the target project per file (size, sections, markers), (2) **Recommend** a policy with reasoning shown to the user (`SKIP` / `OVERWRITE` / `WRITE-.new` / `APPEND-MERGE`), (3) **Decide with owner** (interactive prompt OR batch report with `--auto-accept-recommendations` for non-interactive use), (4) **Apply** per the agreed policies. **Not a hardcoded policy table** — different projects need different choices.
+**Summary**: PR #7 ships `--mode=adopt` — a per-file adoption modifier of
+`--apply` that runs the analyze-then-decide-with-owner UX:
+1. **Analyze** every planned file in target → `TargetMeta` (size, sha256,
+   line count, heading count, dependency-groups flag, python-version pin,
+   gitignored-by-git source:line reference)
+2. **Recommend** a policy per file via Scope #5 rules a0/a..h (`SKIP` /
+   `WRITE` / `OVERWRITE` / `WRITE_NEW` / `APPEND_MERGE`) — rule (h)
+   default is `SKIP` with `manual_review_needed=true` (the core safety
+   guarantee against destructive WRITE on existing files)
+3. **Decide** per-file via stdin prompt with per-file allowed-actions
+   matrix (`[r]ecommended` / `[s]kip` / `[d]iff` / `[n]ew` / `[a]ppend`
+   (`.gitignore` only) / `[o]verwrite` (typed `OVERWRITE` confirmation
+   required) / `[?]help` / `[q]uit`). `--auto-accept-recommendations`
+   and `--non-interactive` flags give the CI contract.
+4. **Apply** per the agreed policies via v2 manifest (`format_version=2`)
+   with per-policy restore matrix — `--restore` correctly undoes each
+   policy without clobbering pre-existing files (closes the iter-1 #3
+   safety hole where rules (b)/(c)/(e) had classified existing files
+   as `WRITE` while `WRITE`'s restore deleted them).
 
-**Triggers to pick up**: PR #7 trial on `call-details/` is the empirical data source for the recommendation heuristics. PR #7 ships both the trial AND the redesign together.
+Heuristics are content-driven, not policy-table-driven. APPEND_MERGE is
+restricted to `.gitignore` only (line-level idempotent merge). `.new`
+collision rule fails loud at plan-time if `<original>.new` already
+exists.
 
-**Rough effort**: ~2-3 days informed by trial data.
+**Triggers met**: PR #7 plan loop converged after 7 Codex iterations +
+8 consistency self-checks; impl shipped across 13 focused commits
+(scaffold → engine → manifest v2 → CLI flags → interactive decide →
+apply + main wiring → smoke fixtures → docs); Tier-1 on every commit
+caught 2 imp-3 safety holes that the plan loop missed at integration
+boundaries (rule (a0) gitignore-pattern leak in report; v2 manifest
+unresolved-relpath silent-restore failure across cwds).
+
+**Effort**: ~2 weeks across plan + impl, informed by call-details trial.
 
 ---
 
@@ -688,15 +749,17 @@ some failed — verify cleanup state).
 
 ### Real-project trial on `~/Desktop/Code/Boxette/call-details/` — PR #7
 
-**Status**: parked (= scoped to PR #7).
+**Status**: in-progress (= the live trial portion of PR #7; engine + smoke fixtures shipped, live trial pending).
 
-**Why parked**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` uses `--dry-run` / `--diff` first to produce an empirical collision manifest (call-details has 8 collisions today: `CLAUDE.md`, `README.md`, `pyproject.toml`, `.python-version`, `uv.lock`, `.gitignore`, `src/`, `tests/` — and ~12 files that write cleanly). That manifest informs the adoption-mode recommendation heuristics. Trial finishes with a real `--apply --mode=adopt` using the new policies.
+**Scope**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` is the empirical data source for the recommendation heuristics. The collision baseline was empirically verified during plan iter-1 fold via `bootstrap.py --dry-run --language python --project-name call-details --out ~/Desktop/Code/Boxette/call-details/`: **4 MODIFY collisions** (`.gitignore`, `.python-version`, `CLAUDE.md`, `pyproject.toml`) + **15 CREATE** (15 missing files the skill writes cleanly).
 
-**Deliverables**: (i) trial plan in `docs/plans/`, (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct), (iii) the `--mode=adopt` implementation, (iv) any skill polish surfaced.
+The pre-empirical "8 collisions" number from PR #6's plan was incorrect — it counted `README.md` + `uv.lock` (which exist in the target but aren't bootstrap writes) and `src/` + `tests/` (which are directories, not file collisions). Closes Codex iter-3 #5 baseline-correction fold.
 
-**Triggers to pick up**: PR #6 merges. (Already scheduled.)
+**Deliverables**: (i) trial plan in `docs/plans/` ✅ shipped; (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct) — pending; (iii) the `--mode=adopt` implementation ✅ shipped (closes BACKLOG entry above); (iv) any skill polish surfaced — pending.
 
-**Rough effort**: ~3-4 days for the combined plan + impl loop.
+**Triggers to pick up**: engine done; smoke fixtures green; Bucket F docs landed; live trial is the next chunk (Phase D of plan Sequencing).
+
+**Rough effort**: ~half a day for the live trial + trial-report.
 
 ---
 

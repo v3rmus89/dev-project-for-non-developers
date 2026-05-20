@@ -33,6 +33,8 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 | `--apply` | actually write files (writes restore manifest first) |
 | `--restore MANIFEST` | reverse an apply using the manifest path printed in the prior `to rollback:` line |
 
+> `--mode=adopt` is a **per-file adoption modifier of `--apply`** — NOT a 5th mode. See the [Adoption mode](#adoption-mode---modeadopt) section below.
+
 ### Render/apply args (required when not in `--restore` mode)
 
 | Flag | Description |
@@ -44,8 +46,11 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 | `--github-review {none,claude,both-docs}` | default `none` — no Claude workflow / OAuth secret dependency unless explicitly opted in |
 | `--github-owner <owner>` | required when `--github-review != none` |
 | `--github-repo <repo>` | required when `--github-review != none` |
-| `--overwrite-existing` | required during `--apply` if any target file already exists |
+| `--overwrite-existing` | required during plain `--apply` if any target file already exists. **For adopting the skill into an existing project, prefer `--apply --mode=adopt`** (per-file recommendations) instead of this nuclear overwrite. Rejected when combined with `--mode=adopt` (conflicting consent models) |
 | `--enable-smoke` | also emit `docs/SMOKE.md` skeleton (default: omit) |
+| `--mode adopt` | **Python-only** adoption modifier of `--apply`. Enables per-file analyze-then-decide-with-owner UX. Requires `--apply`; rejected with `--dry-run` / `--diff` / `--restore` / `--language != python` / `--overwrite-existing`. See [Adoption mode](#adoption-mode---modeadopt) below |
+| `--auto-accept-recommendations` | (with `--mode=adopt` only) auto-applies every policy with `manual_review_needed=false` without a prompt. `manual_review_needed=true` files still need a decision. Rejected if used outside `--mode=adopt` |
+| `--non-interactive` | (with `--mode=adopt` only) any required prompt becomes a fail-loud exit 2. Combine with `--auto-accept-recommendations` for CI ("accept everything safe, fail on anything needing review"). Rejected if used outside `--mode=adopt` |
 
 ## Safety contract (dry-run by default → diff → apply → restore)
 
@@ -65,6 +70,164 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
      - Match against `sha256_before` instead → the apply was interrupted before this file. No-op.
      - Neither → user edit since apply. SKIPPED with a warning ("left in place").
    - Created directories are removed in reverse-depth order, but only if empty.
+
+## Adoption mode (`--mode=adopt`)
+
+`--apply --mode=adopt` adapts the skill's templates onto an **existing** Python project safely, file-by-file, with the owner deciding on anything risky. It's the recommended path for adding the skill's workflow (CI / hooks / docs / plan-loop) to a project that already has its own `CLAUDE.md`, `pyproject.toml`, `.gitignore`, etc.
+
+**When to use it**:
+
+- The target directory has pre-existing files that you don't want clobbered (CLAUDE.md with domain content, pyproject.toml with project-specific deps, etc.).
+- You want a per-file recommendation report BEFORE writes happen — not a blanket "abort on any collision" (plain `--apply`) or "overwrite everything" (`--apply --overwrite-existing`).
+- You want a `.new` file written alongside `CLAUDE.md` so you can review the skill's template + manually merge what you want.
+
+**When NOT to use it**:
+
+- Greenfield projects (no files in target) — plain `--apply` is fine; adopt-mode adds no value.
+- Non-Python languages (Node / Go) — adopt-mode is Python-only in PR #7. Node/Go adoption-mode is parked for follow-up.
+
+### How it works (4 phases)
+
+1. **Analyze** — every planned file is inspected against the target. The analyzer produces a `TargetMeta` per file (size, sha256, line count, heading count, structural flags like `[dependency-groups]` or `python-version` pin, gitignored-by-git source:line reference). NO raw file content is captured — only derived markers, hashes, structural counts (privacy boundary).
+2. **Recommend** — per-file policy via 9 heuristic rules (evaluated in order; first match wins):
+
+   | Rule | Trigger | Policy | Manual review? |
+   |---|---|---|---|
+   | (a0) | missing AND ignored by `git check-ignore` | `SKIP` | **yes** (always) |
+   | (a) | missing AND not ignored | `WRITE` | no |
+   | (b) | exists AND empty / whitespace-only | `OVERWRITE` | no |
+   | (c) | exists AND byte-identical to skill template | `SKIP` | no |
+   | (d) | `.gitignore` AND skill patterns NOT all present | `APPEND_MERGE` | no |
+   | (e) | `.python-version` AND any pin | `SKIP` | no |
+   | (f) | `CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md` / `BACKLOG.md` / `LESSONS.md` AND >20 lines OR has custom headings | `WRITE_NEW` | **yes** |
+   | (g) | `pyproject.toml` AND has `[project] dependencies`, `[tool.*]`, or `[dependency-groups]` | `SKIP` | **yes** |
+   | (h) | DEFAULT (existing non-empty file, no recognized pattern) | `SKIP` | **yes** |
+
+   Rule (h) is the core safety guarantee: any unrecognized existing file gets `SKIP` with manual review — never destructive `WRITE`.
+
+3. **Decide** — only files with `manual_review_needed=true` trigger an interactive prompt. The per-file allowed-actions matrix:
+   - **always available**: `[r]ecommended` (default — just press Enter) / `[s]kip` / `[d]iff` / `[?]help` / `[q]uit`
+   - `[n]ew` (WRITE_NEW): for any manual-review file
+   - `[a]ppend` (APPEND_MERGE): **`.gitignore` only** (line-level idempotent merge)
+   - `[o]verwrite`: always available BUT requires typed `OVERWRITE` (uppercase, case-sensitive) — single-keystroke `o` won't suffice (safety against stray-keystroke destruction of CLAUDE.md)
+
+4. **Apply** — each non-SKIP entry is written atomically; SKIP entries don't appear in the v2 restore manifest (mutation-only contract). The manifest is fsync'd BEFORE any filesystem write, so `--restore` rolls back partial-apply states.
+
+### Worked example (call-details/ shape)
+
+Suppose `~/Desktop/Code/Boxette/call-details/` already has `CLAUDE.md` (50 lines of domain content), `pyproject.toml` (with `[tool.ruff]`), `.gitignore` (with `venv/\n*.pyc\n`), and `.python-version` (pins `3.12`). 15 other files the skill writes are missing.
+
+**Step 1**: inspect with `--diff` (read-only; no `--mode=adopt` needed):
+
+```bash
+./venv/bin/python bootstrap.py --diff --language python \
+    --project-name call-details \
+    --out ~/Desktop/Code/Boxette/call-details/
+```
+
+Prints a unified diff per file (`--- a/<path>` / `+++ b/<path>` headers, plain `difflib.unified_diff` shape). Read it to understand what each collision file's skill-template-vs-target diff looks like before running adopt-mode. *(Note: a richer `--diff` mode that annotates each diff header with the recommended policy was specified in Bucket A row 8 but is not yet implemented; tracked in `BACKLOG.md` for a follow-up PR. For now, the recommendation report (Step 2) shows the policy per file.)*
+
+**Step 2**: run `--apply --mode=adopt`:
+
+```bash
+./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
+    --project-name call-details \
+    --out ~/Desktop/Code/Boxette/call-details/
+```
+
+The recommendation report is printed first:
+
+```
+adoption recommendation: 19 file(s) analyzed at ~/Desktop/Code/Boxette/call-details
+
+automatic (17):
+
+  APPEND_MERGE  .gitignore
+                target: 2 lines, sha256:568b5ad5
+                reason: 5 skill .gitignore pattern(s) missing from target; append-only line-level merge
+
+  SKIP          .python-version
+                target: 1 line, pin=3.12, sha256:7a41a413
+                reason: target content matches skill template byte-for-byte; no-op
+
+  WRITE         Makefile
+                target: missing
+                reason: target file does not exist; safe to create
+
+  ... (14 more automatic entries) ...
+
+manual review needed (2):
+
+  WRITE_NEW     CLAUDE.md
+                target: 50 lines, 4 headings, sha256:21fc8398
+                reason: target CLAUDE.md has domain content (>20 lines or custom headings); preserve original and write .new for manual merge
+
+  SKIP          pyproject.toml
+                target: 24 lines, sha256:f7d5e29c
+                reason: target pyproject.toml has [project] deps, [tool.*], or [dependency-groups]; review the diff manually with --diff
+
+summary: APPEND_MERGE=1 SKIP=2 WRITE=15 WRITE_NEW=1  (2 need your decision)
+```
+
+Then the interactive prompts fire for the 2 mr=True files. Pressing Enter accepts the recommendation; type `s`+Enter to skip; `d`+Enter shows the unified diff inline; `?`+Enter shows the action help. For `[o]`, you'll be prompted to type `OVERWRITE` exactly (uppercase) to confirm.
+
+After decisions land:
+
+```
+adopt-mode apply: 17 mutating entries written to ~/Desktop/Code/Boxette/call-details/
+restore manifest: /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
+to rollback: /Users/me/skill/venv/bin/python /Users/me/skill/bootstrap.py --restore /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
+```
+
+**Step 3**: review what changed. `CLAUDE.md` is unchanged; `CLAUDE.md.new` was written alongside it. Diff manually:
+
+```bash
+diff -u CLAUDE.md CLAUDE.md.new
+# inspect, merge what you want, then `rm CLAUDE.md.new` when done
+```
+
+**Step 4**: if you're unhappy with anything, roll back:
+
+```bash
+./venv/bin/python bootstrap.py --restore /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
+```
+
+The restore is **policy-aware**: `WRITE` entries get deleted, `OVERWRITE` entries get the pre-apply content written back, `WRITE_NEW` entries get their `.new` file removed (original was never touched throughout), `APPEND_MERGE` entries get truncated to their pre-append byte length. SKIP'd files are NOT in the manifest and never get touched by restore.
+
+### CI contract (`--auto-accept-recommendations` + `--non-interactive`)
+
+For CI runs that adopt the skill into a known-good shape:
+
+```bash
+./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
+    --project-name $PROJECT_NAME \
+    --out $TARGET_DIR \
+    --auto-accept-recommendations \
+    --non-interactive
+```
+
+Semantics:
+
+- Every `manual_review_needed=false` file auto-applies (no prompt).
+- Any `manual_review_needed=true` file (rule a0 / f / g / h, OR a SKIP'd file the analyzer can't classify) triggers a fail-loud exit 2.
+
+This is the "accept everything safe, fail on anything needing review" contract. It's the natural CI shape — if the target has unexpected domain content, CI fails and a human looks at it.
+
+### Restore safety guarantees
+
+The v2 restore matrix preserves these invariants:
+
+- `--restore` never deletes a pre-existing file classified as `SKIP` or `OVERWRITE`. (The hole-class that the iter-1 #3 plan fold closed — rules (b)/(c)/(e) had previously classified existing files as `WRITE`, and `WRITE`'s restore deletes the path.)
+- `--restore` never touches the original file when the policy was `WRITE_NEW` — only the `.new` file is removed.
+- `--restore` uses SHA-guarded checks: if you edited the file between apply and restore, the entry is SKIPped with a warning (never clobbered).
+- Path-safety pre-flight runs BEFORE any filesystem mutation — `..` traversal, absolute paths, symlink escapes all rejected.
+
+### Limitations + caveats
+
+- **`APPEND_MERGE` is `.gitignore`-only** in PR #7. Other file types (e.g. `README.md` with a "Status" section append) are too risky for automated merging — recommended path is `SKIP` with manual diff.
+- **Adoption-mode is Python-only** in PR #7. Node/Go adoption-mode is parked for follow-up; the same Scope #5 rules will need language-specific tweaks (e.g. `[tool.uv]` → `package.json` "dependencies" for nodejs).
+- **No undo within an interactive session**. If you pick the wrong policy mid-prompt, `[q]uit` aborts the entire run (no files written yet); fix your thinking and re-run.
+- **The `.new` collision rule** fails loud if `<original>.new` already exists at plan-time. Rename / remove the existing `.new` before running adopt-mode.
 
 ## Post-bootstrap hook adoption
 
