@@ -92,3 +92,40 @@ def add_flags(parser):
         action="store_true",
         help="emit docs/SMOKE.md skeleton",
     )
+    # PR #7 Bucket A: --mode=adopt is a SINGLE-VALUE adoption modifier of
+    # --apply, NOT a 5th mode in the mutually-exclusive group above. choices
+    # is intentionally [adopt] only — that's the one modifier we ship today.
+    # Validation lives in cli.py:_resolve_mode (requires --apply, Python-only,
+    # rejected in restore mode, rejected with --overwrite-existing).
+    parser.add_argument(
+        "--mode",
+        choices=["adopt"],
+        default=None,
+        help=(
+            "Adoption modifier. Requires --apply. Enables per-file "
+            "analyze-then-decide-with-owner UX for safe adoption into "
+            "existing projects (see docs/usage.md). Invalid with --dry-run, "
+            "--diff, --restore. For read-only inspection, use --diff."
+        ),
+    )
+    parser.add_argument(
+        "--auto-accept-recommendations",
+        dest="auto_accept_recommendations",
+        action="store_true",
+        help=(
+            "With --mode=adopt: accept every policy recommendation whose "
+            "manual_review_needed=False without prompting. "
+            "manual_review_needed=True files still need a decision."
+        ),
+    )
+    parser.add_argument(
+        "--non-interactive",
+        dest="non_interactive",
+        action="store_true",
+        help=(
+            "With --mode=adopt: turn any required prompt into a fail-loud "
+            "exit 2 instead of reading stdin. Combine with "
+            "--auto-accept-recommendations for a 'accept everything safe, "
+            "fail on anything needing review' CI contract."
+        ),
+    )

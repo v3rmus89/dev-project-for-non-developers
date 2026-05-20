@@ -387,6 +387,38 @@ plan-vs-repo factual mismatches.
 
 ## PR #7 follow-ups
 
+### Annotate `--diff` headers with adopt-mode policy recommendations (imp-2)
+
+**Status**: parked. **Source**: Tier-1 doc review on Bucket F docs commit (PR #17).
+
+**Why parked**: Plan PR #16 Scope #8 + Bucket A row 8 specified that
+plain `bootstrap.py --diff --language python` should run the analyzer
+in read-only mode and annotate each unified-diff header with the
+recommended policy (e.g. `--- a/CLAUDE.md (target: 96 lines)` /
+`+++ b/CLAUDE.md (recommendation: WRITE_NEW)`). PR #7's impl path
+focused on `--apply --mode=adopt` end-to-end; the `--diff` annotator
+was not shipped. Plain `--diff` currently produces standard
+`difflib.unified_diff` headers without policy annotations.
+
+The Bucket F docs reference this caveat inline in the worked example;
+the recommendation report (Step 2 of adopt-mode) shows the policy
+per file, so the user-facing gap is only in the read-only-preview
+workflow.
+
+**Triggers to pick up**:
+- A user requests inline policy annotations during `--diff` preview.
+- Bucket E live trial surfaces the read-only-preview UX gap as a
+  blocker to confident adopt-mode adoption.
+
+**Rough effort**: ~2 hours — extend `_print_diff` in `bootstrap_lib/cli.py`
+to call `adopt.analyze_target` when `args.language == "python"` (no
+manifest, no writes), then inject policy strings into the `fromfile`/
+`tofile` arg shape. Tests in `tests/test_bootstrap_cli.py` + new
+fixture in `tests/test_mode_adopt_smoke.py` for the annotated diff
+shape.
+
+---
+
 ### Path-safety validation for `--mode=adopt` against sensitive target paths (imp-2)
 
 **Status**: parked. **Source**: claude[bot] Tier-2 review on Plan PR #16 (finding #1).
@@ -441,6 +473,152 @@ byte-identical), update `--enable-github-review` BACKLOG entry to note
 "Codex bot is already configured; this flag would just toggle it per
 generated project," run `make test` to confirm byte-identity test
 passes.
+
+---
+
+### Adoption-mode: align line-ending handling between gitignore normalization and append-merge (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `plan_adoption_entries` impl
+commit (PR #17).
+
+**Why parked**: `_normalize_gitignore_lines` (used by rule (d) membership
+check in `recommend_policy`) decodes UTF-8 and uses `str.splitlines()`,
+which handles `\r\n`/`\r`/`\v`/`\f` line endings. But
+`compute_append_merge_bytes` (used to compute the post-apply bytes and
+the apply-time write) operates in bytes and uses `bytes.split(b"\n")`,
+which only splits on `\n` and leaves `\r` in each line.
+
+For a CRLF-terminated target `.gitignore` (Windows-cloned repo, mixed
+toolchain), rule (d)'s membership check matches `b"venv/"` (post-strip),
+but the merge function's appended `raw_line` retains the `\r`, producing
+a mixed `\r\n` + `\n` output on the next apply.
+
+The PR #7 scope (call-details/ trial on macOS) uses LF-terminated
+gitignore, so this doesn't fire. Real-but-deferrable.
+
+**Triggers to pick up**:
+- First user reports `.gitignore` mojibake or churn on a Windows-
+  cloned repo using `--mode=adopt`.
+- A test failure on a CI matrix that runs on Windows (not currently
+  configured).
+
+**Rough effort**: ~30 min — either (a) align both to bytes-split on
+`\n` with `\r` stripped before processing, or (b) align both to
+`str.splitlines()` after UTF-8 decode. Tests in `TestComputeAppendMergeBytes`
+need one CRLF round-trip test added.
+
+---
+
+### Adoption-mode: route APPEND_MERGE restore through atomic_write for parity with OVERWRITE (imp-2)
+
+**Status**: parked. **Source**: Tier-1 review on v2 restore matrix impl commit (PR #17).
+
+**Why parked**: `_restore_v2_append_merge` uses
+`open(path, "rb+").truncate(pre_append_length) + flush + fsync` to undo
+APPEND_MERGE applies. `truncate(N)` is atomic-at-inode-level on POSIX
+filesystems (the file length is old-or-new, never partial bytes), so
+the safety contract holds. But v1 OVERWRITE restore routes through
+`bio.atomic_write` (tmp + `os.replace`) per Codex iter-21 P1's
+"no in-place truncation" discipline, and APPEND_MERGE diverges from
+that pattern. Marginally weaker consistency story than "all restore
+paths route through atomic_write."
+
+The alternative (read `[:pre_append_length]` bytes + atomic_write)
+costs one extra read per APPEND_MERGE entry — negligible at PR #7's
+trial scale (1 collision file).
+
+**Triggers to pick up**:
+- First reported crash-during-restore bug that surfaces APPEND_MERGE
+  truncation state inconsistency.
+- A future audit of "all restore mutations route through atomic_write"
+  catching this divergence.
+
+**Rough effort**: ~30 min — replace truncate block with `data = full[:pre_append_length]; bio.atomic_write(target_path, data)`. Tests
+already assert post-restore content equality, no test changes needed.
+
+---
+
+### Adoption-mode: orchestrator-level test for rule (a0) via subprocess git path (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+
+**Why parked**: `TestRecommendPolicyRules.test_rule_a0_...` exercises rule
+(a0) at the unit layer (feeds `ignored_by_git=".gitignore:..."` directly
+into TargetMeta). `TestAnalyzeTarget.test_call_details_shaped_fixture` is
+the only orchestrator-level integration test, and it doesn't `git init`
+`tmp_path` — so `_check_ignored_by_git` returns `None` for every file,
+and the (a0) path through the full subprocess pipeline is never exercised
+end-to-end. The git plumbing IS exercised by
+`TestComputeTargetMeta.test_ignored_by_git_for_missing_file`, so coverage
+isn't zero — just split.
+
+**Triggers to pick up**:
+- A future regression where the subprocess error-handling in
+  `_check_ignored_by_git` changes and breaks (a0)'s orchestrator path.
+- During the live `--apply --mode=adopt` trial against call-details if
+  AGENTS.md misfires.
+
+**Rough effort**: ~15 min — add one test that does `_git_init(tmp_path)`,
+writes `.gitignore` ignoring `Makefile`, then calls `analyze_target` with
+`{"Makefile": b"..."}` and asserts SKIP/manual_review=True via the full
+subprocess path.
+
+---
+
+### Adoption-mode: thread `target_content` from analyze_target to recommend_policy (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+
+**Why parked**: `_compute_target_meta` reads each existing target file
+once; `recommend_policy` re-reads the same file (for rules b/d/f/g that
+need bytes). For PR #7's call-details collision set (4 files), that's
+8 reads vs 4 — negligible. For a target with hundreds of colliding
+files, the double-read could matter. The current docstring on
+`recommend_policy` explains the design choice: TargetMeta is deliberately
+content-free per Scope #11 privacy boundary — but a separate `bytes`
+parameter wouldn't violate that.
+
+**Triggers to pick up**:
+- First user reports adopt-mode running noticeably slow against a large
+  target (>100 colliding files).
+- Performance benchmarks added to the CI run.
+
+**Rough effort**: ~1 hour — add `target_content: bytes | None = None`
+parameter to `recommend_policy`; `analyze_target` passes the buffer
+from `_compute_target_meta`'s read (via a small refactor of
+`_compute_target_meta` to optionally return content alongside meta).
+Update all existing `recommend_policy` callers in tests.
+
+---
+
+### Adoption-mode rule (d): `.gitignore` order-aware merge for `!negation` patterns (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review on `recommend_policy` impl commit (PR #17).
+
+**Why parked**: `_normalize_gitignore_lines` (`bootstrap_lib/adopt.py`)
+uses a `set` for line-membership, which is correct for the common case
+(skill adds new positive patterns missing from target's gitignore) and
+order-blind by design. Gitignore semantics ARE order-dependent in one
+edge case: `*.log` followed by `!important.log` differs from the reverse
+order. The current APPEND_MERGE always appends to end, so if the skill
+template ever includes `!negation` patterns that need to come AFTER
+specific positive matches in the target, the merge would produce
+semantically-different behavior than a hand-written ordering.
+
+The call-details collision set used for PR #7's trial doesn't have
+`!negation` patterns; the skill's own `.gitignore.tmpl` doesn't either.
+Real-but-deferrable.
+
+**Triggers to pick up**:
+- First user reports APPEND_MERGE producing wrong gitignore semantics
+  after running `--mode=adopt` on a project with negation patterns.
+- The skill's `.gitignore.tmpl` ever adds a `!negation` pattern.
+
+**Rough effort**: ~1 hour — extend `_normalize_gitignore_lines` to
+return an ordered list with positional metadata; rewrite the APPEND_MERGE
+contract to insert `!negation` lines in semantically-correct positions
+rather than always-end-append. Manifest v2 `pre_append_length` would
+need to become a more general "pre-merge state hash" for restore to work.
 
 ---
 
@@ -516,15 +694,44 @@ some failed — verify cleanup state).
 
 ---
 
-### Adoption-mode UX redesign (analyze-then-decide-with-owner)
+### ✅ Adoption-mode UX redesign (analyze-then-decide-with-owner) — DONE in PR #7
 
-**Status**: parked. **Ships in PR #7 (hybrid: trial + adoption mode together) per user decision 2026-05-19.**
+**Status**: done.
 
-**Why parked**: PR #6 keeps the existing PR #1 collision-abort contract unchanged (`--apply` aborts on any collision unless `--overwrite-existing`). The real redesign is content-driven: a 4-phase `--mode=adopt` flag — (1) **Analyze** the target project per file (size, sections, markers), (2) **Recommend** a policy with reasoning shown to the user (`SKIP` / `OVERWRITE` / `WRITE-.new` / `APPEND-MERGE`), (3) **Decide with owner** (interactive prompt OR batch report with `--auto-accept-recommendations` for non-interactive use), (4) **Apply** per the agreed policies. **Not a hardcoded policy table** — different projects need different choices.
+**Summary**: PR #7 ships `--mode=adopt` — a per-file adoption modifier of
+`--apply` that runs the analyze-then-decide-with-owner UX:
+1. **Analyze** every planned file in target → `TargetMeta` (size, sha256,
+   line count, heading count, dependency-groups flag, python-version pin,
+   gitignored-by-git source:line reference)
+2. **Recommend** a policy per file via Scope #5 rules a0/a..h (`SKIP` /
+   `WRITE` / `OVERWRITE` / `WRITE_NEW` / `APPEND_MERGE`) — rule (h)
+   default is `SKIP` with `manual_review_needed=true` (the core safety
+   guarantee against destructive WRITE on existing files)
+3. **Decide** per-file via stdin prompt with per-file allowed-actions
+   matrix (`[r]ecommended` / `[s]kip` / `[d]iff` / `[n]ew` / `[a]ppend`
+   (`.gitignore` only) / `[o]verwrite` (typed `OVERWRITE` confirmation
+   required) / `[?]help` / `[q]uit`). `--auto-accept-recommendations`
+   and `--non-interactive` flags give the CI contract.
+4. **Apply** per the agreed policies via v2 manifest (`format_version=2`)
+   with per-policy restore matrix — `--restore` correctly undoes each
+   policy without clobbering pre-existing files (closes the iter-1 #3
+   safety hole where rules (b)/(c)/(e) had classified existing files
+   as `WRITE` while `WRITE`'s restore deleted them).
 
-**Triggers to pick up**: PR #7 trial on `call-details/` is the empirical data source for the recommendation heuristics. PR #7 ships both the trial AND the redesign together.
+Heuristics are content-driven, not policy-table-driven. APPEND_MERGE is
+restricted to `.gitignore` only (line-level idempotent merge). `.new`
+collision rule fails loud at plan-time if `<original>.new` already
+exists.
 
-**Rough effort**: ~2-3 days informed by trial data.
+**Triggers met**: PR #7 plan loop converged after 7 Codex iterations +
+8 consistency self-checks; impl shipped across 13 focused commits
+(scaffold → engine → manifest v2 → CLI flags → interactive decide →
+apply + main wiring → smoke fixtures → docs); Tier-1 on every commit
+caught 2 imp-3 safety holes that the plan loop missed at integration
+boundaries (rule (a0) gitignore-pattern leak in report; v2 manifest
+unresolved-relpath silent-restore failure across cwds).
+
+**Effort**: ~2 weeks across plan + impl, informed by call-details trial.
 
 ---
 
@@ -542,15 +749,17 @@ some failed — verify cleanup state).
 
 ### Real-project trial on `~/Desktop/Code/Boxette/call-details/` — PR #7
 
-**Status**: parked (= scoped to PR #7).
+**Status**: in-progress (= the live trial portion of PR #7; engine + smoke fixtures shipped, live trial pending).
 
-**Why parked**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` uses `--dry-run` / `--diff` first to produce an empirical collision manifest (call-details has 8 collisions today: `CLAUDE.md`, `README.md`, `pyproject.toml`, `.python-version`, `uv.lock`, `.gitignore`, `src/`, `tests/` — and ~12 files that write cleanly). That manifest informs the adoption-mode recommendation heuristics. Trial finishes with a real `--apply --mode=adopt` using the new policies.
+**Scope**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` is the empirical data source for the recommendation heuristics. The collision baseline was empirically verified during plan iter-1 fold via `bootstrap.py --dry-run --language python --project-name call-details --out ~/Desktop/Code/Boxette/call-details/`: **4 MODIFY collisions** (`.gitignore`, `.python-version`, `CLAUDE.md`, `pyproject.toml`) + **15 CREATE** (15 missing files the skill writes cleanly).
 
-**Deliverables**: (i) trial plan in `docs/plans/`, (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct), (iii) the `--mode=adopt` implementation, (iv) any skill polish surfaced.
+The pre-empirical "8 collisions" number from PR #6's plan was incorrect — it counted `README.md` + `uv.lock` (which exist in the target but aren't bootstrap writes) and `src/` + `tests/` (which are directories, not file collisions). Closes Codex iter-3 #5 baseline-correction fold.
 
-**Triggers to pick up**: PR #6 merges. (Already scheduled.)
+**Deliverables**: (i) trial plan in `docs/plans/` ✅ shipped; (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct) — pending; (iii) the `--mode=adopt` implementation ✅ shipped (closes BACKLOG entry above); (iv) any skill polish surfaced — pending.
 
-**Rough effort**: ~3-4 days for the combined plan + impl loop.
+**Triggers to pick up**: engine done; smoke fixtures green; Bucket F docs landed; live trial is the next chunk (Phase D of plan Sequencing).
+
+**Rough effort**: ~half a day for the live trial + trial-report.
 
 ---
 

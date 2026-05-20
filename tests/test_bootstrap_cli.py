@@ -59,6 +59,9 @@ def test_every_flag_appears_in_help():
         "--overwrite-existing",
         "--enable-smoke",
         "--package-manager",
+        "--mode",
+        "--auto-accept-recommendations",
+        "--non-interactive",
     ]:
         assert flag in help_text, f"{flag} missing from --help"
 
@@ -683,3 +686,286 @@ def test_resolve_package_manager_for_non_python_returns_none(tmp_path):
     effective_pm, detected = cli._resolve_package_manager(args)
     assert effective_pm is None
     assert detected is None
+
+
+# ─── PR #7 Bucket A: --mode=adopt flag validations ──────────────────────────
+
+
+class TestModeAdoptFlagValidation:
+    """`--mode=adopt` is an adoption modifier of `--apply` (NOT a 5th mutually-
+    exclusive mode). The validations in `_resolve_mode` enforce:
+      - requires --apply
+      - --language=python only (Node/Go parked)
+      - rejects --overwrite-existing (per-file consent is the consent model)
+      - rejected in restore mode
+      - --auto-accept-recommendations / --non-interactive require --mode=adopt
+    """
+
+    def _ok_apply_args(self, tmp_path):
+        return [
+            "--apply",
+            "--mode",
+            "adopt",
+            "--language",
+            "python",
+            "--project-name",
+            "x",
+            "--out",
+            str(tmp_path),
+        ]
+
+    def test_mode_adopt_help_text_present(self):
+        import argparse
+        import re
+
+        parser = argparse.ArgumentParser(prog="bootstrap.py")
+        add_flags(parser)
+        help_text = parser.format_help()
+        # argparse wraps long help across lines; normalize whitespace so
+        # substring checks don't depend on terminal width.
+        flat = re.sub(r"\s+", " ", help_text)
+        # Help text from Scope #1 + Bucket A
+        assert "Adoption modifier" in flat
+        assert "Requires --apply" in flat
+        assert "Invalid with --dry-run, --diff, --restore" in flat
+        # Per Scope #1: "For read-only inspection, use --diff."
+        assert "For read-only inspection, use --diff" in flat
+
+    def test_mode_adopt_choices_only_adopt(self):
+        """--mode is single-valued (not a 5-mode mutually-exclusive group)."""
+        import argparse
+
+        parser = argparse.ArgumentParser(prog="bootstrap.py")
+        add_flags(parser)
+        # Valid: --mode adopt
+        args = parser.parse_args(["--mode", "adopt"])
+        assert args.mode == "adopt"
+        # Invalid: --mode dry-run or anything else
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--mode", "dry-run"])
+
+    def test_mode_adopt_default_is_none(self):
+        import argparse
+
+        parser = argparse.ArgumentParser(prog="bootstrap.py")
+        add_flags(parser)
+        args = parser.parse_args([])
+        assert args.mode is None
+        assert args.auto_accept_recommendations is False
+        assert args.non_interactive is False
+
+    def test_mode_adopt_without_apply_rejected(self, tmp_path):
+        rc, _out, err = run_cli(
+            [
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--mode=adopt requires --apply" in err
+        # Per Scope #1: hint at the read-only alternative.
+        assert "--diff" in err
+
+    def test_mode_adopt_with_diff_rejected(self, tmp_path):
+        """--diff and --apply are mutually-exclusive at argparse layer; this
+        test pins that the resulting error mentions `requires --apply` so
+        the user understands the right invocation."""
+        rc, _out, err = run_cli(
+            [
+                "--mode",
+                "adopt",
+                "--diff",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--mode=adopt requires --apply" in err
+
+    def test_mode_adopt_with_dry_run_rejected(self, tmp_path):
+        rc, _out, err = run_cli(
+            [
+                "--mode",
+                "adopt",
+                "--dry-run",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--mode=adopt requires --apply" in err
+
+    def test_mode_adopt_in_restore_mode_rejected(self, tmp_path):
+        rc, _out, err = run_cli(
+            [
+                "--restore",
+                str(tmp_path / "manifest.json"),
+                "--mode",
+                "adopt",
+            ]
+        )
+        assert rc == 2
+        assert "not valid in restore mode" in err
+        assert "--mode" in err
+
+    def test_auto_accept_recommendations_in_restore_mode_rejected(self, tmp_path):
+        rc, _out, err = run_cli(
+            [
+                "--restore",
+                str(tmp_path / "manifest.json"),
+                "--auto-accept-recommendations",
+            ]
+        )
+        assert rc == 2
+        assert "not valid in restore mode" in err
+        assert "--auto-accept-recommendations" in err
+
+    def test_non_interactive_in_restore_mode_rejected(self, tmp_path):
+        rc, _out, err = run_cli(
+            [
+                "--restore",
+                str(tmp_path / "manifest.json"),
+                "--non-interactive",
+            ]
+        )
+        assert rc == 2
+        assert "not valid in restore mode" in err
+        assert "--non-interactive" in err
+
+    @pytest.mark.parametrize("language", ["nodejs", "go"])
+    def test_mode_adopt_with_non_python_language_rejected(self, tmp_path, language):
+        """Scope #1 fold: --mode=adopt is Python-only; Node/Go parked."""
+        rc, _out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                language,
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--mode=adopt is Python-only" in err
+        assert language in err  # error mentions the user's actual flag value
+
+    def test_mode_adopt_with_overwrite_existing_rejected(self, tmp_path):
+        """Scope #1 fold: --mode=adopt cannot be combined with
+        --overwrite-existing (conflicting consent models)."""
+        rc, _out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--overwrite-existing",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--mode=adopt" in err
+        assert "--overwrite-existing" in err
+        # The error should explain why (consent model)
+        assert "consent" in err.lower()
+
+    def test_auto_accept_without_mode_adopt_rejected(self, tmp_path):
+        """--auto-accept-recommendations is meaningless outside --mode=adopt;
+        fail-loud rather than silently no-op."""
+        rc, _out, err = run_cli(
+            [
+                "--apply",
+                "--auto-accept-recommendations",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--auto-accept-recommendations only valid with --mode=adopt" in err
+
+    def test_non_interactive_without_mode_adopt_rejected(self, tmp_path):
+        """--non-interactive is meaningless outside --mode=adopt."""
+        rc, _out, err = run_cli(
+            [
+                "--apply",
+                "--non-interactive",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+        assert rc == 2
+        assert "--non-interactive only valid with --mode=adopt" in err
+
+    def test_mode_adopt_valid_combinations_resolve_to_apply(self, tmp_path):
+        """The happy path: --apply --mode=adopt --language=python with valid
+        slug + out resolves cleanly. (Actual adopt-mode dispatch is downstream;
+        this test verifies _resolve_mode returns "apply" without raising.)"""
+        parser = cli._build_parser()
+        args = parser.parse_args(self._ok_apply_args(tmp_path))
+        mode = cli._resolve_mode(args)
+        assert mode == "apply"
+        # The downstream dispatch will check args.mode == "adopt" to route
+        # into the adopt-specific path.
+        assert args.mode == "adopt"
+
+    def test_mode_adopt_with_auto_accept_resolves(self, tmp_path):
+        """--mode=adopt + --auto-accept-recommendations is valid."""
+        parser = cli._build_parser()
+        argv = [*self._ok_apply_args(tmp_path), "--auto-accept-recommendations"]
+        args = parser.parse_args(argv)
+        mode = cli._resolve_mode(args)
+        assert mode == "apply"
+        assert args.auto_accept_recommendations is True
+
+    def test_mode_adopt_with_non_interactive_resolves(self, tmp_path):
+        """--mode=adopt + --non-interactive is valid."""
+        parser = cli._build_parser()
+        argv = [*self._ok_apply_args(tmp_path), "--non-interactive"]
+        args = parser.parse_args(argv)
+        mode = cli._resolve_mode(args)
+        assert mode == "apply"
+        assert args.non_interactive is True
+
+    def test_mode_adopt_with_both_modifiers_resolves(self, tmp_path):
+        """Per Claude iter-2 #2 fold: --auto-accept + --non-interactive can be
+        combined under --mode=adopt (CI contract: 'accept everything safe,
+        fail on anything needing review')."""
+        parser = cli._build_parser()
+        argv = [
+            *self._ok_apply_args(tmp_path),
+            "--auto-accept-recommendations",
+            "--non-interactive",
+        ]
+        args = parser.parse_args(argv)
+        mode = cli._resolve_mode(args)
+        assert mode == "apply"
+        assert args.auto_accept_recommendations is True
+        assert args.non_interactive is True
