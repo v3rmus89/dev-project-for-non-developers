@@ -108,8 +108,9 @@ Generating a new token does not invalidate older ones.
    - **Do NOT** `git add .` — pick files explicitly.
    - **For substantive PRs, run Tier-1 review on the commit you just made (before push)**:
      ```bash
-     make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md    # or review-commit-by-codex
+     make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md  # use review-commit-by-codex when Codex implemented
      ```
+     Tier-1 uses the **same AI as the implementer** (Claude→Claude, Codex→Codex); cross-AI review is Tier-2's job.
      Pass `PLAN_FILE=` when you want the reviewer to check plan-impl drift against a specific plan; omit for code-correctness-only review (see `CLAUDE.md` Tier-1 section for the dual-variant subagent path).
      Triage findings per the (a/b/c/d) framework in `CLAUDE.md` (with the four-questions check).
      - **Blockers**: fix and either `git commit --amend` (if not yet pushed) or create a follow-up focused commit. Then **rerun `make review-commit-by-*`** on the corrected commit until no importance-3 findings remain. Then `make check`. THEN push.
@@ -171,6 +172,19 @@ When editing the skill itself, mind these invariants:
 
 ---
 
+## Triaging review findings (full discipline)
+
+The (a/b/c/d) options and the four-questions check live in `CLAUDE.md` —
+always-on session context. This section carries the verbose triage
+discipline that doesn't need to be always-on: imp-3 calibration and the
+plateau rule.
+
+**Calibration**: imp-3 should mean "if we ship without this, the PR doesn't work" — not "if we shipped this, an adversarial test could fail." Imp-3 ≠ "would be more correct." When in doubt about whether a finding is a real blocker, ask: *can the PR ship with a working `make check` and a green smoke walk without this change?* If yes, it's at most imp-2, and probably (b) or (c).
+
+**No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
+
+---
+
 ## Tier-1 review — prompt template for in-session subagents
 
 Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Substitute your commit SHA for `<SHA>` (get it from `git log -1 --pretty=%H`). **Pick ONE variant** matching your situation:
@@ -187,4 +201,4 @@ Substitute only `<SHA>`. The macro emits the unbound prompt; reviewer will limit
 
 > "Review commit <SHA> on this branch. Run 'git log -1 --stat <SHA>' and 'git show <SHA>' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section."
 
-(For non-Claude-Code sessions, just run `make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md` or `make review-commit-by-codex PLAN_FILE=...` — the Makefile passes through `PLAN_FILE` to the same macro. Omit `PLAN_FILE` for the unbound variant.)
+(For non-Claude-Code sessions, just run `make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md` — or `make review-commit-by-codex PLAN_FILE=...` when Codex is the implementer; Tier-1 uses the same AI as the implementer, cross-AI review is Tier-2's job. The Makefile passes through `PLAN_FILE` to the same macro. Omit `PLAN_FILE` for the unbound variant.)
