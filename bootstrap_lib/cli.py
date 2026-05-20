@@ -509,6 +509,187 @@ def _apply_writes(root, planned_files, entries):
             first = False
 
 
+def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
+    """Apply v2 entries per Scope #7's per-policy write contract.
+
+    Replaces the plain `_apply_writes` flow when `--mode=adopt`. SKIP entries
+    are NOT in the manifest (mutation-only contract), so the loop never sees
+    them. Each remaining policy uses `io.atomic_write` (tmp + os.replace) for
+    crash-safety — closes Codex iter-21 P1 contract carried into v2.
+
+      WRITE         atomic_write(rel_path, skill_content) + chmod
+      OVERWRITE     atomic_write(rel_path, skill_content) + chmod
+                    (manifest's content_before_b64 + mode_before snapshot
+                     was captured at plan-time by plan_adoption_entries)
+      WRITE_NEW     re-check `.new` doesn't exist (defense-in-depth against
+                    TOCTOU between plan and apply) → atomic_write `.new`
+      APPEND_MERGE  re-read current target + compute_append_merge_bytes
+                    against skill → atomic_write merged content. Re-merging
+                    at apply time keeps the contract: the skill template is
+                    the canonical source, and append is idempotent.
+
+    Raises `AdoptionCollisionError` if a `.new` file appeared between plan
+    and apply (TOCTOU); the caller catches + converts to exit 2 + restore
+    hint (the v2 manifest is already on disk so restore can rollback the
+    entries written before the collision).
+    """
+    # Local import to avoid an at-import-time cycle (cli → adopt → ...).
+    from bootstrap_lib.adopt import (
+        AdoptionCollisionError,
+        compute_append_merge_bytes,
+    )
+
+    io.install_signal_handlers()
+    root_path = Path(root)
+    _ = adoption_plan  # held for future signal-handler logging hooks
+    first = True
+
+    for entry in entries:
+        policy = entry["policy"]
+        rel_path = entry["path"]
+        target_full = root_path / entry["target_path"]
+
+        if policy in ("WRITE", "OVERWRITE"):
+            # Both are atomic full-content writes. WRITE creates; OVERWRITE
+            # replaces (the v1-style content_before_b64 snapshot was captured
+            # at plan-time by plan_adoption_entries for restore).
+            io.atomic_write(target_full, planned_files[rel_path])
+            os.chmod(target_full, entry["mode_after"])
+        elif policy == "WRITE_NEW":
+            # Defense-in-depth: re-verify `.new` didn't appear between plan-
+            # time and apply-time. plan_adoption_entries already raised on
+            # collision but a concurrent process could race in between.
+            if target_full.exists():
+                raise AdoptionCollisionError(
+                    f"{entry['target_path']} appeared between plan-time and apply-time "
+                    "— bootstrap will NOT overwrite an existing .new file"
+                )
+            io.atomic_write(target_full, planned_files[rel_path])
+            os.chmod(target_full, entry["mode_after"])
+        elif policy == "APPEND_MERGE":
+            # Re-merge at apply time against current target bytes. The skill
+            # template is the canonical source; append is line-level idempotent
+            # so a TOCTOU edit that added new patterns to the target won't
+            # double-append them.
+            current_target = target_full.read_bytes()
+            merged = compute_append_merge_bytes(current_target, planned_files[rel_path])
+            io.atomic_write(target_full, merged)
+            os.chmod(target_full, entry["mode_after"])
+        else:
+            raise ValueError(
+                f"unknown policy {policy!r} in v2 entry for {rel_path!r}; "
+                "expected WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE "
+                "(SKIP entries should NOT appear in v2 manifests)"
+            )
+        if first:
+            _maybe_pause_after_first_write()
+            first = False
+
+
+def _main_apply_adopt(args, target_root, planned_files):
+    """`--apply --mode=adopt` orchestrator. Pipeline:
+
+      1. analyze_target(target_root, planned_files) → AdoptionPlan
+      2. format_recommendation_report(plan) → printed to stdout
+      3. _interactive_decide(plan, planned_files, non_interactive=...)
+         → AdoptionPlan with user decisions (may raise _AdoptionAbort)
+      4. manifest.plan_adoption_entries(...) → v2 entries + created_dirs
+         (may raise AdoptionCollisionError on `.new` collision)
+      5. Build + write v2 manifest BEFORE any filesystem mutation, so
+         restore can roll back partial-apply (carries the iter-22 P1
+         contract into adopt-mode).
+      6. _apply_adoption_writes(...) → atomic writes per policy.
+
+    Returns the exit code. _AdoptionAbort / AdoptionCollisionError both
+    map to exit 2 (fail-loud CI contract); mid-write exceptions map to
+    exit 1 with a restore hint.
+    """
+    # Local import to avoid top-level cycles (cli → adopt is fine; adopt
+    # never imports cli).
+    from bootstrap_lib import adopt
+
+    try:
+        adoption_plan = adopt.analyze_target(target_root, planned_files)
+    except Exception as e:
+        sys.stderr.write(f"adopt-mode analyze failed: {e}\n")
+        return 1
+
+    # Show the recommendation report BEFORE prompting so the user sees the
+    # full per-file picture in one pass.
+    sys.stdout.write(adopt.format_recommendation_report(adoption_plan))
+
+    try:
+        decided_plan = _interactive_decide(
+            adoption_plan,
+            planned_files,
+            non_interactive=args.non_interactive,
+        )
+    except _AdoptionAbort as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
+    try:
+        entries, created_dirs = manifest.plan_adoption_entries(
+            target_root, planned_files, decided_plan
+        )
+    except adopt.AdoptionCollisionError as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
+    if not entries:
+        # All-SKIP outcome: every file was either recommended SKIP and
+        # accepted, or user explicitly chose SKIP. Nothing to write, no
+        # manifest needed (manifests are mutation-only).
+        sys.stdout.write(
+            "adopt-mode: all entries SKIPPED — no manifest written, no files modified.\n"
+        )
+        return 0
+
+    m = manifest.Manifest(
+        # Resolve to absolute path — mirrors v1's _prepare_apply contract so
+        # `bootstrap.py --restore <manifest>` works from any cwd. Without
+        # `.resolve()`, a manifest written from cwd A with `--out ./target`
+        # would record `target_root="target"` and silently fail to find
+        # anything when restored from a different cwd (no files removed,
+        # exit 0, user thinks rollback worked).
+        target_root=str(Path(target_root).resolve()),
+        github_review_mode=args.github_review,
+        entries=entries,
+        created_directories=created_dirs,
+        format_version=manifest.MANIFEST_FORMAT_V2,
+    )
+    try:
+        manifest_p = manifest.write_manifest(m)
+    except Exception as e:
+        sys.stderr.write(f"adopt-mode failed before manifest write: {e}\n")
+        return 1
+
+    try:
+        _apply_adoption_writes(target_root, planned_files, decided_plan, entries)
+    except adopt.AdoptionCollisionError as e:
+        # TOCTOU `.new` collision during apply. Manifest is on disk — partial
+        # writes can be rolled back via restore.
+        sys.stderr.write(f"{e}\n")
+        sys.stderr.write(f"restore manifest: {manifest_p}\n")
+        sys.stderr.write(f"to rollback: {_format_restore_hint(manifest_p)}\n")
+        return 2
+    except Exception as e:
+        sys.stderr.write(f"adopt-mode apply failed mid-write: {e}\n")
+        sys.stderr.write(
+            "target tree may be in a partial state. To roll back the writes\n"
+            "that did complete, run the restore command below.\n"
+        )
+        sys.stderr.write(f"restore manifest: {manifest_p}\n")
+        sys.stderr.write(f"to rollback: {_format_restore_hint(manifest_p)}\n")
+        return 1
+
+    n_mutated = len(entries)
+    print(f"adopt-mode apply: {n_mutated} mutating entries written to {target_root}")
+    print(f"restore manifest: {manifest_p}")
+    print(f"to rollback: {_format_restore_hint(manifest_p)}")
+    return 0
+
+
 def main(argv):
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -558,6 +739,13 @@ def main(argv):
         return 0
 
     # apply
+    # PR #7: --mode=adopt has its own apply pipeline that supersedes the
+    # plain-apply collision-abort contract. Per-file consent via
+    # _interactive_decide IS the consent model; no --overwrite-existing
+    # needed (it's actually rejected by _resolve_mode for adopt-mode).
+    if args.mode == "adopt":
+        return _main_apply_adopt(args, target_root, planned_files)
+
     if detect.has_collisions(inspection) and not args.overwrite_existing:
         sys.stderr.write(
             "collision detected — re-run with `--overwrite-existing` to consent, "
