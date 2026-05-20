@@ -63,7 +63,12 @@ class TargetMeta(NamedTuple):
     heading_count: int | None  # markdown only; count of '^#' lines
     has_dependency_groups: bool  # pyproject.toml; True if [dependency-groups]
     python_version_pin: str | None  # .python-version's pinned version, or None
-    ignored_by_git: str | None  # `git check-ignore -v` match line; None if not ignored
+    # `git check-ignore` source+line reference (e.g. `.gitignore:48`); None if
+    # not ignored. The matching PATTERN itself is intentionally NOT captured —
+    # patterns can be path-revealing (`secrets/client-acme/`) and would leak
+    # into the user-facing report. Source+line is enough for the user to look
+    # up the rule manually (`sed -n '48p' .gitignore`) without exposure here.
+    ignored_by_git: str | None
 
 
 class PolicyRecommendation(NamedTuple):
@@ -108,9 +113,16 @@ class AdoptionPlan(NamedTuple):
 def _check_ignored_by_git(target_root: Path, rel_path: str) -> str | None:
     """Run `git check-ignore -v -- <rel_path>` in target_root.
 
-    Returns the matching `.gitignore` line (e.g. `.gitignore:48:AGENTS.md`) if
-    the path is ignored, else None. Returns None for non-git directories or
-    any subprocess failure (defensive: missing git, permissions, etc.).
+    Returns just the `<source>:<line>` reference (e.g. `.gitignore:48`) if the
+    path is ignored — NOT the matching pattern itself. The pattern is dropped
+    here to honour Scope #11's privacy boundary: patterns can be path-revealing
+    (`secrets/client-acme/`, `*-customer-token-*`) and would leak verbatim into
+    the user-facing recommendation report via rule (a0)'s shape line + reason.
+    Source+line is sufficient for the user to look up the rule manually
+    (`sed -n '48p' .gitignore`) if they want to see why the file is ignored.
+
+    Returns None for non-git directories or any subprocess failure (defensive:
+    missing git, permissions, etc.).
 
     Per plan rule (a0): a planned CREATE that is ignored by git → recommended
     SKIP with manual_review_needed=True (silent SKIP loses planned file, silent
@@ -130,9 +142,14 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> str | None:
     # Exit 0 = ignored; output is "<source>:<line>:<pattern>\t<path>".
     # Exit 1 = not ignored. Exit 128 = not a git repo.
     if result.returncode == 0 and result.stdout:
-        # Return just the "source:line:pattern" part for stable evidence.
         first_line = result.stdout.splitlines()[0]
-        return first_line.split("\t", 1)[0] if "\t" in first_line else first_line
+        # Drop the tab-suffixed path, then drop the pattern field (after the
+        # second colon) to keep only `<source>:<line>` — privacy-safe.
+        ref = first_line.split("\t", 1)[0] if "\t" in first_line else first_line
+        parts = ref.split(":", 2)
+        if len(parts) >= 2:
+            return f"{parts[0]}:{parts[1]}"
+        return ref
     return None
 
 
@@ -453,6 +470,94 @@ def recommend_policy(
     )
 
 
+def _format_target_shape(meta: TargetMeta) -> str:
+    """Render the per-file "target: ..." shape line for the report.
+
+    Per Scope #11 privacy boundary: only derived markers — sha256 (first 8 hex
+    chars), counts (lines, headings, size), structural flags (deps groups),
+    version pin, gitignore match line. NO raw file bytes anywhere.
+    """
+    if not meta.exists:
+        if meta.ignored_by_git:
+            return f"target: missing (gitignored: {meta.ignored_by_git})"
+        return "target: missing"
+
+    parts: list[str] = []
+    if meta.line_count is not None:
+        parts.append("1 line" if meta.line_count == 1 else f"{meta.line_count} lines")
+    else:
+        parts.append(f"{meta.size} bytes")
+    if meta.heading_count is not None and meta.heading_count > 0:
+        parts.append("1 heading" if meta.heading_count == 1 else f"{meta.heading_count} headings")
+    if meta.python_version_pin is not None:
+        parts.append(f"pin={meta.python_version_pin}")
+    if meta.has_dependency_groups:
+        parts.append("[dependency-groups]")
+    if meta.sha256:
+        parts.append(f"sha256:{meta.sha256[:8]}")
+    return f"target: {', '.join(parts)}"
+
+
+def _format_recommendation_row(analysis: PlannedFileAnalysis) -> list[str]:
+    """Three lines per file: header (policy + rel_path), target shape, reason."""
+    rec = analysis.recommendation
+    return [
+        f"  {rec.policy:13} {analysis.rel_path}",
+        f"                {_format_target_shape(analysis.target_meta)}",
+        f"                reason: {rec.reason}",
+    ]
+
+
+def format_recommendation_report(plan: AdoptionPlan) -> str:
+    """Render the user-facing recommendation report shown before the interactive
+    decide phase.
+
+    Layout: header + sections grouped by `manual_review_needed`
+    (automatic vs manual-review) + summary line with per-policy counts.
+
+    Privacy (Bucket B test row contract): the output contains NO raw target
+    content. Only filenames, derived markers (counts/hashes/structural flags),
+    and policy decisions/reasons appear. Tests assert this empirically by
+    seeding target files with a marker string and verifying the marker does
+    not appear in the rendered report.
+    """
+    lines: list[str] = [
+        f"adoption recommendation: {len(plan.analyses)} file(s) analyzed at {plan.target_root}"
+    ]
+
+    if not plan.analyses:
+        lines.append("")
+        lines.append("(empty plan — nothing to do)")
+        return "\n".join(lines) + "\n"
+
+    auto = [a for a in plan.analyses if not a.recommendation.manual_review_needed]
+    manual = [a for a in plan.analyses if a.recommendation.manual_review_needed]
+
+    if auto:
+        lines.append("")
+        lines.append(f"automatic ({len(auto)}):")
+        for analysis in auto:
+            lines.append("")
+            lines.extend(_format_recommendation_row(analysis))
+
+    if manual:
+        lines.append("")
+        lines.append(f"manual review needed ({len(manual)}):")
+        for analysis in manual:
+            lines.append("")
+            lines.extend(_format_recommendation_row(analysis))
+
+    counts: dict[str, int] = {}
+    for analysis in plan.analyses:
+        counts[analysis.recommendation.policy] = counts.get(analysis.recommendation.policy, 0) + 1
+    summary = " ".join(f"{policy}={counts[policy]}" for policy in sorted(counts))
+    tail = f"{len(manual)} need your decision" if manual else "all automatic — no decisions needed"
+    lines.append("")
+    lines.append(f"summary: {summary}  ({tail})")
+
+    return "\n".join(lines) + "\n"
+
+
 def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> AdoptionPlan:
     """Walk every planned file; compute TargetMeta + PolicyRecommendation for each.
 
@@ -500,5 +605,6 @@ __all__ = [
     "TargetMeta",
     "_compute_target_meta",  # exported for tests
     "analyze_target",
+    "format_recommendation_report",
     "recommend_policy",
 ]

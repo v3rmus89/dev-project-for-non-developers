@@ -25,6 +25,7 @@ from bootstrap_lib.adopt import (
     TargetMeta,
     _compute_target_meta,
     analyze_target,
+    format_recommendation_report,
     recommend_policy,
 )
 
@@ -197,13 +198,18 @@ class TestComputeTargetMeta:
         assert meta.python_version_pin is None
 
     def test_ignored_by_git_for_missing_file(self, tmp_path: Path) -> None:
-        """Rule (a0)'s precondition: missing file + git ignores it."""
+        """Rule (a0)'s precondition: missing file + git ignores it. The result
+        format is `<source>:<line>` only — the matching pattern is dropped to
+        honour Scope #11's privacy boundary (patterns can be path-revealing)."""
         _git_init(tmp_path)
         (tmp_path / ".gitignore").write_text("AGENTS.md\n")
         meta = _compute_target_meta(tmp_path, "AGENTS.md")
         assert meta.exists is False
         assert meta.ignored_by_git is not None
-        assert "AGENTS.md" in meta.ignored_by_git
+        # `.gitignore:1` (source + line), NOT `.gitignore:1:AGENTS.md` (with pattern).
+        assert meta.ignored_by_git == ".gitignore:1"
+        # The pattern (AGENTS.md) must NOT be present in the captured reference.
+        assert "AGENTS.md" not in meta.ignored_by_git
 
     def test_not_ignored_when_no_gitignore_match(self, tmp_path: Path) -> None:
         _git_init(tmp_path)
@@ -258,7 +264,7 @@ class TestRecommendPolicyRules:
             size=0,
             sha256=None,
             line_count=None,
-            ignored_by_git=".gitignore:1:AGENTS.md",
+            ignored_by_git=".gitignore:1",
         )
         rec = recommend_policy("AGENTS.md", tmp_path / "AGENTS.md", b"skill content\n", meta)
         assert rec.policy == "SKIP"
@@ -520,7 +526,7 @@ class TestRecommendPolicyPrecedence:
             size=0,
             sha256=None,
             line_count=None,
-            ignored_by_git=".gitignore:1:AGENTS.md",
+            ignored_by_git=".gitignore:1",
         )
         rec = recommend_policy("AGENTS.md", tmp_path / "AGENTS.md", b"skill\n", meta)
         assert rec.policy == "SKIP"
@@ -781,3 +787,225 @@ class TestAnalyzeTarget:
         )
         # Sanity check that we DID analyze
         assert len(plan.analyses) == 2
+
+
+class TestFormatRecommendationReport:
+    """`format_recommendation_report` — user-facing rendering.
+
+    Bucket D golden-output contract: assert STRUCTURE (key sections, counts,
+    privacy-safe content), NOT byte-equality (so wording polish doesn't
+    cascade-break tests).
+    """
+
+    def test_empty_plan_renders_short_message(self, tmp_path: Path) -> None:
+        plan = AdoptionPlan(target_root=tmp_path, analyses=())
+        report = format_recommendation_report(plan)
+        assert "0 file(s) analyzed" in report
+        assert str(tmp_path) in report
+        assert "empty plan" in report
+        assert report.endswith("\n")
+
+    def test_report_includes_target_root(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"new.txt": b"skill\n"})
+        report = format_recommendation_report(plan)
+        assert str(tmp_path) in report
+
+    def test_report_lists_every_rel_path(self, tmp_path: Path) -> None:
+        (tmp_path / "exists.txt").write_bytes(b"hi\n")
+        plan = analyze_target(
+            tmp_path,
+            {"new.txt": b"a\n", "exists.txt": b"b\n", ".gitignore": b"venv/\n"},
+        )
+        report = format_recommendation_report(plan)
+        for rel in ("new.txt", "exists.txt", ".gitignore"):
+            assert rel in report, f"{rel} missing from report"
+
+    def test_report_shows_every_emitted_policy(self, tmp_path: Path) -> None:
+        """Each policy name appears in the report wherever a file uses it."""
+        (tmp_path / "empty.txt").write_bytes(b"")  # → OVERWRITE
+        (tmp_path / "matched.txt").write_bytes(b"hi\n")  # → SKIP
+        plan = analyze_target(
+            tmp_path,
+            {
+                "new.txt": b"a\n",  # → WRITE
+                "empty.txt": b"fill\n",
+                "matched.txt": b"hi\n",
+            },
+        )
+        report = format_recommendation_report(plan)
+        assert "WRITE" in report
+        assert "OVERWRITE" in report
+        assert "SKIP" in report
+
+    def test_report_groups_by_manual_review_needed(self, tmp_path: Path) -> None:
+        """Files needing manual review are in their own section; auto-applies
+        in another; both labeled with counts."""
+        (tmp_path / "CLAUDE.md").write_bytes(
+            b"# Title\n" + b"line\n" * 25
+        )  # rule (f) → manual_review
+        plan = analyze_target(
+            tmp_path,
+            {
+                "new.txt": b"safe\n",  # auto (WRITE)
+                "CLAUDE.md": b"# Skill\n",  # manual (WRITE_NEW)
+            },
+        )
+        report = format_recommendation_report(plan)
+        assert "automatic (1):" in report
+        assert "manual review needed (1):" in report
+        # CLAUDE.md belongs to the manual section; order check via index
+        manual_idx = report.index("manual review needed")
+        new_idx = report.index("new.txt")
+        claude_idx = report.index("CLAUDE.md")
+        # new.txt appears BEFORE the manual section
+        assert new_idx < manual_idx
+        # CLAUDE.md appears AFTER the manual section header
+        assert claude_idx > manual_idx
+
+    def test_report_shows_summary_with_policy_counts(self, tmp_path: Path) -> None:
+        (tmp_path / "exists.txt").write_bytes(b"hi\n")
+        plan = analyze_target(
+            tmp_path,
+            {"a.txt": b"a\n", "b.txt": b"b\n", "exists.txt": b"hi\n"},
+        )
+        report = format_recommendation_report(plan)
+        assert "summary:" in report
+        # Two WRITE (a.txt + b.txt missing) + one SKIP (exists.txt byte-identical)
+        assert "WRITE=2" in report
+        assert "SKIP=1" in report
+
+    def test_report_summary_indicates_decisions_needed(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_bytes(b"# Title\n" + b"line\n" * 25)
+        plan = analyze_target(tmp_path, {"new.txt": b"safe\n", "CLAUDE.md": b"# Skill\n"})
+        report = format_recommendation_report(plan)
+        assert "1 need your decision" in report
+
+    def test_report_summary_all_automatic_when_no_manual_review(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"new.txt": b"safe\n"})
+        report = format_recommendation_report(plan)
+        assert "all automatic" in report
+        assert "need your decision" not in report
+
+    def test_report_shows_target_shape_for_existing_files(self, tmp_path: Path) -> None:
+        """Target shape line includes line count + sha256 prefix for existing
+        files (privacy-safe derived markers)."""
+        content = b"hello\nworld\n"
+        (tmp_path / "f.txt").write_bytes(content)
+        plan = analyze_target(tmp_path, {"f.txt": b"different\n"})
+        report = format_recommendation_report(plan)
+        assert "2 lines" in report
+        assert "sha256:" in report
+        # First 8 chars of the sha256
+        assert hashlib.sha256(content).hexdigest()[:8] in report
+
+    def test_report_shows_missing_for_nonexistent_targets(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"missing.txt": b"skill\n"})
+        report = format_recommendation_report(plan)
+        assert "target: missing" in report
+
+    def test_report_shows_python_version_pin(self, tmp_path: Path) -> None:
+        """The pin appears for .python-version shape lines."""
+        (tmp_path / ".python-version").write_bytes(b"3.10\n")
+        plan = analyze_target(tmp_path, {".python-version": b"3.12\n"})
+        report = format_recommendation_report(plan)
+        assert "pin=3.10" in report
+
+    def test_report_shows_dependency_groups_marker(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_bytes(
+            b'[project]\nname = "x"\n\n[dependency-groups]\ndev = ["pytest"]\n'
+        )
+        plan = analyze_target(tmp_path, {"pyproject.toml": b'[project]\nname = "y"\n'})
+        report = format_recommendation_report(plan)
+        assert "[dependency-groups]" in report
+
+    def test_report_includes_per_file_reason(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"new.txt": b"skill\n"})
+        report = format_recommendation_report(plan)
+        assert "reason: target file does not exist" in report
+
+    # ─── Privacy boundary (Bucket B test row contract) ───
+    def test_report_does_not_leak_raw_target_content(self, tmp_path: Path) -> None:
+        """The user-facing report must contain NO raw target file content.
+
+        Seed a target file with a unique marker string; verify the marker is
+        absent from the rendered report. Only derived markers (counts/hashes/
+        structural flags) should appear.
+        """
+        secret_marker = b"SUPER_SECRET_CUSTOMER_TOKEN_42_xyzZQ\n"
+        (tmp_path / "CLAUDE.md").write_bytes(b"# Title\n" + secret_marker + b"line\n" * 30)
+        (tmp_path / ".gitignore").write_bytes(secret_marker + b"venv/\n")
+        (tmp_path / "pyproject.toml").write_bytes(
+            b'[project]\nname = "x"\ndescription = "' + secret_marker.strip() + b'"\n'
+        )
+        plan = analyze_target(
+            tmp_path,
+            {
+                "CLAUDE.md": b"# Skill\n",
+                ".gitignore": b"venv/\n__pycache__/\n",
+                "pyproject.toml": b'[project]\nname = "y"\n',
+            },
+        )
+        report = format_recommendation_report(plan)
+
+        # The marker bytes must not appear in the report (privacy boundary).
+        marker_str = secret_marker.decode().strip()
+        assert marker_str not in report, (
+            f"raw target content leaked into report: {marker_str!r} found in output"
+        )
+
+    def test_report_does_not_leak_gitignore_user_patterns(self, tmp_path: Path) -> None:
+        """The report counts missing patterns but does not enumerate user
+        patterns from the target's .gitignore (privacy: user gitignore lines
+        could be path-revealing — e.g. `secrets/client-name/`)."""
+        user_secret_pattern = "secrets/client-acme-corp/"
+        (tmp_path / ".gitignore").write_text(f"{user_secret_pattern}\nvenv/\n")
+        plan = analyze_target(tmp_path, {".gitignore": b"venv/\n__pycache__/\n.env\n"})
+        report = format_recommendation_report(plan)
+        assert user_secret_pattern not in report, "user's .gitignore pattern leaked into report"
+
+    def test_report_does_not_leak_gitignore_pattern_via_rule_a0(self, tmp_path: Path) -> None:
+        """Rule (a0) privacy: when a planned-CREATE matches a target's
+        `.gitignore` pattern, the report shows the file is ignored (so the
+        user can decide SKIP-confirm vs WRITE_NEW) but MUST NOT include the
+        matching pattern itself — patterns can be path-revealing
+        (`secrets/client-acme/`, `*-customer-token-*`).
+
+        Uses a pattern with a trailing `*` so the pattern's distinctive bytes
+        don't appear in the matched filename — lets us assert pattern absence
+        without false positives from the rel_path.
+        """
+        import re
+
+        _git_init(tmp_path)
+        secret_pattern = "totally-secret-prefix_LEAKMARKER_*"
+        matched_path = "totally-secret-prefix_LEAKMARKER_xyz"
+        (tmp_path / ".gitignore").write_text(f"{secret_pattern}\n")
+        plan = analyze_target(tmp_path, {matched_path: b"skill content\n"})
+        report = format_recommendation_report(plan)
+
+        # Sanity: rule (a0) fired — file is in manual-review section.
+        assert "manual review needed" in report
+        # rel_path IS allowed (Scope #11 lists filenames as safe).
+        assert matched_path in report
+
+        # Pattern itself MUST NOT appear.
+        assert secret_pattern not in report, (
+            f"gitignore pattern leaked via rule (a0): {secret_pattern!r} found in report"
+        )
+        # No 3-field `.gitignore:N:<pattern>` references — only 2-field `.gitignore:N`.
+        leaky_refs = re.findall(r"\.gitignore:\d+:[^\s)]+", report)
+        assert not leaky_refs, (
+            f"3-field gitignore reference (pattern-leaking) found in report: {leaky_refs}"
+        )
+
+    def test_report_ends_with_newline(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"f.txt": b"x\n"})
+        report = format_recommendation_report(plan)
+        assert report.endswith("\n")
+        # Not double-newline at end
+        assert not report.endswith("\n\n\n")
+
+    def test_report_is_str_type(self, tmp_path: Path) -> None:
+        plan = analyze_target(tmp_path, {"f.txt": b"x\n"})
+        report = format_recommendation_report(plan)
+        assert isinstance(report, str)
