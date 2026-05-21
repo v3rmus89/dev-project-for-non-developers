@@ -39,6 +39,26 @@ PR #9 plan must settle.
 
 ---
 
+### Interactive intake: explicit cancel option on the output-directory re-ask (imp-1)
+
+**Status**: parked. **Source**: Tier-1 review during skill PR #8 implementation.
+
+**Why parked**: `intake.run_intake`'s output-directory loop re-asks `--out`
+whenever the chosen folder is an existing project; the only ways out are
+picking a clean folder or pressing Ctrl-D / Ctrl-C (both handled cleanly,
+exit 0). A user with only existing-project folders to offer has no
+explicit in-loop "cancel" choice. Ctrl-C is a working, documented escape,
+so this is UX polish, not a correctness gap.
+
+**Triggers to pick up**: a user reports feeling stuck in the
+output-directory re-ask, or the next change to the intake flow.
+
+**Rough effort**: ~20 min — accept an explicit "cancel" word at the
+output-directory prompt and return `None` (same as the confirm gate's
+cancel).
+
+---
+
 ## Follow-ups from the info-architecture refactor
 
 ### Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2)
@@ -444,6 +464,85 @@ plan-vs-repo factual mismatches.
 **Rough effort**: ~half a day.
 
 ## PR #7 follow-ups
+
+### Adopt-mode skips the greenfield smoke placeholders for an existing project (imp-2)
+
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details` (recorded during skill PR #8).
+
+**Why parked**: an `--apply --mode=adopt` run emitted the greenfield smoke
+placeholders `src/main.py` (`print("hello from <project>")`) and
+`tests/test_smoke.py` (`assert True`) into `call-details`, which already
+has real source under `src/boxette_calls/` and a real test suite. Adopt
+mode should not scaffold greenfield-only placeholder code into a project
+that already has code.
+
+**Triggers to pick up**: the next adopt-mode change, or a user reports a
+stray `src/main.py` / `tests/test_smoke.py` after an adopt run.
+
+**Rough effort**: ~1-2h — gate the `src/main.py` + `tests/test_smoke.py`
+emit on greenfield-vs-adopt in the adopt apply path.
+
+---
+
+### Adopt-mode's `Makefile` `run` target is hardcoded to `src/main.py` (imp-2)
+
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+
+**Why parked**: the skill's `Makefile` ships `run: uv run python src/main.py`
+— correct for the greenfield smoke layout, wrong for an adopted real
+project whose entry point is elsewhere (`call-details` uses a
+`[project.scripts]` console script). After an adopt run, `make run` points
+at a placeholder (or, once the placeholder is dropped per the entry above,
+a missing file).
+
+**Triggers to pick up**: the next adopt-mode change, or a user reports
+`make run` broken after an adopt run.
+
+**Rough effort**: ~1h — in adopt mode, detect the target's real entry
+point (e.g. `[project.scripts]`) and retarget `run`, or leave `run` as a
+documented TODO for the user to fill in.
+
+---
+
+### Adopt-mode does not add `pre-commit` to the target's dev dependencies (imp-2)
+
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+
+**Why parked**: adopt mode applies `.pre-commit-config.yaml` and the
+`make install-hooks` target, but `make install-hooks` runs
+`uv run pre-commit install` — and adopt mode (correctly) does not
+overwrite the target's real `pyproject.toml`, so `pre-commit` is missing
+from the target's dev-dependency group and `make install-hooks` fails.
+(Distinct from the parked "Direct `--install-hooks` flag" entry under
+"Skill follow-ups", which is about a skill-side bootstrap flag.)
+
+**Triggers to pick up**: the first adopt user runs `make install-hooks`
+and it fails on a missing `pre-commit`.
+
+**Rough effort**: ~1h — adopt mode appends `pre-commit` to the detected
+dev-dependency group (or prints a one-line "add pre-commit to your dev
+deps" hint after applying `.pre-commit-config.yaml`).
+
+---
+
+### Adopt-mode: `AGENTS.md` can collide with the target's `.gitignore` (imp-1)
+
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+
+**Why parked**: `call-details`'s `.gitignore` listed `AGENTS.md` (it had
+been ignored as Codex-CLI scratch residue). The skill's `AGENTS.md` is a
+*tracked* reviewer-guidance deliverable, so an ignored `AGENTS.md` is
+silently never committed and the GitHub review bots never read it. Adopt
+mode writes the file but does not notice the gitignore conflict.
+
+**Triggers to pick up**: an adopt user whose `.gitignore` already lists
+`AGENTS.md` reports the review bots having no repo-specific guidance.
+
+**Rough effort**: ~30 min — adopt mode detects an `AGENTS.md` entry in the
+target's `.gitignore` and warns (or documents the conflict in the
+adopt-mode docs).
+
+---
 
 ### Annotate `--diff` headers with adopt-mode policy recommendations (imp-2)
 

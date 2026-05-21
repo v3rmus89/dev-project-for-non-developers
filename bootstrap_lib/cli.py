@@ -1,7 +1,6 @@
 import argparse
 import difflib
 import os
-import re
 import shlex
 import subprocess
 import sys
@@ -9,9 +8,8 @@ import time
 from pathlib import Path
 
 from bootstrap_lib import detect, io, manifest, paths, render
-from bootstrap_lib._flags import add_flags
+from bootstrap_lib._flags import PROJECT_NAME_RE, add_flags
 
-PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP_PY = SKILL_ROOT / "bootstrap.py"
 
@@ -691,9 +689,62 @@ def _main_apply_adopt(args, target_root, planned_files):
     return 0
 
 
+def _should_run_intake(argv, args):
+    """True when the interactive intake should run: `--interactive` was
+    passed, OR `bootstrap.py` was invoked with zero arguments on a terminal.
+
+    `sys.stdin` can be `None` in a detached process — guard before
+    `.isatty()` so that case falls through cleanly (to today's
+    missing-args error) rather than raising `AttributeError`.
+    """
+    if args.interactive:
+        return True
+    return not argv and sys.stdin is not None and sys.stdin.isatty()
+
+
 def main(argv):
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # --interactive is standalone-only: any other argv token is rejected here,
+    # before mode resolution, so a load-bearing mode (e.g. --restore) can never
+    # be re-routed into the interactive question flow. A raw token count is
+    # deliberate — any other flag adds at least one token.
+    if args.interactive and len(argv) > 1:
+        sys.stderr.write("--interactive must be used on its own (no other flags) in this version\n")
+        return 2
+    if _should_run_intake(argv, args):
+        # `sys.stdin` can be None in a detached process. `_should_run_intake`'s
+        # auto-trigger branch already guards this, but the explicit
+        # `--interactive` branch does not — without this guard `run_intake`
+        # would dereference `None.readline()` and raise an uncaught
+        # AttributeError. Fail loud instead.
+        if sys.stdin is None:
+            sys.stderr.write("interactive mode needs an interactive terminal or piped answers\n")
+            return 2
+        # Lazy import — mirrors the adopt-mode lazy import below; lets
+        # intake.py import _flags/render with no at-import cycle.
+        from bootstrap_lib import intake
+
+        try:
+            intake_argv = intake.run_intake()
+        except intake.IntakeAborted:
+            # EOF mid-flow: Ctrl-D on a terminal → treat as cancel; an
+            # exhausted/empty non-TTY pipe → fail loud.
+            if sys.stdin is not None and sys.stdin.isatty():
+                return 0
+            sys.stderr.write("interactive mode needs an interactive terminal or piped answers\n")
+            return 2
+        except KeyboardInterrupt:
+            # Ctrl-C → clean cancel, not a raw traceback.
+            sys.stderr.write("\ncancelled\n")
+            return 0
+        if intake_argv is None:  # user chose 'cancel'
+            return 0
+        # Re-parse the intake-built argv through the SAME parser — intake gets
+        # every existing validation for free; this is a backstop, not the
+        # primary check.
+        args = parser.parse_args(intake_argv)
 
     try:
         mode = _resolve_mode(args)

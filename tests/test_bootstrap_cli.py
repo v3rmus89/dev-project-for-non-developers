@@ -1186,3 +1186,146 @@ def test_gh_repo_hint_worktree_with_remote_suppresses_hint(tmp_path):
     rc, out, err = run_cli(_gh_apply_args(target))
     assert rc == 0, err
     assert "gh repo create" not in out
+
+
+# --- interactive intake wiring (skill PR #8, Bucket D/E) ---
+
+
+class _FakeStdin:
+    """A scripted stdin for the intake-wiring tests: readline() returns queued
+    lines; isatty() is configurable (the trigger logic branches on it)."""
+
+    def __init__(self, text, isatty=True):
+        self._buf = io_module.StringIO(text)
+        self._isatty = isatty
+
+    def readline(self):
+        return self._buf.readline()
+
+    def isatty(self):
+        return self._isatty
+
+
+def _intake_answers(out):
+    """Scripted greenfield-python answers ending at the apply confirm:
+    name, language=1(python), pm=1(uv), review=1(none), smoke=1(no), outdir,
+    confirm=1(apply)."""
+    return "\n".join(["proj", "1", "1", "1", "1", str(out), "1"]) + "\n"
+
+
+def test_bare_main_on_tty_enters_intake(tmp_path, monkeypatch):
+    """`main([])` on a terminal enters the intake (not today's missing-args
+    dead end) and the resolved config flows into a real apply."""
+    out = tmp_path / "newproj"
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(_intake_answers(out), isatty=True))
+    rc, _out, err = run_cli([])
+    assert rc == 0, err
+    assert "missing required args" not in err
+    assert (out / "Makefile").exists()  # intake ran → apply happened
+
+
+def test_no_args_non_tty_keeps_missing_args_error(monkeypatch):
+    """A bare invocation on a non-TTY keeps the existing missing-args error —
+    intake never auto-triggers, never hangs."""
+    monkeypatch.setattr(sys, "stdin", _FakeStdin("", isatty=False))
+    rc, _out, err = run_cli([])
+    assert rc == 2
+    assert "missing required args" in err
+
+
+def test_interactive_flag_routes_through_intake(tmp_path, monkeypatch):
+    """Explicit --interactive runs the intake even on a non-TTY (scripted
+    stdin) and then runs the normal pipeline."""
+    out = tmp_path / "p"
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(_intake_answers(out), isatty=False))
+    rc, _out, err = run_cli(["--interactive"])
+    assert rc == 0, err
+    assert (out / "Makefile").exists()
+
+
+def test_interactive_with_other_flag_exits_2():
+    """--interactive combined with any other flag exits 2 before intake runs —
+    a load-bearing mode can never be re-routed into a Q&A."""
+    rc, _out, err = run_cli(["--interactive", "--apply"])
+    assert rc == 2
+    assert "on its own" in err
+
+
+def test_interactive_non_tty_empty_stdin_exits_2(monkeypatch):
+    """--interactive with an empty non-TTY stdin: the first prompt hits EOF →
+    IntakeAborted → clean exit 2, no hang, no traceback."""
+    monkeypatch.setattr(sys, "stdin", _FakeStdin("", isatty=False))
+    rc, _out, err = run_cli(["--interactive"])
+    assert rc == 2
+    assert "interactive terminal" in err
+
+
+def test_interactive_stdin_none_exits_2(monkeypatch):
+    """--interactive in a detached process where `sys.stdin` is None must fail
+    loud (exit 2 + message), not crash with an AttributeError."""
+    monkeypatch.setattr(sys, "stdin", None)
+    rc, _out, err = run_cli(["--interactive"])
+    assert rc == 2
+    assert "interactive terminal" in err
+
+
+def test_interactive_keyboardinterrupt_exits_clean(monkeypatch):
+    """Ctrl-C during intake → clean cancel (exit 0 + 'cancelled'), not a raw
+    traceback."""
+
+    def _boom(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("bootstrap_lib.intake.run_intake", _boom)
+    monkeypatch.setattr(sys, "stdin", _FakeStdin("", isatty=True))
+    rc, _out, err = run_cli(["--interactive"])
+    assert rc == 0
+    assert "cancelled" in err
+
+
+def test_interactive_apply_matches_flag_driven_apply(tmp_path, monkeypatch):
+    """End-to-end: a scripted interactive apply and the equivalent flag-driven
+    apply produce byte-identical relative file trees."""
+    a = tmp_path / "a"
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(_intake_answers(a), isatty=True))
+    rc_a, _o, err_a = run_cli([])
+    assert rc_a == 0, err_a
+
+    b = tmp_path / "b"
+    rc_b, _o, err_b = run_cli(
+        [
+            "--apply",
+            "--language",
+            "python",
+            "--project-name",
+            "proj",
+            "--out",
+            str(b),
+            "--github-review",
+            "none",
+            "--package-manager",
+            "uv",
+        ]
+    )
+    assert rc_b == 0, err_b
+
+    a_files = {p.relative_to(a): p.read_bytes() for p in a.rglob("*") if p.is_file()}
+    b_files = {p.relative_to(b): p.read_bytes() for p in b.rglob("*") if p.is_file()}
+    assert a_files == b_files
+
+
+def test_interactive_apply_preserves_existing_nonskill_files(tmp_path, monkeypatch):
+    """An --out folder holding only non-skill files (a goals doc, a data dir)
+    is greenfield: interactive apply adds the skill files and leaves the
+    pre-existing files byte-unchanged."""
+    out = tmp_path / "proj"
+    out.mkdir()
+    (out / "business-goals.md").write_bytes(b"the goals\n")
+    (out / "data").mkdir()
+    (out / "data" / "raw.txt").write_bytes(b"rows\n")
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(_intake_answers(out), isatty=True))
+    rc, _out, err = run_cli([])
+    assert rc == 0, err
+    assert (out / "business-goals.md").read_bytes() == b"the goals\n"
+    assert (out / "data" / "raw.txt").read_bytes() == b"rows\n"
+    assert (out / "Makefile").exists()

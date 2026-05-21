@@ -18,6 +18,33 @@ Optional:
 
 Run `make doctor` after `make install` to verify the core prereqs are present.
 
+## Interactive setup (`--interactive`)
+
+New to the skill, or don't want to assemble the flags below yourself? Run it
+with **no arguments** on a terminal:
+
+```
+./venv/bin/python bootstrap.py
+```
+
+(or `./venv/bin/python bootstrap.py --interactive` explicitly). A guided flow
+asks for the project name, language, package manager, GitHub review, and output
+directory — one question at a time — then prints a plain-language summary and,
+on your confirmation, runs the apply. It builds the same flags the CLI surface
+below documents; **nothing is written until you choose `apply`**. Press Ctrl-C
+any time to cancel. `--interactive` must be used on its own (no other flags) in
+this version.
+
+**Greenfield only.** The interactive flow sets up a *new* project. A target
+folder counts as "new" unless it already contains a file the skill itself writes
+(`Makefile`, `CLAUDE.md`, the language manifest, `.github/…`, `src/main.py`, …)
+**or** any recognised project manifest in any language — `pyproject.toml`,
+`setup.py`, `uv.lock`, `requirements*.txt`, `package.json`, `go.mod`. A folder
+that only holds unrelated files (a business-goals note, a `data/` folder to
+analyse) is still "new" — those files are left untouched. If the folder already
+holds a project, the flow points you at adoption mode (`--mode=adopt`,
+Python-only — see below) and re-asks for a different directory.
+
 ## CLI surface
 
 ```
@@ -83,7 +110,7 @@ Run `make doctor` after `make install` to verify the core prereqs are present.
 
 **When NOT to use it**:
 
-- Greenfield projects (no files in target) — plain `--apply` is fine; adopt-mode adds no value.
+- Greenfield projects (a new project with no existing dev setup) — plain `--apply` is fine; adopt-mode adds no value.
 - Non-Python languages (Node / Go) — adopt-mode is Python-only in PR #7. Node/Go adoption-mode is parked for follow-up.
 
 ### How it works (4 phases)
@@ -255,7 +282,7 @@ Hooks live in `.git/hooks/` (Python), `.husky/` (Node), or `hooks/` via `core.ho
 
 | Scenario | Mode picked | Why |
 |---|---|---|
-| `--language=python --out=<empty-or-nonexistent-dir>` | `uv` (default) | greenfield Python → modern path |
+| `--language=python --out=<dir with no uv/pip markers>` | `uv` (default) | greenfield Python, no package-manager marker → modern path |
 | `--language=python --out=<existing-dir-with-uv.lock>` | `uv` (auto-detected) | positive uv marker `uv.lock` |
 | `--language=python --out=<existing-dir-with-[tool.uv]>` | `uv` (auto-detected) | positive uv marker in pyproject.toml |
 | `--language=python --out=<existing-dir-with-build-backend="uv_build">` | `uv` (auto-detected) | positive uv marker (PEP 517 key, kebab-case) |
