@@ -1260,6 +1260,15 @@ def test_interactive_non_tty_empty_stdin_exits_2(monkeypatch):
     assert "interactive terminal" in err
 
 
+def test_interactive_stdin_none_exits_2(monkeypatch):
+    """--interactive in a detached process where `sys.stdin` is None must fail
+    loud (exit 2 + message), not crash with an AttributeError."""
+    monkeypatch.setattr(sys, "stdin", None)
+    rc, _out, err = run_cli(["--interactive"])
+    assert rc == 2
+    assert "interactive terminal" in err
+
+
 def test_interactive_keyboardinterrupt_exits_clean(monkeypatch):
     """Ctrl-C during intake → clean cancel (exit 0 + 'cancelled'), not a raw
     traceback."""

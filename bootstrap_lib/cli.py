@@ -714,6 +714,14 @@ def main(argv):
         sys.stderr.write("--interactive must be used on its own (no other flags) in this version\n")
         return 2
     if _should_run_intake(argv, args):
+        # `sys.stdin` can be None in a detached process. `_should_run_intake`'s
+        # auto-trigger branch already guards this, but the explicit
+        # `--interactive` branch does not — without this guard `run_intake`
+        # would dereference `None.readline()` and raise an uncaught
+        # AttributeError. Fail loud instead.
+        if sys.stdin is None:
+            sys.stderr.write("interactive mode needs an interactive terminal or piped answers\n")
+            return 2
         # Lazy import — mirrors the adopt-mode lazy import below; lets
         # intake.py import _flags/render with no at-import cycle.
         from bootstrap_lib import intake
