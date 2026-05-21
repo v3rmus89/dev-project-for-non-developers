@@ -34,7 +34,6 @@ TRIAGE_BULLETS = ["(a) Fold now", "(b) Park to BACKLOG", "(c) Reject", "(d) Surf
 def _context(**overrides):
     ctx = {
         "project_name": "test-proj",
-        "project_import_name": "test_proj",
         "language": "python",
         "python_version": "3.12",
         "node_version": "24",

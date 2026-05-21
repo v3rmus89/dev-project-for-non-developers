@@ -29,8 +29,6 @@ EXPECTED_PATHS_UV_MODE = {
     "Makefile",
     "pyproject.toml",
     # NOTE: requirements-dev.txt explicitly NOT here (uv mode skips it).
-    "ruff.toml",
-    "pytest.ini",
     ".gitignore",
     ".pre-commit-config.yaml",
     ".editorconfig",

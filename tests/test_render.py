@@ -16,7 +16,6 @@ def _context(language, github_review_mode="none", enable_smoke=False, package_ma
     reference under Jinja's StrictUndefined."""
     return {
         "project_name": "test-proj",
-        "project_import_name": "test_proj",
         "language": language,
         "python_version": "3.12",
         "node_version": "24",

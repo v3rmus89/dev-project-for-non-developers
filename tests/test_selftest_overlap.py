@@ -24,7 +24,6 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 SKILL_REPO_CONTEXT = {
     "project_name": "dev-project-setup",
-    "project_import_name": "dev_project_setup",
     "language": "python",
     "python_version": "3.12",
     "enable_smoke": False,

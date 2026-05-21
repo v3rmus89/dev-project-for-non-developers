@@ -38,7 +38,6 @@ def _extract_triage_block(text: str) -> str:
 
 SKILL_REPO_CONTEXT = {
     "project_name": "dev-project-setup",
-    "project_import_name": "dev_project_setup",
     "language": "python",
     "python_version": "3.12",
     "node_version": "24",

@@ -18,8 +18,6 @@ EXPECTED_PATHS_NONE_MODE = {
     "Makefile",
     "pyproject.toml",
     "requirements-dev.txt",
-    "ruff.toml",
-    "pytest.ini",
     ".gitignore",
     ".pre-commit-config.yaml",
     ".editorconfig",

@@ -14,7 +14,6 @@ from bootstrap_lib import render
 def _context(**overrides):
     ctx = {
         "project_name": "test-go",
-        "project_import_name": "test_go",
         "language": "go",
         "python_version": "3.12",
         "node_version": "24",

@@ -159,7 +159,6 @@ def _build_context(args, package_manager=None):
     """
     return {
         "project_name": args.project_name,
-        "project_import_name": args.project_name.replace("-", "_"),
         "language": args.language,
         "python_version": "3.12",
         "node_version": "24",

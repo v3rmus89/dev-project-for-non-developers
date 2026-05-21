@@ -26,8 +26,6 @@ PYTHON_TEMPLATE_MAP = {
     ".pre-commit-config.yaml": ".pre-commit-config.yaml.tmpl",
     "pyproject.toml": "pyproject.toml.tmpl",
     "requirements-dev.txt": "requirements-dev.txt.tmpl",
-    "ruff.toml": "ruff.toml.tmpl",
-    "pytest.ini": "pytest.ini.tmpl",
     ".gitignore": ".gitignore.tmpl",
     ".github/workflows/ci.yml": "ci.yml.tmpl",
     ".python-version": ".python-version.tmpl",

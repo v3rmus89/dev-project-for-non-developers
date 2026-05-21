@@ -23,7 +23,6 @@ DEV_DEP_PINS = ("ruff==0.15.12", "pytest>=8.0,<9", "pre-commit>=3.7,<5")
 def _uv_context(**overrides):
     ctx = {
         "project_name": "test-proj",
-        "project_import_name": "test_proj",
         "language": "python",
         "python_version": "3.12",
         "package_manager": "uv",
@@ -214,6 +213,17 @@ def test_pyproject_uv_has_no_setuptools_section():
     pip+setuptools build path)."""
     rendered = _render("pyproject.toml.tmpl", _uv_context())
     assert "[tool.setuptools]" not in rendered
+
+
+def test_pyproject_uv_has_ruff_and_pytest_config():
+    """The [tool.ruff] / [tool.pytest.ini_options] tables sit outside the
+    package-manager branch, so uv mode carries them identically to pip mode
+    (config-shadowing fix — config consolidated into pyproject.toml)."""
+    rendered = _render("pyproject.toml.tmpl", _uv_context())
+    data = tomllib.loads(rendered)
+    assert data["tool"]["ruff"]["line-length"] == 100
+    assert "I" in data["tool"]["ruff"]["lint"]["select"]
+    assert data["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 
 
 # ──────────────────────────────────────────────────────────────────────
