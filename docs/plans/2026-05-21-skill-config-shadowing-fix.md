@@ -465,6 +465,7 @@ confirm that repo's `make lint` goes green.
 
 | Commit | Summary | Tier-1 |
 |---|---|---|
+| 39a3d80 | Bucket A — ruff/pytest config consolidated into `pyproject.toml.tmpl`; standalone `ruff.toml.tmpl`/`pytest.ini.tmpl` + map keys deleted; `known-first-party`/`project_import_name` dropped (AD-3); 645 tests green | 0 imp-3; 2 imp-1 (add explicit `planned_paths` absence assertion; tighten an isort assertion) — folded into the Bucket B commit |
 
 ## Lessons surfaced (this PR)
 
