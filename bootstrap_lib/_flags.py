@@ -4,6 +4,16 @@
 # no f-strings in body (the shim loads this BEFORE the version check).
 # Stays as a thin function that mutates a passed-in argparse.ArgumentParser.
 
+import re
+
+# Choice lists + the project-name pattern — single source of truth, imported by
+# both cli.py and intake.py. intake.py reuses them for its numbered menus and
+# the project-name re-prompt rather than re-spelling the literals.
+LANGUAGES = ["python", "nodejs", "go"]
+PACKAGE_MANAGERS = ["uv", "pip"]
+GITHUB_REVIEW_MODES = ["none", "claude", "both-docs"]
+PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+
 
 def add_flags(parser):
     mode = parser.add_mutually_exclusive_group(required=False)
@@ -30,8 +40,18 @@ def add_flags(parser):
     )
 
     parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help=(
+            "run a guided interactive setup that asks for the project "
+            "configuration step by step; must be used on its own, with no "
+            "other flags. Also auto-starts when bootstrap.py is run with no "
+            "arguments on a terminal."
+        ),
+    )
+    parser.add_argument(
         "--language",
-        choices=["python", "nodejs", "go"],
+        choices=LANGUAGES,
         help="target language (python, nodejs, or go)",
     )
     parser.add_argument(
@@ -46,7 +66,7 @@ def add_flags(parser):
     parser.add_argument(
         "--github-review",
         dest="github_review",
-        choices=["none", "claude", "both-docs"],
+        choices=GITHUB_REVIEW_MODES,
         default="none",
         help=(
             "emit Claude / Codex GitHub auto-review files. "
@@ -72,7 +92,7 @@ def add_flags(parser):
     parser.add_argument(
         "--package-manager",
         dest="package_manager",
-        choices=["uv", "pip"],
+        choices=PACKAGE_MANAGERS,
         default=None,
         help=(
             "Python package manager. Default 'uv' for greenfield; "

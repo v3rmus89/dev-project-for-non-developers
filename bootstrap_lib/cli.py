@@ -1,7 +1,6 @@
 import argparse
 import difflib
 import os
-import re
 import shlex
 import subprocess
 import sys
@@ -9,9 +8,8 @@ import time
 from pathlib import Path
 
 from bootstrap_lib import detect, io, manifest, paths, render
-from bootstrap_lib._flags import add_flags
+from bootstrap_lib._flags import PROJECT_NAME_RE, add_flags
 
-PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP_PY = SKILL_ROOT / "bootstrap.py"
 
