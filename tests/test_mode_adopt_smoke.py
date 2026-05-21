@@ -490,3 +490,71 @@ class TestCallDetailsShapedFixture:
         assert not (target / "CLAUDE.md.new").exists()
         # Other files still wrote
         assert (target / "Makefile").exists()
+
+
+# ─── Shadow-scan escalation — end-to-end (config-shadowing fix plan) ────────
+
+
+class TestShadowEscalationE2E:
+    """B1/B2 end-to-end through the CLI: a target-owned standalone tool
+    config must not let `--non-interactive` adoption go green with shadowed
+    config."""
+
+    def test_owned_ruff_toml_no_pyproject_exits_2(self, tmpdir_isolated):
+        """Target owns a standalone ruff.toml and has NO pyproject.toml →
+        the escalated pyproject.toml write is manual_review_needed=True, so
+        `--auto-accept-recommendations --non-interactive` exits 2 instead of
+        silently writing a pyproject.toml whose [tool.ruff] is dead."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "ruff.toml").write_bytes(b"line-length = 88\n")
+
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--auto-accept-recommendations",
+                "--non-interactive",
+            ],
+        )
+        assert rc == 2, f"expected exit 2 (escalation), got rc={rc}; err={err!r}"
+        # The report — printed before the abort — carried the B1 advisory.
+        assert "config-shadowing advisory" in out
+        assert "ruff.toml" in out
+
+    def test_existing_pyproject_with_tool_shows_b2_advisory(self, tmpdir_isolated):
+        """Target with a non-trivial pyproject.toml ([tool.ruff]) → rule (g)
+        SKIP; the report carries the B2 advisory pointing at `--diff`."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "pyproject.toml").write_bytes(
+            b'[project]\nname = "p"\n\n[tool.ruff]\nline-length = 88\n'
+        )
+
+        rc, out, _err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--auto-accept-recommendations",
+                "--non-interactive",
+            ],
+        )
+        # rule (g) SKIP is manual_review_needed=True → exit 2 under
+        # --non-interactive; the report still carried the B2 advisory.
+        assert rc == 2, f"expected exit 2, got rc={rc}"
+        assert "left untouched (SKIP)" in out
+        assert "--diff" in out

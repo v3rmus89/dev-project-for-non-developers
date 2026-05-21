@@ -29,6 +29,7 @@ from bootstrap_lib.adopt import (
     compute_append_merge_bytes,
     format_recommendation_report,
     recommend_policy,
+    scan_shadowing_configs,
 )
 
 
@@ -1095,3 +1096,159 @@ def test_adoption_collision_error_is_exception() -> None:
     """`AdoptionCollisionError` is a real exception type — raisable + catchable."""
     with pytest.raises(AdoptionCollisionError, match="test message"):
         raise AdoptionCollisionError("test message")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# B1 shadow scan + escalation + B1/B2 advisories (config-shadowing fix plan)
+# ──────────────────────────────────────────────────────────────────────
+
+_MINIMAL_PLANNED = {"pyproject.toml": b"[project]\nname = 'x'\n"}
+
+
+class TestScanShadowingConfigs:
+    """`scan_shadowing_configs` — top-level detection of target-owned
+    standalone tool configs that would shadow pyproject.toml [tool.*]."""
+
+    def test_empty_when_none_present(self, tmp_path: Path) -> None:
+        assert scan_shadowing_configs(tmp_path) == ()
+
+    @pytest.mark.parametrize("name", ["ruff.toml", ".ruff.toml", "pytest.ini"])
+    def test_detects_each_standalone_config(self, tmp_path: Path, name: str) -> None:
+        (tmp_path / name).write_text("x")
+        assert scan_shadowing_configs(tmp_path) == (name,)
+
+    def test_detects_multiple(self, tmp_path: Path) -> None:
+        (tmp_path / "ruff.toml").write_text("x")
+        (tmp_path / "pytest.ini").write_text("x")
+        assert set(scan_shadowing_configs(tmp_path)) == {"ruff.toml", "pytest.ini"}
+
+    def test_top_level_only_not_recursive(self, tmp_path: Path) -> None:
+        """Nested monorepo configs are out of scope (Bucket E BACKLOG)."""
+        nested = tmp_path / "sub"
+        nested.mkdir()
+        (nested / "ruff.toml").write_text("x")
+        assert scan_shadowing_configs(tmp_path) == ()
+
+    def test_directory_named_like_config_is_ignored(self, tmp_path: Path) -> None:
+        (tmp_path / "ruff.toml").mkdir()
+        assert scan_shadowing_configs(tmp_path) == ()
+
+
+class TestShadowEscalation:
+    """B1 escalation: a fresh-pyproject.toml WRITE over a target-owned
+    standalone config is escalated to manual_review_needed=True."""
+
+    @pytest.mark.parametrize("shadow", ["ruff.toml", ".ruff.toml", "pytest.ini"])
+    def test_escalates_fresh_pyproject_write(self, tmp_path: Path, shadow: str) -> None:
+        (tmp_path / shadow).write_text("x")
+        plan = analyze_target(tmp_path, dict(_MINIMAL_PLANNED))
+        pp = next(a for a in plan.analyses if a.rel_path == "pyproject.toml")
+        assert pp.recommendation.policy == "WRITE"
+        assert pp.recommendation.manual_review_needed is True
+        assert shadow in pp.recommendation.reason
+        assert plan.shadowing_configs == (shadow,)
+
+    def test_no_escalation_without_shadow(self, tmp_path: Path) -> None:
+        """No-shadow control: rule (a) WRITE with no standalone config stays
+        manual_review_needed=False — the escalation must not over-fire."""
+        plan = analyze_target(tmp_path, dict(_MINIMAL_PLANNED))
+        pp = next(a for a in plan.analyses if a.rel_path == "pyproject.toml")
+        assert pp.recommendation.policy == "WRITE"
+        assert pp.recommendation.manual_review_needed is False
+        assert plan.shadowing_configs == ()
+
+    @pytest.mark.parametrize("shadow", ["ruff.toml", ".ruff.toml", "pytest.ini"])
+    def test_escalates_empty_pyproject_overwrite(self, tmp_path: Path, shadow: str) -> None:
+        """An empty/whitespace-only pyproject.toml routes through rule (b)
+        OVERWRITE; with a shadow present it must ALSO escalate — otherwise
+        `--non-interactive` would OVERWRITE pyproject.toml with the skill's
+        [tool.*] tables and exit 0 with dead config."""
+        (tmp_path / shadow).write_text("x")
+        (tmp_path / "pyproject.toml").write_text("   \n")
+        plan = analyze_target(tmp_path, dict(_MINIMAL_PLANNED))
+        pp = next(a for a in plan.analyses if a.rel_path == "pyproject.toml")
+        assert pp.recommendation.policy == "OVERWRITE"
+        assert pp.recommendation.manual_review_needed is True
+        assert shadow in pp.recommendation.reason
+
+    @pytest.mark.parametrize("shadow", ["ruff.toml", ".ruff.toml", "pytest.ini"])
+    def test_existing_pyproject_not_escalated_but_scanned(
+        self, tmp_path: Path, shadow: str
+    ) -> None:
+        """Target owns a standalone config AND has a non-trivial pyproject.toml
+        → pyproject routes through rule (g) SKIP (already mr=True); no
+        escalation, but the scan result is still recorded on the plan."""
+        (tmp_path / shadow).write_text("x")
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "p"\n\n[tool.ruff]\nline-length = 88\n'
+        )
+        plan = analyze_target(tmp_path, dict(_MINIMAL_PLANNED))
+        pp = next(a for a in plan.analyses if a.rel_path == "pyproject.toml")
+        assert pp.recommendation.policy == "SKIP"
+        assert pp.recommendation.manual_review_needed is True
+        assert plan.shadowing_configs == (shadow,)
+
+
+class TestShadowAdvisoryReport:
+    """B1 advisory: format_recommendation_report always names a detected
+    target-owned standalone config and the [tool.*] table it overrides."""
+
+    def test_b1_advisory_names_ruff_toml(self, tmp_path: Path) -> None:
+        (tmp_path / "ruff.toml").write_text("x")
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "config-shadowing advisory" in report
+        assert "ruff.toml" in report
+        assert "[tool.ruff]" in report
+
+    def test_b1_advisory_pytest_ini_names_pytest_table(self, tmp_path: Path) -> None:
+        (tmp_path / "pytest.ini").write_text("x")
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "pytest.ini" in report
+        assert "[tool.pytest.ini_options]" in report
+
+    def test_no_advisory_when_no_shadow(self, tmp_path: Path) -> None:
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "config-shadowing advisory" not in report
+
+
+class TestPyprojectSkipAdvisory:
+    """B2 advisory: when the target's own pyproject.toml is SKIPped, the
+    report explains the skill's [tool.*] config was not applied — with
+    three wording branches keyed off the target file's parse state."""
+
+    def test_rule_g_advisory_says_merge_via_diff(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "p"\n\n[tool.ruff]\nline-length = 88\n'
+        )
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "--diff" in report
+        assert "copy ONLY" in report
+        assert "[tool.pytest.ini_options]" in report
+
+    def test_trivial_pyproject_advisory_says_may_add(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "p"\nversion = "0.1.0"\n')
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "no tool" in report
+        assert "may add" in report
+
+    def test_malformed_pyproject_advisory_says_fix_first(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("[project\nnot valid toml")
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "did not parse as valid TOML" in report
+
+    def test_live_call_details_shape_surfaces_both_advisories(self, tmp_path: Path) -> None:
+        """The exact live call-details shape: existing pyproject.toml with
+        [tool.pytest.ini_options] PLUS a top-level pytest.ini that wins.
+        B1 names pytest.ini; B2 gives rule-(g) merge guidance."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "p"\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+        )
+        (tmp_path / "pytest.ini").write_text("[pytest]\ntestpaths = other\n")
+        report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
+        assert "config-shadowing advisory" in report
+        assert "pytest.ini" in report
+        assert "--diff" in report
+        # B2 rule-(g) wording explicitly defers to the B1 shadow advisory
+        # (plan H1 fold): copying tables into pyproject.toml is futile while
+        # the standalone file wins.
+        assert "overrides these tables" in report

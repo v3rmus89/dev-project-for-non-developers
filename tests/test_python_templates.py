@@ -113,7 +113,7 @@ def test_pyproject_has_ruff_config():
     assert "I" in ruff["lint"]["select"]
     assert ruff["format"]["quote-style"] == "double"
     # known-first-party was dropped (AD-3) — no isort table.
-    assert "isort" not in ruff.get("lint", {})
+    assert "isort" not in ruff["lint"]
 
 
 def test_pyproject_has_pytest_config():

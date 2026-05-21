@@ -69,6 +69,19 @@ def test_planned_paths_rejects_unsupported_language():
         render.planned_paths("rust")
 
 
+def test_planned_paths_excludes_standalone_ruff_pytest_configs():
+    """Regression guard for the config-shadowing fix: ruff/pytest config now
+    lives inside pyproject.toml, so the skill must NOT plan a standalone
+    `ruff.toml` / `pytest.ini` in any package-manager mode. A future regression
+    that re-adds the template + map key would ship a shadowing file again —
+    this catches it."""
+    for pm in ("uv", "pip", None):
+        paths = render.planned_paths("python", package_manager=pm)
+        assert "ruff.toml" not in paths, f"ruff.toml planned in pm={pm}"
+        assert "pytest.ini" not in paths, f"pytest.ini planned in pm={pm}"
+        assert "pyproject.toml" in paths
+
+
 @pytest.mark.parametrize("language", ["python", "nodejs", "go"])
 @pytest.mark.parametrize("github_review_mode", ["none", "claude", "both-docs"])
 @pytest.mark.parametrize("enable_smoke", [False, True])

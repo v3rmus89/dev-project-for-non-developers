@@ -47,6 +47,13 @@ _DOMAIN_MD_FILES = frozenset(
     {"CLAUDE.md", "AGENTS.md", "CONTRIBUTING.md", "BACKLOG.md", "LESSONS.md"}
 )
 
+# Standalone tool-config files that, when owned by the target, shadow the
+# skill's pyproject.toml [tool.*] tables: ruff reads ruff.toml / .ruff.toml in
+# preference to [tool.ruff], and pytest reads pytest.ini in preference to
+# [tool.pytest.ini_options]. Used by the B1 shadow scan (config-shadowing fix
+# plan). Top-level scan only — nested monorepo configs are out of scope.
+_SHADOWING_CONFIG_FILES = ("ruff.toml", ".ruff.toml", "pytest.ini")
+
 
 class TargetMeta(NamedTuple):
     """Derived metadata about a target file.
@@ -108,6 +115,30 @@ class AdoptionPlan(NamedTuple):
 
     target_root: Path
     analyses: tuple[PlannedFileAnalysis, ...]
+    # B1 shadow scan result (config-shadowing fix plan): target-owned
+    # standalone tool-config filenames that would shadow pyproject.toml's
+    # [tool.*] tables. Computed once by `analyze_target`; consumed by both the
+    # escalation post-step and `format_recommendation_report` — never
+    # rescanned, so escalation and advisory cannot drift. Empty tuple when no
+    # shadow exists (adoption mode is Python-only — `scan_shadowing_configs`
+    # itself is language-agnostic, but the scan only ever runs for Python
+    # targets because adoption mode is rejected for Node/Go upstream).
+    shadowing_configs: tuple[str, ...] = ()
+
+
+def scan_shadowing_configs(target_root: Path) -> tuple[str, ...]:
+    """Return target-owned standalone tool-config filenames present at the top
+    level of `target_root` that would shadow the skill's pyproject.toml
+    [tool.*] tables.
+
+    ruff reads a `ruff.toml` / `.ruff.toml` in preference to `[tool.ruff]`;
+    pytest reads a `pytest.ini` in preference to `[tool.pytest.ini_options]`.
+    The skill ships its config inside `pyproject.toml`, so any of these
+    target-owned files silently wins. Top-level (`target_root`) only — not
+    recursive; nested monorepo configs are out of scope (config-shadowing fix
+    plan, Bucket E BACKLOG entry).
+    """
+    return tuple(name for name in _SHADOWING_CONFIG_FILES if (target_root / name).is_file())
 
 
 def _check_ignored_by_git(target_root: Path, rel_path: str) -> str | None:
@@ -554,6 +585,70 @@ def _format_recommendation_row(analysis: PlannedFileAnalysis) -> list[str]:
     ]
 
 
+def _format_shadow_advisory(shadowing_configs: tuple[str, ...]) -> list[str]:
+    """B1 advisory block — emitted whenever the shadow scan found a
+    target-owned standalone config. Names each file and the [tool.*] table it
+    overrides. Contains only filenames + table names — no raw target content
+    (Scope #11 privacy boundary)."""
+    lines = ["", "config-shadowing advisory:"]
+    for name in shadowing_configs:
+        table = "[tool.pytest.ini_options]" if name == "pytest.ini" else "[tool.ruff]"
+        lines.append(f"  target owns {name} — it overrides {table} in pyproject.toml")
+    lines.append("  ruff/pytest read the standalone file in preference to pyproject.toml; the")
+    lines.append("  skill did NOT modify it. Reconcile before relying on the skill's tool config.")
+    return lines
+
+
+def _pyproject_skip_advisory(target_root: Path) -> list[str]:
+    """B2 advisory lines for a SKIPped target-owned `pyproject.toml`.
+
+    Three branches keyed off the target file's parse state (only the
+    classification leaves this function — no raw content, per Scope #11):
+      - malformed TOML → tell the owner to fix it before adding config;
+      - has `[tool.*]` / `[project]` deps / `[dependency-groups]` → compare and
+        merge via `--diff`, copying ONLY the `[tool.ruff*]` /
+        `[tool.pytest.ini_options]` tables, never `[project]` / deps;
+      - parses + trivial → the owner may add the skill's tables.
+    """
+    path = target_root / "pyproject.toml"
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return []
+    try:
+        data = tomllib.loads(raw.decode("utf-8", errors="replace"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return [
+            "note: the target pyproject.toml did not parse as valid TOML; the skill",
+            "  left it untouched. Fix the malformed pyproject.toml before adding any",
+            "  [tool.ruff] / [tool.pytest.ini_options] config.",
+        ]
+    has_tool = isinstance(data.get("tool"), dict) and bool(data["tool"])
+    project = data.get("project")
+    has_deps = bool(isinstance(project, dict) and project.get("dependencies"))
+    # isinstance(..., dict) mirrors `_has_dependency_groups_table` / rule (g)'s
+    # `_is_nontrivial_pyproject` so the advisory classifier agrees with the
+    # policy classifier (a stray `dependency-groups = "foo"` is not a table).
+    has_dep_groups = isinstance(data.get("dependency-groups"), dict)
+    if has_tool or has_deps or has_dep_groups:
+        return [
+            "note: the target pyproject.toml was left untouched (SKIP); the skill's",
+            "  [tool.ruff] / [tool.pytest.ini_options] config was NOT applied. To adopt",
+            "  it, inspect the rendered output with --diff and copy ONLY the [tool.ruff],",
+            "  [tool.ruff.lint], [tool.ruff.format] and [tool.pytest.ini_options] tables",
+            "  into your pyproject.toml — merge, never replace, and leave your [project]",
+            "  and dependency sections alone.",
+            "  If a standalone ruff.toml / .ruff.toml / pytest.ini was flagged in the",
+            "  config-shadowing advisory above, that file overrides these tables —",
+            "  reconcile it first, or copying them into pyproject.toml has no effect.",
+        ]
+    return [
+        "note: the target pyproject.toml was left untouched (SKIP); it has no tool",
+        "  config. You may add the skill's [tool.ruff] / [tool.pytest.ini_options]",
+        "  tables from the rendered output (inspect with --diff).",
+    ]
+
+
 def format_recommendation_report(plan: AdoptionPlan) -> str:
     """Render the user-facing recommendation report shown before the interactive
     decide phase.
@@ -601,7 +696,78 @@ def format_recommendation_report(plan: AdoptionPlan) -> str:
     lines.append("")
     lines.append(f"summary: {summary}  ({tail})")
 
+    # B1 — always name target-owned standalone configs that shadow pyproject.toml.
+    if plan.shadowing_configs:
+        lines.extend(_format_shadow_advisory(plan.shadowing_configs))
+
+    # B2 — when the target's own pyproject.toml is SKIPped (rule (g)/(h), i.e.
+    # manual-review SKIP — not a byte-identical rule (c) no-op), explain that
+    # the skill's [tool.*] config was not applied and how to adopt it safely.
+    if any(
+        a.rel_path == "pyproject.toml"
+        and a.recommendation.policy == "SKIP"
+        and a.recommendation.manual_review_needed
+        for a in plan.analyses
+    ):
+        b2 = _pyproject_skip_advisory(plan.target_root)
+        if b2:
+            lines.append("")
+            lines.extend(b2)
+
     return "\n".join(lines) + "\n"
+
+
+# pyproject.toml policies that mean "the skill is about to put its [tool.*]
+# tables into pyproject.toml": rule (a) WRITE (target has no pyproject.toml)
+# and rule (b) OVERWRITE (target's pyproject.toml is empty/whitespace-only).
+# Both are manual_review_needed=False by default, so both must be escalated —
+# otherwise `--non-interactive` adoption could go green with a pyproject.toml
+# whose [tool.*] tables are dead under a target-owned standalone config.
+_ESCALATABLE_PYPROJECT_POLICIES = ("WRITE", "OVERWRITE")
+
+
+def _escalate_pyproject_for_shadow(
+    analyses: list[PlannedFileAnalysis], shadowing_configs: tuple[str, ...]
+) -> list[PlannedFileAnalysis]:
+    """Escalate a skill-written `pyproject.toml` to manual review when a
+    target-owned standalone config would shadow its [tool.*] tables.
+
+    Escalated when the `pyproject.toml` recommendation is rule (a) WRITE
+    (target has no `pyproject.toml`) or rule (b) OVERWRITE (target's
+    `pyproject.toml` is empty/whitespace-only) — both cases write the skill's
+    `[tool.ruff]` / `[tool.pytest.ini_options]` into `pyproject.toml`, where
+    the target-owned standalone file would silently override them. `policy`
+    stays WRITE/OVERWRITE (the project genuinely needs a populated
+    `pyproject.toml`; SKIP would break the skill's Makefile/render contract) —
+    only `manual_review_needed` flips True, so interactive adoption prompts the
+    owner and `--non-interactive` exits 2 instead of going green with dead
+    config.
+
+    A target that already HAS a non-empty `pyproject.toml` routes through rule
+    (g)/(h) SKIP and is already `manual_review_needed=True` — no escalation
+    needed; the always-on B1 report advisory still names the shadowing file(s).
+    """
+    files = ", ".join(shadowing_configs)
+    escalated: list[PlannedFileAnalysis] = []
+    for analysis in analyses:
+        rec = analysis.recommendation
+        if analysis.rel_path == "pyproject.toml" and rec.policy in _ESCALATABLE_PYPROJECT_POLICIES:
+            escalated.append(
+                analysis._replace(
+                    recommendation=rec._replace(
+                        manual_review_needed=True,
+                        reason=(
+                            f"target owns standalone config ({files}) that would "
+                            f"shadow the [tool.*] tables the skill writes into "
+                            f"pyproject.toml (ruff/pytest read the standalone file "
+                            f"in preference to pyproject.toml); owner must review"
+                        ),
+                    )
+                )
+            )
+        else:
+            escalated.append(analysis)
+    return escalated
 
 
 def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> AdoptionPlan:
@@ -639,7 +805,20 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
                 recommendation=recommendation,
             )
         )
-    return AdoptionPlan(target_root=target_root, analyses=tuple(analyses))
+
+    # B1 shadow scan (config-shadowing fix plan, Bucket B). Run ONCE here; the
+    # result is stored on the plan and consumed by both the escalation below
+    # and `format_recommendation_report` — never rescanned, so the escalation
+    # decision and the report advisory cannot drift apart.
+    shadowing_configs = scan_shadowing_configs(target_root)
+    if shadowing_configs:
+        analyses = _escalate_pyproject_for_shadow(analyses, shadowing_configs)
+
+    return AdoptionPlan(
+        target_root=target_root,
+        analyses=tuple(analyses),
+        shadowing_configs=shadowing_configs,
+    )
 
 
 __all__ = [
@@ -655,4 +834,5 @@ __all__ = [
     "compute_append_merge_bytes",
     "format_recommendation_report",
     "recommend_policy",
+    "scan_shadowing_configs",
 ]
