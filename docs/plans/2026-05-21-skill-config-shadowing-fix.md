@@ -466,6 +466,7 @@ confirm that repo's `make lint` goes green.
 | Commit | Summary | Tier-1 |
 |---|---|---|
 | 39a3d80 | Bucket A — ruff/pytest config consolidated into `pyproject.toml.tmpl`; standalone `ruff.toml.tmpl`/`pytest.ini.tmpl` + map keys deleted; `known-first-party`/`project_import_name` dropped (AD-3); 645 tests green | 0 imp-3; 2 imp-1 (add explicit `planned_paths` absence assertion; tighten an isort assertion) — folded into the Bucket B commit |
+| 0488a22 | Bucket B — shadow scan (`scan_shadowing_configs`), B1 escalation of a skill-written `pyproject.toml` to manual-review, B1/B2 report advisories; 672 tests green | 0 imp-3; 2 imp-2 + 2 imp-1 all folded into the commit. **Deviation from plan:** the escalation guard covers rule (a) WRITE *and* rule (b) OVERWRITE — the plan's Bucket B B1 scoped it to "rule (a)", but Tier-1 found the same `--non-interactive` go-green-with-dead-config hole reachable when the target has an empty `pyproject.toml` (rule (b) OVERWRITE); broadening the guard keeps the PR's own fix complete rather than shipping a known instance of the bug it closes. |
 
 ## Lessons surfaced (this PR)
 
