@@ -54,7 +54,7 @@ value the `make install-hooks` output printed).
 
 ## Plan review loop
 
-For substantive plans (multi-day work, cross-cutting changes, high-risk), write the plan to `docs/plans/YYYY-MM-DD-<slug>.md` rather than chat, then run `make review-plan-by-codex` and `make review-plan-by-claude` (see the Commands table) and stop when no importance-3 findings remain. See `docs/plans/README.md` for the filename convention, the when-to-stop rule, and the `make review-plan-consistency-by-claude` self-check cadence.
+For substantive plans (multi-day work, cross-cutting changes, high-risk), write the plan to `docs/plans/YYYY-MM-DD-<slug>.md` rather than chat, then run the **cross-direction** plan review each integer iteration — `make review-plan-by-codex` for a Claude-authored plan, `make review-plan-by-claude` for a Codex-authored plan (run only the cross direction, **not both**; see the Commands table) — and stop when no importance-3 findings remain. See `docs/plans/README.md` for the filename convention, the when-to-stop rule, and the `make review-plan-consistency-by-claude` self-check cadence (numbered `N.5`, between integer iterations).
 
 ## Triaging review findings
 

@@ -44,19 +44,24 @@ Two distinct PR types:
   links to `docs/plans/<slug>.md` and lists which sections it implements.
 
 1. Write the plan to `docs/plans/YYYY-MM-DD-<slug>.md`.
-2. Run the bidirectional review loop and **triage each finding** (see below):
+2. Run the **cross-review loop** and **triage each finding** (see below). At
+   each integer iteration, run the review by the AI that did **not** author
+   the plan — Codex reviews a Claude-authored plan; Claude reviews a
+   Codex-authored plan. Run only that one cross-direction target, **not both**:
    ```bash
+   # plan authored in Claude Code → Codex cross-reviews:
    make review-plan-by-codex  PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
+   # plan authored in Codex CLI → Claude cross-reviews:
    make review-plan-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1
    ```
-   **Between folding an iteration's findings and invoking the next reviewer
-   iteration**, run the consistency self-check:
+   **After folding an iteration's findings and before the next integer
+   iteration**, run the consistency self-check — numbered `N.5` (1.5, 2.5, …),
+   since it sits between cross-review iterations:
    ```bash
-   make review-plan-consistency-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=N
+   make review-plan-consistency-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1.5
    ```
-   (Where N matches the upcoming reviewer iter.) Fix any contradictions it
-   reports before the next Codex/Claude pass — cheaper than letting the
-   next reviewer find them.
+   Fix any contradictions it reports before the next cross-review pass —
+   cheaper than letting the next reviewer find them.
 3. **MANDATORY HUMAN-APPROVAL GATE** — after the loop converges and BEFORE
    any `git add` or `git commit`:
    - Post a final-plan summary in chat (Scope + key decisions + anything
