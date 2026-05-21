@@ -8,6 +8,91 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from the config-shadowing fix
+
+Parked items from [docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md) (Bucket E).
+
+### TOML section-merge for adoption-into-existing-`pyproject.toml` (imp-2)
+
+**Status**: parked — adoption mode currently SKIPs an existing non-trivial
+`pyproject.toml` (rule (g)/(h)) and emits the B2 advisory telling the owner to
+merge the skill's `[tool.ruff]` / `[tool.pytest.ini_options]` tables by hand.
+A section-merge would offer to add those tables automatically when they are
+absent, with owner confirmation.
+
+**Why parked**: the existing SKIP + advisory is a *safe, informed* outcome;
+auto-injecting config is the very class of bug the config-shadowing fix
+closed, so a merge feature needs its own careful design (idempotency, restore
+semantics, owner consent).
+
+**Trigger to pick up**: adoption mode gains an owner-confirmed config-merge
+capability, or repeated user requests to auto-apply the skill's tool config.
+
+**Rough effort**: ~half a day (plan + implementation).
+
+### `tox.ini` / `setup.cfg` as additional pytest-config shadow sources (imp-1)
+
+**Status**: parked — the B1 shadow scan covers `ruff.toml` / `.ruff.toml` /
+`pytest.ini`. pytest also reads config from `tox.ini` (`[tool:pytest]`) and
+`setup.cfg` (`[tool:pytest]`).
+
+**Why parked**: `pytest.ini` is the common standalone case; `tox.ini` /
+`setup.cfg` pytest config is rarer in new projects and lower-priority.
+
+**Trigger to pick up**: a real adoption target is found keeping pytest config
+in `tox.ini` / `setup.cfg`.
+
+**Rough effort**: ~1 hour (extend the scan to parse those files for a
+`[tool:pytest]` section + tests).
+
+### Nested (non-top-level) standalone-config scan (imp-1)
+
+**Status**: parked — the B1 shadow scan is **top-level only** (`target_root`,
+not recursive). A monorepo with sub-directory `ruff.toml`s would not be scanned.
+
+**Why parked**: the skill targets single small projects; a recursive scan also
+risks surfacing sensitive nested path names and noisy partial shadows.
+
+**Trigger to pick up**: a monorepo-shaped adoption target with sub-directory
+`ruff.toml`s.
+
+**Rough effort**: ~half a day (needs a privacy-aware recursive-scan design).
+
+### Migrate the skill repo's own `ruff.toml` / `pytest.ini` into `pyproject.toml` (imp-1)
+
+**Status**: parked — the config-shadowing fix moved the *generated* projects'
+config into `pyproject.toml`, but the skill repo's own `ruff.toml` /
+`pytest.ini` were left as-is.
+
+**Why parked**: the skill repo is not a bootstrapped artifact; migrating its
+lint config could surface new lint errors on the skill's own code mid-PR, which
+should not ride along on an unrelated change.
+
+**Trigger to pick up**: a maintenance window where surfacing/fixing any new
+lint findings on the skill's own code is acceptable.
+
+**Rough effort**: ~1 hour (mechanical migration + fix any new findings).
+
+### Node / Go config-file shadowing (imp-2)
+
+**Status**: parked — the skill ships `biome.json` (Node) and `.golangci.yml`
+(Go). Biome also discovers `biome.jsonc`; `golangci-lint` also discovers
+`.golangci.{yaml,toml,json}`. A target-owned alternate-extension config can
+therefore shadow the skill's file — the same class of bug the Python
+config-shadowing fix addressed. Surfaced by Codex Tier-2 on the plan PR.
+
+**Why parked**: the config-shadowing fix was scoped to Python, where the bug
+actually bit (call-details dogfooding). Node/Go adoption mode is itself parked
+for a follow-up, so the shadow handling belongs with that work.
+
+**Trigger to pick up**: adoption-mode shadow handling is extended beyond
+Python, or a real Node/Go adoption target is found owning an alternate-extension
+config.
+
+**Rough effort**: ~half a day (alongside Node/Go adoption-mode work).
+
+---
+
 ## Follow-ups from the interactive-intake work (skill PR #8)
 
 ### PR #9 — smart stack suggestion from a plain-English project description (imp-2)

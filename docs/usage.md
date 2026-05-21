@@ -142,7 +142,7 @@ Python-only — see below) and re-asks for a different directory.
 
 ### Worked example (call-details/ shape)
 
-Suppose `~/Desktop/Code/Boxette/call-details/` already has `CLAUDE.md` (50 lines of domain content), `pyproject.toml` (with `[tool.ruff]`), `.gitignore` (with `venv/\n*.pyc\n`), and `.python-version` (pins `3.12`). 15 other files the skill writes are missing.
+Suppose `~/Desktop/Code/Boxette/call-details/` already has `CLAUDE.md` (50 lines of domain content), `pyproject.toml` (with `[tool.ruff]`), `.gitignore` (with `venv/\n*.pyc\n`), and `.python-version` (pins `3.12`). 13 other files the skill writes are missing.
 
 **Step 1**: inspect with `--diff` (read-only; no `--mode=adopt` needed):
 
@@ -165,9 +165,9 @@ Prints a unified diff per file (`--- a/<path>` / `+++ b/<path>` headers, plain `
 The recommendation report is printed first:
 
 ```
-adoption recommendation: 19 file(s) analyzed at ~/Desktop/Code/Boxette/call-details
+adoption recommendation: 17 file(s) analyzed at ~/Desktop/Code/Boxette/call-details
 
-automatic (17):
+automatic (15):
 
   APPEND_MERGE  .gitignore
                 target: 2 lines, sha256:568b5ad5
@@ -181,7 +181,7 @@ automatic (17):
                 target: missing
                 reason: target file does not exist; safe to create
 
-  ... (14 more automatic entries) ...
+  ... (12 more automatic entries) ...
 
 manual review needed (2):
 
@@ -193,15 +193,30 @@ manual review needed (2):
                 target: 24 lines, sha256:f7d5e29c
                 reason: target pyproject.toml has [project] deps, [tool.*], or [dependency-groups]; review the diff manually with --diff
 
-summary: APPEND_MERGE=1 SKIP=2 WRITE=15 WRITE_NEW=1  (2 need your decision)
+summary: APPEND_MERGE=1 SKIP=2 WRITE=13 WRITE_NEW=1  (2 need your decision)
+
+note: the target pyproject.toml was left untouched (SKIP); the skill's
+  [tool.ruff] / [tool.pytest.ini_options] config was NOT applied. To adopt
+  it, inspect the rendered output with --diff and copy ONLY the [tool.ruff],
+  [tool.ruff.lint], [tool.ruff.format] and [tool.pytest.ini_options] tables
+  into your pyproject.toml — merge, never replace, and leave your [project]
+  and dependency sections alone.
+  If a standalone ruff.toml / .ruff.toml / pytest.ini was flagged in the
+  config-shadowing advisory above, that file overrides these tables —
+  reconcile it first, or copying them into pyproject.toml has no effect.
 ```
+
+The trailing `note:` block (the **pyproject-SKIP advisory**) is part of the
+[config-shadowing safety](#config-shadowing-safety) behaviour described below —
+here it fires because the target keeps its ruff config inside `pyproject.toml`
+(rule (g) SKIP), so the skill's `[tool.*]` tables are not applied.
 
 Then the interactive prompts fire for the 2 mr=True files. Pressing Enter accepts the recommendation; type `s`+Enter to skip; `d`+Enter shows the unified diff inline; `?`+Enter shows the action help. For `[o]`, you'll be prompted to type `OVERWRITE` exactly (uppercase) to confirm.
 
 After decisions land:
 
 ```
-adopt-mode apply: 17 mutating entries written to ~/Desktop/Code/Boxette/call-details/
+adopt-mode apply: 15 mutating entries written to ~/Desktop/Code/Boxette/call-details/
 restore manifest: /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
 to rollback: /Users/me/skill/venv/bin/python /Users/me/skill/bootstrap.py --restore /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
 ```
@@ -221,6 +236,32 @@ diff -u CLAUDE.md CLAUDE.md.new
 
 The restore is **policy-aware**: `WRITE` entries get deleted, `OVERWRITE` entries get the pre-apply content written back, `WRITE_NEW` entries get their `.new` file removed (original was never touched throughout), `APPEND_MERGE` entries get truncated to their pre-append byte length. SKIP'd files are NOT in the manifest and never get touched by restore.
 
+### Config-shadowing safety
+
+ruff and pytest read a *standalone* `ruff.toml` / `.ruff.toml` / `pytest.ini` in
+preference to the `[tool.ruff]` / `[tool.pytest.ini_options]` tables inside
+`pyproject.toml`. The skill ships its tool config inside `pyproject.toml`, so a
+target project that owns one of those standalone files would silently override
+it. Adoption mode guards against this two ways:
+
+- **Advisory** — if the target owns a top-level `ruff.toml` / `.ruff.toml` /
+  `pytest.ini`, the recommendation report always names it under a
+  `config-shadowing advisory` block and states which `[tool.*]` table it
+  overrides. The skill never modifies or deletes the standalone file.
+- **Escalation** — if adoption would create (`WRITE`) or fill an empty
+  (`OVERWRITE`) `pyproject.toml` over such a shadow, that recommendation is
+  escalated to `manual_review_needed=true`: interactive adoption prompts you,
+  and `--non-interactive` exits 2 — so CI fails loud instead of going green
+  with a `pyproject.toml` whose `[tool.*]` tables are dead.
+
+When the target's own `pyproject.toml` is left untouched (SKIP), a second
+advisory explains the skill's `[tool.*]` config was not applied and how to
+adopt it by hand — inspect the rendered output with `--diff` and merge only the
+tool tables, never replacing your own `[project]` / dependency sections.
+
+The scan is **top-level only**; nested (monorepo sub-directory) configs and
+`tox.ini` / `setup.cfg` pytest-config sources are out of scope (see `BACKLOG.md`).
+
 ### CI contract (`--auto-accept-recommendations` + `--non-interactive`)
 
 For CI runs that adopt the skill into a known-good shape:
@@ -236,7 +277,7 @@ For CI runs that adopt the skill into a known-good shape:
 Semantics:
 
 - Every `manual_review_needed=false` file auto-applies (no prompt).
-- Any `manual_review_needed=true` file (rule a0 / f / g / h, OR a SKIP'd file the analyzer can't classify) triggers a fail-loud exit 2.
+- Any `manual_review_needed=true` file — rule a0 / f / g / h, a SKIP'd file the analyzer can't classify, OR a `pyproject.toml` `WRITE`/`OVERWRITE` escalated by the [config-shadowing scan](#config-shadowing-safety) — triggers a fail-loud exit 2.
 
 This is the "accept everything safe, fail on anything needing review" contract. It's the natural CI shape — if the target has unexpected domain content, CI fails and a human looks at it.
 
