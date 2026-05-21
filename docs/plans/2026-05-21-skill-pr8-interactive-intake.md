@@ -467,10 +467,13 @@ re-parse through `_build_parser()` is a backstop.
 
 ## Implementation log (this PR)
 
-(empty; populated per Tier-1 review during implementation, per CONTRIBUTING.md.)
-
 | short-sha | what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |---|---|---|---|
+| b95a1a7 | (i) `--interactive` flag + `LANGUAGES`/`PACKAGE_MANAGERS`/`GITHUB_REVIEW_MODES`/`PROJECT_NAME_RE` constants extracted into `_flags.py`; `cli.py` imports `PROJECT_NAME_RE`, drops the now-dead `import re` | none (Bucket A) | none — Tier-1 clean |
+| 18291d4 | (ii) `render.planned_paths()` helper + `tests/test_render.py` locking `planned_paths == set(render_all-keys)` across every language × review mode × smoke × pm (incl. `None`) | none (Bucket B / Scope item 2) | Tier-1 imp-2 (`planned_paths` doesn't validate `github_review_mode`) **rejected** — it deliberately mirrors `render_all`, which also doesn't validate; one imp-1 test tweak folded via `--amend` |
+| 7c6c335 | (iii-a) `bootstrap_lib/intake.py` + `tests/test_intake.py` — guided greenfield flow: question sequence, two-check greenfield detection (planned-file collision + cross-language manifest scan), argv builder ending `--apply`, `IntakeAborted` on EOF; 16 tests | none (Buckets B/C) | Tier-1 imp-2 (no explicit in-loop cancel on the `--out` re-ask) **parked to BACKLOG**; 2 imp-1 (return type hint, directory-named-manifest false-positive test) folded via `--amend` |
+| d5a10d6 | (iii-b) wired the intake trigger into `cli.main()` — `_should_run_intake` + standalone `--interactive` guard + EOF/Ctrl-C exit-code handling + re-parse backstop; 8 `test_bootstrap_cli.py` tests | none (Bucket D) | Tier-1 imp-2 (standalone-guard message dropped the plan's "in this version" tail — plan-impl drift) folded via `--amend` |
+| 976a02b, 677e9a1 | (iv) the BACKLOG entries; (v) `docs/usage.md` interactive-mode section + stale-greenfield-wording fixes + `README.md` pointer | none (Scope items 8, 10) | N/A — trivial docs commits, per-commit Tier-1 skipped per CONTRIBUTING.md |
 
 ## Lessons surfaced (this PR)
 
