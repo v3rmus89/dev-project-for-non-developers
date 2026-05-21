@@ -115,6 +115,35 @@ def _emit_python_in_pm_mode(rel_out, package_manager):
     return not (rel_out == ".python-version" and pm == "pip")
 
 
+def planned_paths(language, github_review_mode="none", enable_smoke=False, package_manager=None):
+    """Return the set of output paths `render_all` would write for a config.
+
+    Mirrors `render_all`'s key selection exactly — applies the same
+    `_emit_in_mode` / `_emit_python_in_pm_mode` filters to the template-map
+    keys — but renders nothing (no Jinja, no context dict). The interactive
+    intake (`bootstrap_lib.intake`) uses this for its greenfield
+    collision check.
+
+    `package_manager=None` is normalized to `"pip"` by `_emit_python_in_pm_mode`
+    exactly as in `render_all`, so the returned path set stays identical to
+    `set(render_all(...).keys())` for the same config — a property locked by
+    `tests/test_render.py::test_planned_paths_equals_render_all_keys`.
+    """
+    paths = set()
+    for rel_out in SHARED_TEMPLATE_MAP:
+        if _emit_in_mode(rel_out, github_review_mode, enable_smoke):
+            paths.add(rel_out)
+    try:
+        lang_map = LANGUAGE_TEMPLATE_MAPS[language]
+    except KeyError:
+        raise ValueError(f"unsupported language: {language!r}") from None
+    for rel_out in lang_map:
+        if language == "python" and not _emit_python_in_pm_mode(rel_out, package_manager):
+            continue
+        paths.add(rel_out)
+    return paths
+
+
 def render_all(context, language="python"):
     env = build_env(language)
     mode = context.get("github_review_mode", "none")
