@@ -8,6 +8,37 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from the interactive-intake work (skill PR #8)
+
+### PR #9 — smart stack suggestion from a plain-English project description (imp-2)
+
+**Status**: parked — follow-up to PR #8 (interactive intake). PR #8's plan
+([docs/plans/2026-05-21-skill-pr8-interactive-intake.md](docs/plans/2026-05-21-skill-pr8-interactive-intake.md))
+deliberately splits this out: PR #8 asks for the language/tooling via an
+explicit numbered menu; PR #9 adds the layer that *suggests* a stack (language,
+package manager, …) from a plain-English description of the project / business
+goal.
+
+**Reference to review when drafting the PR #9 plan**: `obra/superpowers`
+(MIT-licensed — github.com/obra/superpowers). Its `brainstorming` skill is a
+proven template for the open-ended-input → structured-design flow PR #9 needs:
+explore context → ask clarifying questions one at a time (prefer multiple
+choice) → propose 2-3 approaches with trade-offs → present the design section
+by section → write a dated design doc → human-approval gate. Read
+`skills/brainstorming/SKILL.md` and `skills/writing-plans/SKILL.md` before
+drafting. Decision to make deliberately: *reference the patterns, do not vendor
+the skills* — superpowers ships agent-facing `SKILL.md` instruction files,
+whereas `dev-project-setup` is a file-generating CLI; different artifact type.
+
+**Triggers to pick up**: PR #8 merged and the interactive intake shipped.
+
+**Rough effort**: ~half a day for the plan (needs the full plan-review loop) +
+the implementation. The hard part is the stack-suggestion heuristic itself —
+a rule-of-thumb decision tree vs. an LLM call — which is a design decision the
+PR #9 plan must settle.
+
+---
+
 ## Follow-ups from the info-architecture refactor
 
 ### Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2)
