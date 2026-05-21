@@ -18,6 +18,8 @@ Bootstrap a working dev workflow into Python / Node-TS / Go projects:
 
 Designed for non-developers using LLM-assisted workflows (Claude Code, Codex CLI) who want to start a new project with the guardrails of a mature codebase already in place — no recurring decision fatigue about CI, hooks, conventions, or how to do plan-then-implement properly.
 
+**New project?** Run `bootstrap.py` with no arguments for a guided, interactive setup — it asks plain questions instead of requiring the CLI flags. See [docs/usage.md](docs/usage.md).
+
 ## Status
 
 **Python (uv + pip) + Node-TS + Go shipped; adoption-mode landed for Python.** PR #1 (merged) added the bootstrap engine + safety primitives + Python language templates + shared templates + bidirectional plan-review fragments. PR #2 added Node-TS (Biome + vitest + TypeScript + Husky). PR #3 added Go (gofumpt + golangci-lint + native git hooks). PR #6 added uv support for Python — **greenfield Python projects now default to `uv` (Astral)** for fast, modern dependency management; pip stays first-class for adoption-into-existing-pip-projects (auto-detected) + explicit opt-out via `--package-manager=pip`. PR #7 ships `--mode=adopt` — a **per-file analyze-then-decide-with-owner UX** for safely adopting the skill into existing Python projects (Node/Go adoption-mode parked for follow-up). All three v1 languages now supported. The master plan still lives in the Boxette repo (bootstrap exception):
