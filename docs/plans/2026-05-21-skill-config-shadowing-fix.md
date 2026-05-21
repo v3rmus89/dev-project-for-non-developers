@@ -122,7 +122,7 @@ explicitly out of scope (Bucket E). Verified by the adoption-mode smoke tests.
 | 5 | Update the test files that reference `ruff.toml` / `pytest.ini` — including naming explicit replacement fixture files so displaced rule-(b)/(c) coverage is preserved (Bucket C). |
 | 6 | Add tests: `[tool.ruff]` + `[tool.pytest.ini_options]` present in rendered `pyproject.toml`; `ruff.toml` / `pytest.ini` absent from `planned_paths`; shadow-scan escalation + advisory parameterized over all three filenames and both target shapes; the non-interactive exit-2 escalation; the adoption no-shadow contract (Bucket C). |
 | 7 | Update docs whose planned-file counts or recommendation-report / CI-contract examples change (`docs/usage.md`); add the advisory + escalation behavior to the usage example (Bucket D). |
-| 8 | Add `BACKLOG.md` entries (each with an explicit trigger) for the parked items: TOML section-merge, `tox.ini`/`setup.cfg` shadow sources, nested (non-top-level) config scan, skill-repo own-config migration (Bucket E). |
+| 8 | Add `BACKLOG.md` entries (each with an explicit trigger) for the parked items: TOML section-merge, `tox.ini`/`setup.cfg` shadow sources, nested (non-top-level) config scan, skill-repo own-config migration, Node/Go config-file shadowing (Bucket E). |
 
 ### NOT in scope
 
@@ -132,7 +132,7 @@ explicitly out of scope (Bucket E). Verified by the adoption-mode smoke tests.
 | `tox.ini` / `setup.cfg` as pytest-config shadow sources | Lower-priority than `pytest.ini`; rarer. `BACKLOG.md` entry (Scope #8). The Context, Outcome, and Verification wording is scoped to the three top-level filenames so nothing overclaims. |
 | **Nested** (non-top-level) standalone configs (monorepo sub-directory `ruff.toml`s) | The scan is **top-level (`target_root`) only** (AD-1). Recursive scanning risks surfacing sensitive nested path names and noisy partial shadows. `BACKLOG.md` entry (Scope #8). |
 | Migrating the **skill repo's own** `ruff.toml` / `pytest.ini` to its `pyproject.toml` | Separate concern — the skill repo is not a bootstrapped artifact; changing its lint config could surface new lint errors on the skill's own code mid-PR. `BACKLOG.md` entry (Scope #8); flagged in the approval summary. |
-| Node / Go config files (`biome.json`, `.golangci.yml`) | No shadowing risk — each has a single canonical location with no `pyproject.toml`-style alternative home. Audited, nothing to change. Not tracked. |
+| Node / Go config-file shadowing | The skill ships `biome.json` (Node) and `.golangci.yml` (Go). Biome also discovers `biome.jsonc`; `golangci-lint` also discovers `.golangci.{yaml,toml,json}` — so a target-owned *alternate-extension* config **can** shadow the skill's file. This PR scopes the shadow fix to Python (where the bug actually bit); Node/Go shadow handling is parked — `BACKLOG.md` entry (Scope #8). |
 | Removing the stale `pytest.ini` from the live `call-details` repo | Work in the `call-details` repo, not the skill (AD-5). Listed under "Post-PR human follow-up", not Verification — the implementation session must not edit `call-details`. |
 
 ## Subsystem breakdown
@@ -318,6 +318,12 @@ not just mentioned):
 - **Skill-repo own-config migration** (`ruff.toml`/`pytest.ini` →
   `pyproject.toml`) — trigger: a maintenance window where surfacing new lint
   errors on the skill's own code is acceptable.
+- **Node / Go config-file shadowing** — the skill ships `biome.json` /
+  `.golangci.yml`; Biome also reads `biome.jsonc` and `golangci-lint` also
+  reads `.golangci.{yaml,toml,json}`, so a target-owned alternate-extension
+  config can shadow the skill's. Trigger: extending adoption-mode shadow
+  handling beyond Python, or a real Node/Go adoption target found to own an
+  alternate-extension config.
 
 ## Architecture decisions
 
@@ -415,6 +421,7 @@ confirm that repo's `make lint` goes green.
 | 3.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 3 minor drifts folded (C7 — B2 missing a Scope row; C8 — stale "no `ruff.toml` written" in Verification; C9 — Risks named a no-false-escalation fixture absent from Bucket C). |
 | 4 | Codex | 0 | 3 | 1 | **0 imp-3 — convergence pass.** All 4 folded: I1 (one scan result stored on `AdoptionPlan` — single snapshot for escalation + report, no drift); I2 (B2 rule-(g) → inspect via `--diff`, copy only the `[tool.ruff*]`/`[tool.pytest.ini_options]` tables); I3 (clarified the e2e fixture is the rule-(g) `[tool.ruff]` shape, not the full live shadow shape); I4 (uv direct-template test named). |
 | 4.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 1 cosmetic label folded (C10 — Critical-files line aligned with the I3 reframing). **Loop converged.** |
+| T2 | claude[bot] + Codex (PR #22) | 0 | 3 | 1 | claude[bot]: 0 imp-3, "ready for implementation". Codex: 1 P2. J1 folded (Codex P2 — Node/Go config-file shadowing is a real surface, claim corrected + parked). J2–J4 rejected (already-covered / implementation-review / stylistic). |
 
 ## Evidence table — what was folded and where
 
@@ -449,6 +456,10 @@ confirm that repo's `make lint` goes green.
 | I3 — "call-details-shaped fixture" label overclaims the live shadow shape | Codex/4 | (a) fold | Bucket C — relabelled the e2e fixture as the non-trivial-`pyproject.toml` rule-(g) fixture; full live shadow shape covered by the dedicated unit fixture + Verification bullet. |
 | I4 — uv direct-template test not named in Bucket C | Codex/4 | (a) fold | Bucket C — `tests/test_python_uv_templates.py` named; `[tool.ruff]`/`[tool.pytest.ini_options]` asserted for both pm modes. |
 | C10 — Critical-files fixture label not aligned with the I3 reframing | consistency/4.5 | (a) fold | Critical files — relabelled to "non-trivial-`pyproject.toml` rule-(g) fixture (`TestCallDetailsShapedFixture`)". |
+| J1 — "no shadowing risk" for Node/Go is false (`golangci-lint` reads `.golangci.{yaml,toml,json}`; Biome reads `biome.jsonc`) | Codex Tier-2/PR #22 | (a) fold | NOT-in-scope row corrected (Node/Go shadowing is real, parked not "nothing to change"); Scope #8 + Bucket E — 5th BACKLOG entry. |
+| J2 — verify TOML section-name semantics (`[lint]` → `[tool.ruff.lint]`) | claude[bot] Tier-2/PR #22 | (c) reject | Already covered — the generated-project smoke test runs real ruff/pytest against the rendered `pyproject.toml`; section-name equivalence is documented ruff behavior, not a risk. |
+| J3 — `policy=WRITE` display vs manual-review prompt UX | claude[bot] Tier-2/PR #22 | (c) reject | Implementation-review territory — the plan already specifies an explicit file-naming `reason`, and `format_recommendation_report` segregates `mr=True` files under a "manual review needed" heading. |
+| J4 — Scope-table parallel structure | claude[bot] Tier-2/PR #22 | (c) reject | Stylistic. |
 
 ## Implementation log (this PR)
 
