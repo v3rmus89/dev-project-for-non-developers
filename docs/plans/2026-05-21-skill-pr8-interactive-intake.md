@@ -432,6 +432,9 @@ re-parse through `_build_parser()` is a backstop.
 | 5 (codex) | 0 imp-3 + 4 imp-2 | ready after minor edits |
 | 5 (claude) | 0 imp-3 + 3 imp-2 + 4 imp-1 | ready after minor edits |
 | 5-fold | **Loop converged — 0 imp-3 from both reviewers.** All imp-2/imp-1 (a)-folded: manifest scan specified as `is_file()` + glob-to-files (no directory false-positive); apply-level "existing non-skill files untouched" test added; `planned_paths` normalizes `None`→pip and the equivalence test covers the `None` case; numbered-menu prompts re-ask on invalid input; `docs/usage.md` item-10 split (intake's two-check definition documented only in the new interactive section; the stale adopt-mode / uv-detection "no files" phrasing is just dropped, not replaced with intake's definition); `SKILL.md` no-change recorded in NOT-in-scope; `sys.stdin is not None` guard added; commit (iv) relabelled a PR-#7-cleanup commit + dedup check; `cli.py:116`→`119-122` line-ref corrected. |
+| 6 (tier-2, claude) | 0 imp-3 + 3 imp-2 + 1 imp-1 (PR-#20 review) | ready after minor edits — see iter-6 triage |
+| 6 (tier-2, codex) | auto-skipped — PR #20 diff is entirely `.md` (the documented Codex doc-only-PR skip); the plan already received 5 Codex reviews in the loop | n/a |
+| 6 triage | Claude Tier-2 PR-#20: 1 (a)-fold — the PR #20 *description* was corrected (the four adopt-mode `BACKLOG.md` cleanup entries are the implementation PR's deliverable per Scope item 8, not this plan PR; this plan PR's only `BACKLOG.md` change is the PR #9 entry). 3 (c)-rejects — see Evidence table. No plan-body change. |
 
 ## Evidence table — what was folded and where
 
@@ -457,6 +460,10 @@ re-parse through `_build_parser()` is a backstop.
 | Claude 2-C (iter-5) | `SKILL.md` not considered | **(a) fold** | NOT-in-scope records `SKILL.md` unchanged — agent-facing flag surface; intake never auto-triggers for non-TTY agent invocations. |
 | Claude 1-F (iter-5) | `sys.stdin` can be `None` in a detached process → `AttributeError` | **(a) fold** | Bucket D: `isatty()` guarded with `sys.stdin is not None`. Risks. |
 | Claude 1-G (iter-5) | `cli.py:116` line-ref imprecise; test-stub robustness | **(a) fold** | Critical-files line-ref corrected to `cli.py:119-122`; test note. |
+| Claude Tier-2 PR-#20 1 | Scope item 9 marks `test_intake.py` "(new)" but tests span existing files too | **(c) reject — premise wrong** | Scope item 9's "Where" column + Bucket E already attribute every test to `test_intake.py` (new) / `test_render.py` / `test_bootstrap_cli.py` via the `test_X.py::` row prefixes — no ambiguity. |
+| Claude Tier-2 PR-#20 2 | PR #20 *description* read as if this plan PR files the 4 adopt-mode `BACKLOG.md` entries | **(a) fold** | PR #20 description corrected — those four are the implementation PR's deliverable (Scope item 8); this plan PR's only `BACKLOG.md` change is the PR #9 entry. No plan-body change. |
+| Claude Tier-2 PR-#20 3 | Phase-2 step 7 `./venv/bin/python` assumes the venv exists | **(c) reject — moot** | Phase-2 gates are ordered: gate 4 (`make check`) runs before step 7 and requires the venv; `./venv/bin/python` is the repo-standard interpreter (CLAUDE.md). |
+| Claude Tier-2 PR-#20 4 | greenfield-definition formatting ("neither/nor" vs "**not**") inconsistent | **(c) reject** | Two distinct sentences — the positive two-part definition, then the "not folder emptiness" clarification; not an inconsistency, no readability problem. |
 
 ## Implementation log (this PR)
 
