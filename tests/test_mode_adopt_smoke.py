@@ -105,8 +105,8 @@ class TestAllSafeFixture:
                          so rule (c) doesn't fire; pin parses to "3.12"
                          on both sides so rule (e) match-branch fires)
       .gitignore         skill patterns MISSING → rule (d) APPEND_MERGE
-      ruff.toml          byte-identical → rule (c) SKIP
-      pytest.ini         empty existing → rule (b) OVERWRITE
+      .pre-commit-config.yaml  byte-identical → rule (c) SKIP
+      .editorconfig            empty existing → rule (b) OVERWRITE
     All other planned files: missing → rule (a) WRITE.
     """
 
@@ -125,19 +125,19 @@ class TestAllSafeFixture:
         # rule (e) match-branch fires. Covers rule (e) end-to-end.
         python_version_no_newline = b"3.12"
         (target_root / ".python-version").write_bytes(python_version_no_newline)
-        # rule (c) SKIP — byte-identical ruff.toml
-        (target_root / "ruff.toml").write_bytes(planned["ruff.toml"])
+        # rule (c) SKIP — byte-identical .pre-commit-config.yaml
+        (target_root / ".pre-commit-config.yaml").write_bytes(planned[".pre-commit-config.yaml"])
         # rule (d) APPEND_MERGE — subset of skill's patterns
         gitignore_subset = b"venv/\n*.pyc\n"  # skill has many more
         (target_root / ".gitignore").write_bytes(gitignore_subset)
         # rule (b) OVERWRITE — empty existing
-        (target_root / "pytest.ini").write_bytes(b"")
+        (target_root / ".editorconfig").write_bytes(b"")
 
         return {
             ".python-version": python_version_no_newline,
-            "ruff.toml": planned["ruff.toml"],
+            ".pre-commit-config.yaml": planned[".pre-commit-config.yaml"],
             ".gitignore": gitignore_subset,
-            "pytest.ini": b"",
+            ".editorconfig": b"",
         }, planned
 
     def test_all_safe_runs_to_completion_under_auto_accept_no_prompts(self, tmpdir_isolated):
@@ -175,7 +175,9 @@ class TestAllSafeFixture:
         # Files that were rule (c) SKIP: NOT in manifest, byte-identical
         # on disk after apply.
         assert (target / ".python-version").read_bytes() == pre_snapshot[".python-version"]
-        assert (target / "ruff.toml").read_bytes() == pre_snapshot["ruff.toml"]
+        assert (target / ".pre-commit-config.yaml").read_bytes() == pre_snapshot[
+            ".pre-commit-config.yaml"
+        ]
 
         # Rule (d) APPEND_MERGE: .gitignore now contains BOTH original
         # patterns AND new patterns from the skill.
@@ -188,8 +190,8 @@ class TestAllSafeFixture:
             "APPEND_MERGE should have added skill patterns to the target .gitignore"
         )
 
-        # Rule (b) OVERWRITE: pytest.ini was empty → now has skill content.
-        assert (target / "pytest.ini").read_bytes() != b""
+        # Rule (b) OVERWRITE: .editorconfig was empty → now has skill content.
+        assert (target / ".editorconfig").read_bytes() != b""
 
         # Rule (a) WRITE: missing files got created. Spot-check a few.
         assert (target / "Makefile").exists()
@@ -230,12 +232,12 @@ class TestAllSafeFixture:
             "rule (c) SKIP'd .python-version leaked into v2 manifest — "
             "violates mutation-only contract"
         )
-        assert "ruff.toml" not in paths_in_manifest, (
-            "rule (c) SKIP'd ruff.toml leaked into v2 manifest"
+        assert ".pre-commit-config.yaml" not in paths_in_manifest, (
+            "rule (c) SKIP'd .pre-commit-config.yaml leaked into v2 manifest"
         )
         # APPEND_MERGE + OVERWRITE + WRITE MUST appear
         assert ".gitignore" in paths_in_manifest
-        assert "pytest.ini" in paths_in_manifest
+        assert ".editorconfig" in paths_in_manifest
         assert "Makefile" in paths_in_manifest
 
     def test_all_safe_restore_does_not_delete_skip_classified_files(self, tmpdir_isolated):
@@ -273,12 +275,14 @@ class TestAllSafeFixture:
             "restore deleted a SKIP'd pre-existing file — iter-1 #3 hole regressed"
         )
         assert (target / ".python-version").read_bytes() == pre_snapshot[".python-version"]
-        assert (target / "ruff.toml").exists()
-        assert (target / "ruff.toml").read_bytes() == pre_snapshot["ruff.toml"]
+        assert (target / ".pre-commit-config.yaml").exists()
+        assert (target / ".pre-commit-config.yaml").read_bytes() == pre_snapshot[
+            ".pre-commit-config.yaml"
+        ]
 
-        # OVERWRITE'd file (pytest.ini, was empty) → restore writes empty back.
-        assert (target / "pytest.ini").exists()
-        assert (target / "pytest.ini").read_bytes() == pre_snapshot["pytest.ini"]
+        # OVERWRITE'd file (.editorconfig, was empty) → restore writes empty back.
+        assert (target / ".editorconfig").exists()
+        assert (target / ".editorconfig").read_bytes() == pre_snapshot[".editorconfig"]
 
         # APPEND_MERGE'd file (.gitignore) → restore truncates to original.
         assert (target / ".gitignore").read_bytes() == pre_snapshot[".gitignore"]
@@ -486,3 +490,71 @@ class TestCallDetailsShapedFixture:
         assert not (target / "CLAUDE.md.new").exists()
         # Other files still wrote
         assert (target / "Makefile").exists()
+
+
+# ─── Shadow-scan escalation — end-to-end (config-shadowing fix plan) ────────
+
+
+class TestShadowEscalationE2E:
+    """B1/B2 end-to-end through the CLI: a target-owned standalone tool
+    config must not let `--non-interactive` adoption go green with shadowed
+    config."""
+
+    def test_owned_ruff_toml_no_pyproject_exits_2(self, tmpdir_isolated):
+        """Target owns a standalone ruff.toml and has NO pyproject.toml →
+        the escalated pyproject.toml write is manual_review_needed=True, so
+        `--auto-accept-recommendations --non-interactive` exits 2 instead of
+        silently writing a pyproject.toml whose [tool.ruff] is dead."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "ruff.toml").write_bytes(b"line-length = 88\n")
+
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--auto-accept-recommendations",
+                "--non-interactive",
+            ],
+        )
+        assert rc == 2, f"expected exit 2 (escalation), got rc={rc}; err={err!r}"
+        # The report — printed before the abort — carried the B1 advisory.
+        assert "config-shadowing advisory" in out
+        assert "ruff.toml" in out
+
+    def test_existing_pyproject_with_tool_shows_b2_advisory(self, tmpdir_isolated):
+        """Target with a non-trivial pyproject.toml ([tool.ruff]) → rule (g)
+        SKIP; the report carries the B2 advisory pointing at `--diff`."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "pyproject.toml").write_bytes(
+            b'[project]\nname = "p"\n\n[tool.ruff]\nline-length = 88\n'
+        )
+
+        rc, out, _err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--auto-accept-recommendations",
+                "--non-interactive",
+            ],
+        )
+        # rule (g) SKIP is manual_review_needed=True → exit 2 under
+        # --non-interactive; the report still carried the B2 advisory.
+        assert rc == 2, f"expected exit 2, got rc={rc}"
+        assert "left untouched (SKIP)" in out
+        assert "--diff" in out

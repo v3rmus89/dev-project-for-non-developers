@@ -16,7 +16,6 @@ def _context(language, github_review_mode="none", enable_smoke=False, package_ma
     reference under Jinja's StrictUndefined."""
     return {
         "project_name": "test-proj",
-        "project_import_name": "test_proj",
         "language": language,
         "python_version": "3.12",
         "node_version": "24",
@@ -68,6 +67,19 @@ def test_planned_paths_filters_by_package_manager():
 def test_planned_paths_rejects_unsupported_language():
     with pytest.raises(ValueError, match="rust"):
         render.planned_paths("rust")
+
+
+def test_planned_paths_excludes_standalone_ruff_pytest_configs():
+    """Regression guard for the config-shadowing fix: ruff/pytest config now
+    lives inside pyproject.toml, so the skill must NOT plan a standalone
+    `ruff.toml` / `pytest.ini` in any package-manager mode. A future regression
+    that re-adds the template + map key would ship a shadowing file again —
+    this catches it."""
+    for pm in ("uv", "pip", None):
+        paths = render.planned_paths("python", package_manager=pm)
+        assert "ruff.toml" not in paths, f"ruff.toml planned in pm={pm}"
+        assert "pytest.ini" not in paths, f"pytest.ini planned in pm={pm}"
+        assert "pyproject.toml" in paths
 
 
 @pytest.mark.parametrize("language", ["python", "nodejs", "go"])

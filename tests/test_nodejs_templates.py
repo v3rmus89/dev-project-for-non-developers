@@ -15,7 +15,6 @@ from bootstrap_lib import render
 def _context(**overrides):
     ctx = {
         "project_name": "test-node",
-        "project_import_name": "test_node",
         "language": "nodejs",
         "python_version": "3.12",
         "node_version": "24",

@@ -39,7 +39,6 @@ def test_lessons_file_has_required_headings():
     env = render.build_env("python")
     template_text = env.get_template("LESSONS.md.tmpl").render(
         project_name="test-proj",
-        project_import_name="test_proj",
         language="python",
         python_version="3.12",
         node_version="24",
@@ -112,7 +111,6 @@ def test_shared_lessons_template_ships_empty():
     env = render.build_env("python")
     text = env.get_template("LESSONS.md.tmpl").render(
         project_name="test-proj",
-        project_import_name="test_proj",
         language="python",
         python_version="3.12",
         node_version="24",
@@ -136,7 +134,6 @@ def test_lessons_template_renders_for_all_languages():
     for language in ["python", "nodejs", "go"]:
         text = env.get_template("LESSONS.md.tmpl").render(
             project_name="test-proj",
-            project_import_name="test_proj",
             language=language,
             python_version="3.12",
             node_version="24",

@@ -19,3 +19,21 @@ py-modules = []
 [tool.setuptools.packages.find]
 where = ["src"]
 {%- endif %}
+
+[tool.ruff]
+line-length = 100
+target-version = "py{{python_version | replace('.', '')}}"
+extend-exclude = ["venv", ".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--strict-config --strict-markers"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import configparser
 import re
 import subprocess
 import tomllib
@@ -17,7 +16,6 @@ from bootstrap_lib import render
 def _context(**overrides):
     ctx = {
         "project_name": "test-proj",
-        "project_import_name": "test_proj",
         "language": "python",
         "python_version": "3.12",
         "enable_smoke": False,
@@ -104,6 +102,30 @@ def test_pyproject_toml_parses():
     assert data["project"]["name"] == "test-proj"
 
 
+def test_pyproject_has_ruff_config():
+    """ruff config lives in [tool.ruff] (consolidated from the former
+    standalone ruff.toml — see the config-shadowing fix plan)."""
+    rendered = _render("pyproject.toml.tmpl", _context())
+    data = tomllib.loads(rendered)
+    ruff = data["tool"]["ruff"]
+    assert ruff["line-length"] == 100
+    assert ruff["target-version"] == "py312"
+    assert "I" in ruff["lint"]["select"]
+    assert ruff["format"]["quote-style"] == "double"
+    # known-first-party was dropped (AD-3) — no isort table.
+    assert "isort" not in ruff["lint"]
+
+
+def test_pyproject_has_pytest_config():
+    """pytest config lives in [tool.pytest.ini_options] (consolidated from
+    the former standalone pytest.ini)."""
+    rendered = _render("pyproject.toml.tmpl", _context())
+    data = tomllib.loads(rendered)
+    ini = data["tool"]["pytest"]["ini_options"]
+    assert ini["testpaths"] == ["tests"]
+    assert "--strict-config" in ini["addopts"]
+
+
 def test_requirements_dev_no_placeholder():
     """Codex iter-6 finding #4."""
     rendered = _render("requirements-dev.txt.tmpl", _context())
@@ -113,21 +135,6 @@ def test_requirements_dev_no_placeholder():
     assert re.search(r"^ruff==\d", rendered, re.MULTILINE)
     assert re.search(r"^pytest", rendered, re.MULTILINE)
     assert re.search(r"^pre-commit", rendered, re.MULTILINE)
-
-
-def test_ruff_toml_parses():
-    rendered = _render("ruff.toml.tmpl", _context())
-    data = tomllib.loads(rendered)
-    assert data["line-length"] == 100
-    assert data["target-version"] == "py312"
-
-
-def test_pytest_ini_parses(tmp_path):
-    rendered = _render("pytest.ini.tmpl", _context())
-    cp = configparser.ConfigParser()
-    cp.read_string(rendered)
-    assert cp.has_section("pytest")
-    assert cp.get("pytest", "testpaths") == "tests"
 
 
 def test_gitignore_has_expected_lines():
@@ -228,8 +235,6 @@ def test_emit_python_in_pm_mode_unrelated_files_always_emitted():
     for rel_out in [
         "Makefile",
         "pyproject.toml",
-        "ruff.toml",
-        "pytest.ini",
         ".gitignore",
         ".github/workflows/ci.yml",
         "tests/test_smoke.py",
