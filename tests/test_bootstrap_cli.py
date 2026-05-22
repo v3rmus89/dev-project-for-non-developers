@@ -1208,9 +1208,9 @@ class _FakeStdin:
 
 def _intake_answers(out):
     """Scripted greenfield-python answers ending at the apply confirm:
-    name, language=1(python), pm=1(uv), review=1(none), smoke=1(no), outdir,
-    confirm=1(apply)."""
-    return "\n".join(["proj", "1", "1", "1", "1", str(out), "1"]) + "\n"
+    name, brief(blank — skip the PR #9 stack suggestion), language=1(python),
+    pm=1(uv), review=1(none), smoke=1(no), outdir, confirm=1(apply)."""
+    return "\n".join(["proj", "", "1", "1", "1", "1", str(out), "1"]) + "\n"
 
 
 def test_bare_main_on_tty_enters_intake(tmp_path, monkeypatch):
@@ -1329,3 +1329,32 @@ def test_interactive_apply_preserves_existing_nonskill_files(tmp_path, monkeypat
     assert (out / "business-goals.md").read_bytes() == b"the goals\n"
     assert (out / "data" / "raw.txt").read_bytes() == b"rows\n"
     assert (out / "Makefile").exists()
+
+
+def test_interactive_apply_with_brief_uses_suggested_language(tmp_path, monkeypatch):
+    """PR #9 end-to-end: a non-empty brief suggests a language; a blank
+    language answer accepts the pre-filled default; `main([])` re-parses the
+    intake argv and applies the suggested language."""
+    out = tmp_path / "proj"
+    answers = (
+        "\n".join(
+            [
+                "proj",
+                "a data pipeline with automation scripts",  # brief → python
+                "",  # language: blank accepts the suggested default
+                "1",  # package manager: uv
+                "1",  # github-review: none
+                "1",  # smoke: no
+                str(out),
+                "1",  # confirm: apply
+            ]
+        )
+        + "\n"
+    )
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(answers, isatty=True))
+    rc, stdout_text, err = run_cli([])
+    assert rc == 0, err
+    assert "I'd suggest python" in stdout_text  # the suggestion was surfaced
+    # the python tree was applied (pyproject.toml + src/main.py are python-only)
+    assert (out / "pyproject.toml").exists()
+    assert (out / "src" / "main.py").exists()

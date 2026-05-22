@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from bootstrap_lib import _flags, render
+from bootstrap_lib import _flags, render, stack_suggest
 
 
 class IntakeAborted(Exception):
@@ -58,13 +58,23 @@ def _ask_required(stdin, stdout, prompt: str) -> str:
         stdout.write("  (this can't be empty — please enter a value)\n")
 
 
-def _ask_menu(stdin, stdout, prompt: str, choices: list[str]) -> str:
+def _ask_menu(stdin, stdout, prompt: str, choices: list[str], default: str | None = None) -> str:
     """Ask a numbered-menu question. Accepts the 1-based number OR the literal
     value; re-displays and re-asks on anything else (an out-of-range number,
-    non-numeric text, a blank line). A non-coder typing `5` or `python`
-    instead of `1` must not crash or pass a silently-wrong value."""
+    non-numeric text). A non-coder typing `5` or `python` instead of `1` must
+    not crash or pass a silently-wrong value.
+
+    When `default` is set (PR #9 — a pre-filled stack suggestion), a blank
+    line accepts `default`. `default` must be one of `choices` — a fail-loud
+    guard so a `stack_suggest` ↔ `_flags.LANGUAGES` drift surfaces here, not
+    silently downstream. When `default` is `None` the behaviour is
+    byte-identical to PR #8: a blank line re-prompts."""
+    if default is not None and default not in choices:
+        raise ValueError(f"_ask_menu default {default!r} is not in choices {choices!r}")
     while True:
         answer = _ask_text(stdin, stdout, prompt)
+        if default is not None and answer == "":
+            return default
         if answer in choices:
             return answer
         if answer.isdigit():
@@ -72,6 +82,25 @@ def _ask_menu(stdin, stdout, prompt: str, choices: list[str]) -> str:
             if 0 <= idx < len(choices):
                 return choices[idx]
         stdout.write("  (please enter a number from the list)\n")
+
+
+def _language_menu_prompt(default: str | None) -> str:
+    """Render the language-menu prompt string. With `default` set (a stack
+    suggestion from the brief), the matching row gets a `← recommended`
+    marker and the Choose line names the default. With `default` `None` the
+    output is byte-identical to PR #8's hardcoded language prompt."""
+    lines = ["Language:"]
+    for i, language in enumerate(_flags.LANGUAGES, start=1):
+        marker = "  ← recommended" if language == default else ""
+        lines.append(f"  {i}) {language}{marker}")
+    n = len(_flags.LANGUAGES)
+    if default is not None:
+        # Square-bracket `[default: …]` matches the output-dir prompt's style
+        # so a non-coder sees one consistent "default" convention.
+        lines.append(f"Choose [1-{n}] [default: {default}]: ")
+    else:
+        lines.append(f"Choose [1-{n}]: ")
+    return "\n".join(lines)
 
 
 def _ask_project_name(stdin, stdout) -> str:
@@ -125,11 +154,34 @@ def run_intake(stdin=None, stdout=None) -> list[str] | None:
 
     project_name = _ask_project_name(stdin, stdout)
 
+    # PR #9 — optional plain-English brief → a language suggestion that
+    # pre-fills the language menu's default. Skipping (a blank line) or a
+    # low-confidence brief leaves the language menu exactly as PR #8.
+    brief = _ask_text(
+        stdin,
+        stdout,
+        "Describe your project in a sentence or two, so I can suggest a "
+        "language —\n  or just press Enter to skip: ",
+    )
+    suggestion = stack_suggest.suggest_stack(brief) if brief else None
+    if suggestion is not None:
+        stdout.write(
+            "Based on that, I'd suggest "
+            + suggestion.language
+            + ": "
+            + suggestion.rationale
+            + ". You can still pick anything below.\n"
+        )
+    elif brief:
+        stdout.write("I couldn't infer a language from that — pick below.\n")
+
+    suggested_language = suggestion.language if suggestion is not None else None
     language = _ask_menu(
         stdin,
         stdout,
-        "Language:\n  1) python\n  2) nodejs\n  3) go\nChoose [1-3]: ",
+        _language_menu_prompt(suggested_language),
         _flags.LANGUAGES,
+        default=suggested_language,
     )
 
     package_manager = None

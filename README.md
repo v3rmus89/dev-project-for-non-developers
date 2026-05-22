@@ -18,7 +18,7 @@ Bootstrap a working dev workflow into Python / Node-TS / Go projects:
 
 Designed for non-developers using LLM-assisted workflows (Claude Code, Codex CLI) who want to start a new project with the guardrails of a mature codebase already in place — no recurring decision fatigue about CI, hooks, conventions, or how to do plan-then-implement properly.
 
-**New project?** Run `bootstrap.py` with no arguments for a guided, interactive setup — it asks plain questions instead of requiring the CLI flags. See [docs/usage.md](docs/usage.md).
+**New project?** Run `bootstrap.py` with no arguments for a guided, interactive setup — it asks plain questions instead of requiring the CLI flags, and can even suggest a language from a plain-English description of your project. See [docs/usage.md](docs/usage.md).
 
 ## Status
 
