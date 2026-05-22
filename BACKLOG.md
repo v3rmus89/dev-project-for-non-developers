@@ -95,32 +95,35 @@ config.
 
 ## Follow-ups from the interactive-intake work (skill PR #8)
 
-### PR #9 — smart stack suggestion from a plain-English project description (imp-2)
+### ✅ PR #9 — smart stack suggestion from a plain-English project description — DONE
 
-**Status**: parked — follow-up to PR #8 (interactive intake). PR #8's plan
-([docs/plans/2026-05-21-skill-pr8-interactive-intake.md](docs/plans/2026-05-21-skill-pr8-interactive-intake.md))
-deliberately splits this out: PR #8 asks for the language/tooling via an
-explicit numbered menu; PR #9 adds the layer that *suggests* a stack (language,
-package manager, …) from a plain-English description of the project / business
-goal.
+**Status**: shipped — see
+[docs/plans/2026-05-22-skill-pr9-smart-stack-suggestion.md](docs/plans/2026-05-22-skill-pr9-smart-stack-suggestion.md).
+The interactive intake gained an optional "describe your project" step: a
+deterministic keyword `stack_suggest` engine maps the description to a
+*language* suggestion that pre-fills the language-menu default (the user still
+confirms). Resolved decisions: deterministic signal scorer, not an LLM (keeps
+the "pure offline CLI, no `.env`" invariant); language-only, not package
+manager (a brief carries no uv-vs-pip signal); superpowers patterns referenced,
+StackShare data used as CC0 inspiration, no code vendored.
 
-**Reference to review when drafting the PR #9 plan**: `obra/superpowers`
-(MIT-licensed — github.com/obra/superpowers). Its `brainstorming` skill is a
-proven template for the open-ended-input → structured-design flow PR #9 needs:
-explore context → ask clarifying questions one at a time (prefer multiple
-choice) → propose 2-3 approaches with trade-offs → present the design section
-by section → write a dated design doc → human-approval gate. Read
-`skills/brainstorming/SKILL.md` and `skills/writing-plans/SKILL.md` before
-drafting. Decision to make deliberately: *reference the patterns, do not vendor
-the skills* — superpowers ships agent-facing `SKILL.md` instruction files,
-whereas `dev-project-setup` is a file-generating CLI; different artifact type.
+### Non-interactive `--describe "..."` CLI flag (imp-1)
 
-**Triggers to pick up**: PR #8 merged and the interactive intake shipped.
+**Status**: parked — PR #9 (smart stack suggestion) shipped the suggestion as
+an *interactive-intake* step only. A non-interactive `--describe "<brief>"`
+flag would let a scripted / CI invocation get the same language suggestion
+without the guided flow.
 
-**Rough effort**: ~half a day for the plan (needs the full plan-review loop) +
-the implementation. The hard part is the stack-suggestion heuristic itself —
-a rule-of-thumb decision tree vs. an LLM call — which is a design decision the
-PR #9 plan must settle.
+**Why parked**: PR #9's plan scoped this out deliberately — a `--describe`
+flag is a larger surface (argv parsing, non-TTY semantics, how a suggestion
+interacts with an explicit `--language`). The interactive step covers the
+non-coder use case the skill is built for.
+
+**Triggers to pick up**: a real need for scripted / non-interactive stack
+suggestion (e.g. a wrapper tool or a CI bootstrap that wants the suggestion).
+
+**Rough effort**: ~2-3 hours (a flag + argv wiring + tests; the
+`stack_suggest` engine already exists).
 
 ---
 

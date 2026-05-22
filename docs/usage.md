@@ -35,6 +35,14 @@ below documents; **nothing is written until you choose `apply`**. Press Ctrl-C
 any time to cancel. `--interactive` must be used on its own (no other flags) in
 this version.
 
+**Not sure which language?** Right after the project name, the flow offers an
+optional **"describe your project"** question — type a sentence or two of plain
+English (e.g. *"a script to scrape competitor prices"*) and the skill suggests
+a language, pre-filling it as the menu default with a one-line reason. It is
+only a suggestion: the menu still lists every option, you can pick anything,
+and you still confirm at the end. Press Enter to skip the question entirely —
+the language menu then behaves exactly as without it.
+
 **Greenfield only.** The interactive flow sets up a *new* project. A target
 folder counts as "new" unless it already contains a file the skill itself writes
 (`Makefile`, `CLAUDE.md`, the language manifest, `.github/…`, `src/main.py`, …)
