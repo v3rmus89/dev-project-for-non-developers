@@ -386,6 +386,7 @@ A new module, importable by `intake.py`. 3.12 syntax (never loaded by the
 | Commit | Summary | Tier-1 |
 |---|---|---|
 | 0da1273 | Bucket A — `stack_suggest.py` deterministic signal scorer (`suggest_stack`, `StackSuggestion`) + `test_stack_suggest.py` (18-row matrix v1 + targeted unit tests); 31 tests pass | 0 imp-3; 1 imp-2 folded (tie-reset branch now covered) + 1 imp-1 folded (rationale test tightened); 2 imp-1 accepted as-is (duplicate-of-matrix test; `assert`-vs-`python -O` — both no-change-needed per Tier-1) |
+| 82974aa | Bucket B+C — optional plain-English brief wired into `intake.py`; `_ask_menu` gains a blank-accepts-`default` param; `_language_menu_prompt` renders the marker; intake/CLI tests + the scripted-stdin fixture shift; 713 `make check` tests pass | 0 imp-3; 2 imp-2 folded (default hint → plan-consistent `[default:]` brackets; added a `_language_menu_prompt(None)` byte-identity test); 1 imp-1 accepted as-is (brief wording paraphrase — within AD-5 latitude) |
 
 ## Lessons surfaced (this PR)
 
