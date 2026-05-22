@@ -109,7 +109,7 @@ rows), never *weakened* (no row removed or changed without a plan amendment).
 | 3 | Intake wiring — a new optional **"describe your project"** free-text question after the project-name step; a confident suggestion pre-fills the **language** menu *default* and the menu prompt (rendered by the caller) leads with the recommendation + rationale; skip or low-confidence → the language menu behaves exactly as PR #8 (Bucket B). |
 | 4 | `_ask_menu` gains an optional `default` parameter affecting **input only** — blank Enter returns `default`; no `default` → current required-choice behaviour, byte-identical to PR #8; raises fail-loud on `default not in choices`. `_ask_menu` does **not** render rows or markers — the caller owns the prompt string (Bucket B; AD-6). |
 | 5 | Tests — `stack_suggest` unit tests driven by the Brief acceptance matrix v1 + a `_flags.LANGUAGES` key-consistency test; intake tests for the brief/skip/override/low-confidence paths + a canary-brief privacy test + a visible-marker test + an `_ask_menu` test (both branches + the fail-loud guard); a CLI-level `_FakeStdin` test of the full `main([])` brief path; the blank-brief fixture shift in `test_intake.py` + `test_bootstrap_cli.py` (re-prompt / EOF fixtures verified per-case); the skip-brief ⇒ PR-#8-identical-argv regression test (Bucket C). |
-| 6 | Docs + BACKLOG — `docs/usage.md` + `README.md` updated for the describe-your-project step; **remove** the now-shipped "PR #9" `BACKLOG.md` parked entry and **add** a `--describe`-flag entry with a trigger (Bucket D). |
+| 6 | Docs + BACKLOG — `docs/usage.md` + `README.md` updated for the describe-your-project step; **mark** the "PR #9" `BACKLOG.md` entry `✅ DONE` (repo convention) and **add** a `--describe`-flag entry with a trigger (Bucket D). |
 
 ### NOT in scope
 
@@ -167,9 +167,11 @@ A new module, importable by `intake.py`. 3.12 syntax (never loaded by the
   iter-3 #3). A module-level assertion (`set(SIGNALS) == set(RATIONALES) ==
   set(_flags.LANGUAGES)`) fails loud at import on drift; a Bucket C test pins
   it too. All signals are hyphen-free (step 1). The sets below are the
-  **baseline**: they satisfy every Brief acceptance matrix v1 row, and may be
-  *extended* in implementation but not reduced below matrix coverage. Sourcing
-  per the External-sources table.
+  **baseline**: they satisfy every Brief acceptance matrix v1 row. They may be
+  *extended* in implementation **only when the extension is exercised by an
+  accompanying new matrix row** (Tier-2 #2 — an untested signal is not
+  allowed; the matrix stays the complete coverage gate), and never reduced
+  below matrix coverage. Sourcing per the External-sources table.
   - python — strong: `"scrape"`, `"scraper"`, `"scraping"`,
     `"machine learning"`, `"data pipeline"`, `"rest api"`, `"etl"`; weak:
     `"data"`, `"script"`, `"api"`, `"backend"`, `"automation"`, `"ai"`,
@@ -259,12 +261,13 @@ A new module, importable by `intake.py`. 3.12 syntax (never loaded by the
   describe-your-project step (optional; pre-fills the language menu, never
   auto-applies; skipping is fine). `README.md`'s "New project?" pointer gets a
   clause. No flag docs change — PR #9 adds no flag.
-- `BACKLOG.md` (Codex iter-3 #2): **remove** the now-shipped "PR #9 — smart
-  stack suggestion" parked entry (otherwise `make status` / recovery docs
-  would keep telling future sessions this work is parked). The entry's
-  reference material (the superpowers research) is preserved in this plan's
-  Context + External sources. **Add** a new BACKLOG entry for the parked
-  non-interactive `--describe` flag, with an explicit trigger.
+- `BACKLOG.md` (Codex iter-3 #2 + Tier-2 #1): **mark** the "PR #9 — smart
+  stack suggestion" entry `✅ … — DONE in PR #<impl>` — following the repo's
+  existing BACKLOG convention (shipped items stay, marked `✅ DONE`, e.g. the
+  PR #2 / PR #5c entries) rather than being deleted. A `✅ DONE` entry no
+  longer reads as parked, so `make status` / recovery docs are correct. **Add**
+  a new BACKLOG entry for the parked non-interactive `--describe` flag, with an
+  explicit trigger.
 
 ## Architecture decisions
 
@@ -345,6 +348,7 @@ A new module, importable by `intake.py`. 3.12 syntax (never loaded by the
 | 2.5 | Claude (consistency) | 0 | — | — | 2 contradictions + 2 drifts folded (C4 hyphenated signals can't match a hyphen-stripped `norm` → signal sets made hyphen-free; C5 row-15 rebuilt as a real tie-among-eligible case; C6 rationale string genuinely unified Bucket A↔B; C7 matrix rows ↔ Bucket A signal sets made mutually derivable). |
 | 3 | Codex | 0 | 5 | 0 | **0 imp-3 — convergence pass.** All 5 folded: H1 (strong signals now *weighted* `3·n_strong + n_weak` — one strong outranks two weak; matrix row 18); H2 (Bucket D removes the shipped "PR #9" BACKLOG entry + adds a `--describe` entry); H3 (`stack_suggest` keyed on `_flags.LANGUAGES` — import assertion + key-consistency test + `_ask_menu` fail-loud guard); H4 (fixture-shift wording made per-case-precise for re-prompt / EOF fixtures); H5 (visible-marker stdout test). |
 | 3.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 2 stale evidence-table cells folded (G1 "17"→"18" matrix rows; G4 eligibility-floor formula refreshed to the H1-final `n_weak>=2` form). **Loop converged.** |
+| T2 | claude[bot] + Codex (PR #24) | 0 | 2 | 2 | claude[bot]: 0 imp-3, "ready after minor edits". Codex: 👍 (no suggestions). J1 folded (BACKLOG: mark `✅ DONE` per repo convention, not "remove"); J2 folded (extended signals require an accompanying matrix row). J3–J4 rejected (row-17 guard is intentional; Go-set "repo-local judgment" framing is the honest one). |
 
 ## Evidence table — what was folded and where
 
@@ -372,6 +376,10 @@ A new module, importable by `intake.py`. 3.12 syntax (never loaded by the
 | H3 — `stack_suggest` is a second language source of truth, ungated | Codex/3 | (a) fold | Bucket A — tables keyed on `_flags.LANGUAGES` + import assertion; Bucket B — `_ask_menu` fail-loud `default not in choices`; Bucket C key-consistency test; Scope #2/#4. |
 | H4 — fixture-shift wording too broad for re-prompt / EOF fixtures | Codex/3 | (a) fold | Bucket C — blank brief inserted after the *accepted* project-name answer; re-prompt / EOF fixtures verified per-case. |
 | H5 — the visible default/recommendation marker isn't auto-tested | Codex/3 | (a) fold | Bucket C — visible-marker stdout test (marker + `[default]` hint present for a confident suggestion, absent for skip / low-confidence); Verification; Risks. |
+| J1 — Bucket D said "remove" the PR #9 BACKLOG entry; repo convention is to mark `✅ DONE` | claude[bot] Tier-2/PR #24 | (a) fold | Bucket D + Scope #6 — "remove" → "mark `✅ DONE in PR #<impl>`" per the repo's existing BACKLOG convention. |
+| J2 — signal-set extensions could be untested (matrix is fixed) | claude[bot] Tier-2/PR #24 | (a) fold | Bucket A rules table — an extension is allowed only with an accompanying new matrix row; the matrix stays the complete coverage gate. |
+| J3 — matrix row 17 (`rapid`/`api`) seems redundant with space-bounded matching | claude[bot] Tier-2/PR #24 | (c) reject | Row 17 is a deliberate regression guard for the space-bounding contract (added per Codex iter-1 #2) — "the algorithm already handles it" is exactly what a regression test pins. |
+| J4 — Go signal set cites "general knowledge" not documented sources | claude[bot] Tier-2/PR #24 | (c) reject | The plan already *honestly* frames the Go set as repo-local product judgment (Codex iter-3 #3); blog-post citations would not make it less a judgment call — the explicit flag is the more honest documentation. |
 
 ## Implementation log (this PR)
 
