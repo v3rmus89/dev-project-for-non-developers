@@ -992,19 +992,17 @@ unresolved-relpath silent-restore failure across cwds).
 
 ---
 
-### Real-project trial on `~/Desktop/Code/Boxette/call-details/` — PR #7
+### ✅ Real-project trial on `~/Desktop/Code/Boxette/call-details/` — DONE
 
-**Status**: in-progress (= the live trial portion of PR #7; engine + smoke fixtures shipped, live trial pending).
+**Status**: shipped. PR #7's `--mode=adopt` engine + the live trial against
+`call-details/` both landed; `docs/trial-report-pr7.md` is the one-time
+structured trial write-up (all four deliverables — trial plan, trial report,
+`--mode=adopt` implementation, surfaced polish — complete).
 
-**Scope**: PR #7 is the **hybrid** real-project trial + adoption-mode redesign. The trial against `call-details/` is the empirical data source for the recommendation heuristics. The collision baseline was empirically verified during plan iter-1 fold via `bootstrap.py --dry-run --language python --project-name call-details --out ~/Desktop/Code/Boxette/call-details/`: **4 MODIFY collisions** (`.gitignore`, `.python-version`, `CLAUDE.md`, `pyproject.toml`) + **15 CREATE** (15 missing files the skill writes cleanly).
-
-The pre-empirical "8 collisions" number from PR #6's plan was incorrect — it counted `README.md` + `uv.lock` (which exist in the target but aren't bootstrap writes) and `src/` + `tests/` (which are directories, not file collisions). Closes Codex iter-3 #5 baseline-correction fold.
-
-**Deliverables**: (i) trial plan in `docs/plans/` ✅ shipped; (ii) `docs/trial-report-pr7.md` (one-time structured trial-experience write-up; NOT a typo for `LESSONS.md` — the two artifacts are intentionally distinct) — pending; (iii) the `--mode=adopt` implementation ✅ shipped (closes BACKLOG entry above); (iv) any skill polish surfaced — pending.
-
-**Triggers to pick up**: engine done; smoke fixtures green; Bucket F docs landed; live trial is the next chunk (Phase D of plan Sequencing).
-
-**Rough effort**: ~half a day for the live trial + trial-report.
+The trial's downstream value also materialised later: dogfooding adopt-mode
+into `call-details` is exactly what surfaced the config-shadowing bug, fixed in
+the 2026-05-21 config-shadowing fix
+([docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md)).
 
 ---
 
