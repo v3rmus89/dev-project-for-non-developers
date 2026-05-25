@@ -70,6 +70,18 @@ Generating a new token does not invalidate older ones.
 
 ---
 
+## Pre-coding: regression safety + outcome measurement
+
+Before writing code for any task, state two things up front (in the plan, or in the first response if there's no plan):
+
+1. **Regression safety.** What's auto-testable (unit / integration / CI) and what isn't (UI feel, visual layout, AI output quality, onboarding flow). For non-auto-testable parts, name the manual check (smoke walk, screenshot diff, manual checklist). "No tests needed" is a valid answer when you explain why (e.g., one-off script, throwaway).
+
+2. **Outcome measurement.** For user-facing features: name the metric that says it worked + the log/event that captures it. For internal/dev/bugfix/refactor tasks: explicitly say "no business metric applies — internal change" so we know it was considered, not forgotten.
+
+Both go at the *start* of the task, not after the code is written.
+
+---
+
 ## Per-change checklist
 
 1. **Plan**: substantive change → `docs/plans/YYYY-MM-DD-<slug>.md` plus
