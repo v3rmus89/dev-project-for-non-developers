@@ -95,6 +95,16 @@ solved structurally.
 
 ---
 
+### 2026-05-25: Percent-based trim targets don't transfer between repos with different test surfaces
+
+**Trigger**: Phase 4 of the project-CLAUDE.md hygiene initiative arrived with a ~50% line-count target derived from call-details PR #22 (199→106 lines, -48%). Applied blindly to this repo it would have required trimming sections pinned by `tests/test_triage_byte_identity.py` (6-surface byte-identity) + `tests/test_dogfood_doc_sanity.py` (Two-tier, Cross-session, Self-improvement, plan-consistency presence) — which means also editing `shared/CLAUDE.md.tmpl` and the tests, propagating to every downstream `dev-project-setup` consumer. Out of scope for a hygiene pass. Surfaced via pre-edit audit before any files were touched.
+
+**Rule**: Before adopting a percent-based trim target from a prior PR, enumerate which sections in the new repo are pinned by tests (or other load-bearing invariants like template-mirroring contracts). The trim ceiling is the unpinned section set, not the aspirational percent. If the unpinned set falls short of the target, surface that to the user with three options — (a) extend scope to template + tests + downstream surface, (b) accept the smaller trim, (c) skip the trim — rather than picking unilaterally or stealth-breaking a test. Auto-mode "make the reasonable call" does not extend to load-bearing constraints the source prompt didn't account for.
+
+**Status**: Active
+
+---
+
 ### 2026-05-19: Tier-1 commit review must use the SAME AI (fresh subagent), not the cross-AI
 
 **Trigger**: PR #6 Impl Step 2-3 — I used `make review-commit-by-codex` for Tier-1 (Codex reviewing Claude's commits). User push-back: *"our rule is tier 1 commit review should be done by the same AI but just new subagent, no? only tier 2 review we have cross review"*. The rule was implicit in the workflow (same-author = same-AI Tier-1; Tier-2 = cross-AI via GitHub bots) but CLAUDE.md's "or" wording made both targets look equivalent. I'd separately defaulted to Codex because the `review-commit-by-claude` make target hits the `--permission-mode plan` exit-declined bug (BACKLOG f).
