@@ -107,7 +107,7 @@ Both go at the *start* of the task, not after the code is written.
    git checkout -b feat/my-thing
    ```
 
-6. **Implement**. Tests for new helpers, defensive cases for new public APIs.
+6. **Implement**. State the Pre-coding contract first (regression safety + outcome measurement — see the section above). Tests for new helpers, defensive cases for new public APIs.
 
 7. **Auto-fix + verify**:
    ```bash

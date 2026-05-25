@@ -77,11 +77,11 @@ At session start: read `LESSONS.md` "Active" section and apply the rules. In a *
 
 ## Mandatory human-approval gate
 
-After the loop converges and BEFORE any `git add` / `git commit`: post a final-plan summary, wait for **approve** / **changes: …** / **read full file first**, fold any changes and re-show, commit only on **approve**. Canonical wording: `docs/plans/README.md` step 3.
+After the loop converges and BEFORE any `git add` / `git commit`: (1) post a final-plan summary, (2) wait for **approve** / **changes: …** / **read full file first**, (3) fold any changes and re-show, (4) commit only on **approve**. Canonical wording: `docs/plans/README.md` step 3.
 
 ## Focused commits
 
-One logical change per commit, imperative title, body explaining "why". **Never** `git add .` or `git add -A` — pick files explicitly (see `LESSONS.md` 2026-05-17 entry for the session-state leak this prevents). Per-change checklist: `CONTRIBUTING.md`.
+One logical change per commit, imperative title, body explaining "why". **Never** `git add .` or `git add -A` — pick files explicitly (see `LESSONS.md` 2026-05-17 `git add -A` entry for the session-state leak this prevents). Per-change checklist: `CONTRIBUTING.md`.
 
 ## Python version
 
