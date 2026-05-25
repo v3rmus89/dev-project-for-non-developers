@@ -69,36 +69,19 @@ If you're starting a fresh session, just resumed after compaction, or are uncert
 
 ## Pre-coding: regression safety + outcome measurement
 
-Before writing code for any task, state two things up front (in the plan, or in the first response if there's no plan):
-
-1. **Regression safety.** What's auto-testable (unit / integration / CI) and what isn't (UI feel, visual layout, AI output quality, onboarding flow). For non-auto-testable parts, name the manual check (smoke walk, screenshot diff, manual checklist). "No tests needed" is a valid answer when you explain why (e.g., one-off script, throwaway).
-
-2. **Outcome measurement.** For user-facing features: name the metric that says it worked + the log/event that captures it. For internal/dev/bugfix/refactor tasks: explicitly say "no business metric applies — internal change" so we know it was considered, not forgotten.
-
-Both go at the *start* of the task, not after the code is written.
+Before writing code, state (1) **regression safety** — auto-testable vs manual check — and (2) **outcome measurement** — metric for user-facing, or "no business metric — internal change" for refactors/docs. Both go at the *start* of the task. Full wording in `CONTRIBUTING.md`'s "Pre-coding" section.
 
 ## Self-improvement loop (LESSONS.md)
 
-At session start: read `LESSONS.md` "Active" section and apply the rules. In a **writable implementation session** (you're the driver, free to edit files): after any user push-back that changes your approach, OR any Tier-1/2 finding that surfaced a new mistake-class, append an entry to `LESSONS.md` "Active" directly — format `### YYYY-MM-DD: <one-line mistake>` + **Trigger** + **Rule** + **Status**: Active — and commit it alongside the implementation. In a **read-only review session** (you're a reviewer, or told "Do NOT edit files"): do NOT append to `LESSONS.md`; propose the lesson in your review output instead (see `AGENTS.md` for the reviewer-side protocol).
-
-Promote to `CLAUDE.md` only for FUNDAMENTAL shifts (rare; needs plan-review). Move to `LESSONS.md` "Archived" once the pattern hasn't fired for 3+ sessions OR the underlying problem is solved structurally.
+At session start: read `LESSONS.md` "Active" section and apply the rules. In a **writable implementation session** (you're the driver, free to edit files): after any user push-back that changes your approach, OR any Tier-1/2 finding that surfaced a new mistake-class, append an entry to `LESSONS.md` "Active" directly — format `### YYYY-MM-DD: <one-line mistake>` + **Trigger** + **Rule** + **Status**: Active — and commit it alongside the implementation. In a **read-only review session** (you're a reviewer, or told "Do NOT edit files"): do NOT append to `LESSONS.md`; propose the lesson in your review output instead (see `AGENTS.md` for the reviewer-side protocol). Promotion to `CLAUDE.md` (rare; FUNDAMENTAL shifts only) + archival cadence: see `LESSONS.md` "How to use this file".
 
 ## Mandatory human-approval gate
 
-After the loop converges and BEFORE any `git add` / `git commit`: (1) post a final-plan summary in chat (scope, key decisions, anything to push back on — especially autonomous fold decisions); (2) wait for **approve** / **changes: …** / **read full file first**; (3) on "changes", fold them and re-show the summary; (4) only on **approve** proceed to commit + draft PR. See `docs/plans/README.md` step 3 for the canonical wording.
+After the loop converges and BEFORE any `git add` / `git commit`: post a final-plan summary, wait for **approve** / **changes: …** / **read full file first**, fold any changes and re-show, commit only on **approve**. Canonical wording: `docs/plans/README.md` step 3.
 
 ## Focused commits
 
-Use **focused commits** — one logical change per commit, imperative title, body explaining "why". See `CONTRIBUTING.md` for the per-change checklist.
-
-```bash
-git status
-git add path/to/file1 path/to/file2
-git commit -m "brief description of what changed"
-git push
-```
-
-**Do NOT** use `git add .` — it stages unrelated edits and produces unfocused commits. Always pick files explicitly.
+One logical change per commit, imperative title, body explaining "why". **Never** `git add .` or `git add -A` — pick files explicitly (see `LESSONS.md` 2026-05-17 entry for the session-state leak this prevents). Per-change checklist: `CONTRIBUTING.md`.
 
 ## Python version
 
