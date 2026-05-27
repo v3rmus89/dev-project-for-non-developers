@@ -93,13 +93,17 @@ def classify(iters: list[dict]) -> tuple[str, str]:
 
     verdict = last.get("verdict", "")
 
-    if verdict == "converged":
-        if total == 0:
-            return "converged", "reviewer called converged with no remaining findings"
+    if verdict == "converged" and total == 0:
+        return "converged", "reviewer called converged with no remaining findings"
+    if c3 == 0 and total > 0:
         return (
             "converged-with-polish",
-            "reviewer called converged; remaining findings can be folded or parked to BACKLOG",
+            f"no imp-3 findings remain (verdict={verdict}); fold or park remaining {total}",
         )
+
+    for f in last.get("findings", []):
+        if not f.get("fingerprint"):
+            return "malformed", "finding missing required fingerprint field"
 
     def _fps(footer: dict) -> set[str]:
         return {
@@ -116,9 +120,10 @@ def classify(iters: list[dict]) -> tuple[str, str]:
 
         if len(iters) >= 3:
             ante_fps = _fps(iters[-3])
-            if curr_fps and curr_fps == ante_fps:
-                fps_str = ", ".join(sorted(curr_fps))
-                return "oscillating", f"fingerprints match iter N-2: {fps_str}"
+            reappeared = {fp for fp in curr_fps if fp in ante_fps and fp not in prev_fps}
+            if reappeared:
+                fps_str = ", ".join(sorted(reappeared))
+                return "oscillating", f"fingerprints reappeared from iter N-2: {fps_str}"
 
         try:
             prev_c3 = int(iters[-2].get("severity_counts", {}).get("3", 0))

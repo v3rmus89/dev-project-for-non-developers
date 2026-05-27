@@ -230,7 +230,7 @@ def test_v9_converged_with_polish():
     ]
     status, rationale = classify(iters)
     assert status == "converged-with-polish"
-    assert "BACKLOG" in rationale or "polish" in rationale.lower()
+    assert "fold" in rationale.lower() or "park" in rationale.lower()
 
 
 def test_v9_converged_clean():
@@ -268,6 +268,18 @@ def test_v10_not_oscillating_when_different_fp():
     ]
     status, _ = classify(iters)
     assert status != "oscillating"
+
+
+def test_v10_partial_oscillation_is_detected():
+    """V-10 variant: N-2={A,B}, N-1={B,C}, N={A,B,D} → oscillating (A reappears)."""
+    iters = [
+        _footer("needs-iter", {"3": 2}, [_finding("fp-a", 3), _finding("fp-b", 3)]),
+        _footer("needs-iter", {"3": 2}, [_finding("fp-b", 3), _finding("fp-c", 3)]),
+        _footer("needs-iter", {"3": 3}, [_finding("fp-a", 3), _finding("fp-b", 3), _finding("fp-d", 3)]),
+    ]
+    status, rationale = classify(iters)
+    assert status == "oscillating"
+    assert "fp-a" in rationale
 
 
 # ── V-11: stuck ──────────────────────────────────────────────────────────────
@@ -308,6 +320,30 @@ def test_v12_regressed():
     status, rationale = classify(iters)
     assert status == "regressed"
     assert "1" in rationale and "2" in rationale
+
+
+def test_v_f2_missing_fingerprint_returns_malformed():
+    """F2 fold: a finding in the last iter with no fingerprint → malformed."""
+    iters = [
+        _footer(
+            "needs-iter",
+            {"3": 1},
+            [{"id": "F1", "importance": 3, "section_or_line": "## Test", "title": "x"}],
+        )
+    ]
+    status, rationale = classify(iters)
+    assert status == "malformed"
+    assert "fingerprint" in rationale
+
+
+def test_v_f3_needs_iter_with_zero_imp3_is_converged_with_polish():
+    """F3 fold: verdict=needs-iter + c3=0 + c2>0 → converged-with-polish."""
+    iters = [
+        _footer("needs-iter", {"3": 0, "2": 2, "1": 0}),
+    ]
+    status, rationale = classify(iters)
+    assert status == "converged-with-polish"
+    assert "0" in rationale or "no imp-3" in rationale.lower()
 
 
 def test_v12_not_regressed_when_stable():
