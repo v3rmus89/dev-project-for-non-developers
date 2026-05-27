@@ -27,9 +27,12 @@ def _parse_footer(text: str) -> dict:
         return {"status": "footer-missing"}
     raw = fences[-1].group(1)
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         return {"status": "malformed"}
+    if not isinstance(parsed, dict):
+        return {"status": "malformed"}
+    return parsed
 
 
 # ── V-6: well-formed footer ──────────────────────────────────────────────────
@@ -175,3 +178,10 @@ not json
 def test_v8_empty_string():
     """V-8 variant: empty input → {"status": "footer-missing"}."""
     assert _parse_footer("") == {"status": "footer-missing"}
+
+
+def test_v7_json_array_returns_malformed():
+    """V-7 variant: a ```json fence containing a JSON array → {"status": "malformed"}."""
+    review_text = '```json\n[1, 2, 3]\n```\n'
+    result = _parse_footer(review_text)
+    assert result == {"status": "malformed"}
