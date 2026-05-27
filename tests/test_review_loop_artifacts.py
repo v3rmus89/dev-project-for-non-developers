@@ -125,7 +125,13 @@ def _clean(hash_file, cons_file, snap_dir):
 
 
 def test_v5_hash_check_skipped_on_iter1(tmp_path):
-    """V-5: no hash file → ITERATION=1 must succeed and create the hash file."""
+    """V-5: hash check is skipped on ITERATION=1.
+
+    Sub-case (a): no hash file exists yet — iter1 must succeed and create it.
+    Sub-case (b): stale hash file exists from a previous loop — iter1 must still
+    succeed without raising a mismatch, and must overwrite the stale hash.
+    (Tier-1 F1 fold: sub-case (b) was missing from the initial test.)
+    """
     target = _bootstrap_fixture(tmp_path)
     plan = _plan_file(target, "v5_plan")
     shim_dir = _shim_dir(tmp_path)
@@ -136,6 +142,7 @@ def test_v5_hash_check_skipped_on_iter1(tmp_path):
     env["PATH"] = f"{shim_dir}:{env['PATH']}"
     out_file = tmp_path / "out-v5.md"
 
+    # Sub-case (a): no hash file
     result = subprocess.run(
         [
             "make",
@@ -150,8 +157,38 @@ def test_v5_hash_check_skipped_on_iter1(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, f"iter1 should succeed with no hash file:\n{result.stderr}"
+    assert result.returncode == 0, f"iter1 (a) should succeed with no hash file:\n{result.stderr}"
     assert hash_file.exists(), "hash file should be written after iter1"
+
+    # Sub-case (b): stale hash file — write a wrong hash, then run iter1 again
+    hash_file.write_text("0000000000000000000000000000000000000000000000000000000000000000\n")
+    plan.write_text("# loop test plan\nbody\nMODIFIED FOR SUB-CASE-B\n")
+    out_file2 = tmp_path / "out-v5b.md"
+
+    result_b = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-by-codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=1",
+            f"PLAN_REVIEW_OUT_CODEX={out_file2}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result_b.returncode == 0, (
+        f"iter1 (b) should succeed even with stale hash:\n{result_b.stderr}"
+    )
+    import subprocess as _sp
+    expected = _sp.run(
+        ["shasum", "-a", "256", str(plan)], capture_output=True, text=True, check=True
+    ).stdout.split()[0]
+    assert hash_file.read_text().strip() == expected, (
+        "hash file should be updated to current plan sha256 after iter1 (b)"
+    )
 
     _clean(hash_file, cons_file, snap_dir)
 
