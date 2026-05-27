@@ -173,7 +173,7 @@ def test_v7_truncated_json():
 
 def test_v7_json_array_returns_malformed():
     """V-7 variant: a ```json fence containing a JSON array → {"status": "malformed"}."""
-    review_text = '```json\n[1, 2, 3]\n```\n'
+    review_text = "```json\n[1, 2, 3]\n```\n"
     result = _parse_footer(review_text)
     assert result == {"status": "malformed"}
 
@@ -250,9 +250,9 @@ def test_v10_oscillating():
     """V-10: fingerprint X at N-2, gone at N-1, back at N → oscillating."""
     fp_x = "section-a:some-issue"
     iters = [
-        _footer("needs-iter", {"3": 1}, [_finding(fp_x, 3)]),   # N-2
-        _footer("needs-iter", {"3": 0}, []),                     # N-1: X gone
-        _footer("needs-iter", {"3": 1}, [_finding(fp_x, 3)]),   # N: X back
+        _footer("needs-iter", {"3": 1}, [_finding(fp_x, 3)]),  # N-2
+        _footer("needs-iter", {"3": 0}, []),  # N-1: X gone
+        _footer("needs-iter", {"3": 1}, [_finding(fp_x, 3)]),  # N: X back
     ]
     status, rationale = classify(iters)
     assert status == "oscillating"
@@ -275,7 +275,9 @@ def test_v10_partial_oscillation_is_detected():
     iters = [
         _footer("needs-iter", {"3": 2}, [_finding("fp-a", 3), _finding("fp-b", 3)]),
         _footer("needs-iter", {"3": 2}, [_finding("fp-b", 3), _finding("fp-c", 3)]),
-        _footer("needs-iter", {"3": 3}, [_finding("fp-a", 3), _finding("fp-b", 3), _finding("fp-d", 3)]),
+        _footer(
+            "needs-iter", {"3": 3}, [_finding("fp-a", 3), _finding("fp-b", 3), _finding("fp-d", 3)]
+        ),
     ]
     status, rationale = classify(iters)
     assert status == "oscillating"
@@ -364,7 +366,7 @@ def test_v16_exit_0_on_converged(tmp_path):
     key = "exitcode0conv"
     _write_review(
         tmp_path,
-        f"plan-review-test-by-codex-iter-1.md",
+        "plan-review-test-by-codex-iter-1.md",
         _footer("converged", {"3": 0, "2": 0, "1": 0}, key=key),
     )
     rc = main([key, str(tmp_path)])
@@ -420,7 +422,7 @@ def test_v16_exit_1_on_malformed(tmp_path):
     # classify("malformed") branch we need classify to receive a footer with
     # status=malformed in the list. That can't happen via _load_iters.
     # Test the main() exit-1 path by checking directly via classify():
-    status, rationale = classify([{"status": "malformed"}])
+    status, _rationale = classify([{"status": "malformed"}])
     assert status == "malformed"
     # And confirm main exits 1 given an args that produce malformed
     rc = main([key, str(tmp_path)])

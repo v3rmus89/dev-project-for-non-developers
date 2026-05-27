@@ -66,10 +66,13 @@ Two distinct PR types:
    any `git add` or `git commit`:
    - Post a final-plan summary in chat (Scope + key decisions + anything
      the user should push back on)
-   - Wait for the user's explicit **approve** / **changes: …** / **read
-     full file first** response
+   - Wait for explicit user approval. Two delivery mechanisms:
+     - **Plan-mode UI**: the user clicks the ExitPlanMode button in the
+       plan-mode sidebar
+     - **Chat**: the user types **approve** / **changes: …** / **read
+       full file first** in the conversation
    - If "changes": fold them and re-show the summary
-   - Only on **approve** proceed to commit
+   - Only on approval proceed to commit
 4. Commit the approved plan on a feature branch and open a draft **plan PR**.
 5. After plan approval and merge, **implementation PRs** that reference the
    plan land on subsequent branches.

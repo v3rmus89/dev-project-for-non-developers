@@ -8,6 +8,50 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from skill-pr10 (harvest plan-tango B/C/D/E)
+
+### Skill wrapper in plan mode (`skill-wrapper-pr-followup`)
+
+**Status**: parked — Bucket A was scoped out of PR #10 after 6 cross-review iterations failed to plateau (imp-3 trajectory: 3→4→4→3→4→3). Three architectural blockers remain unresolved (iter-7 F2 fold — deferral needs a durable record so the blockers don't get lost).
+
+**Trigger to pick up**:
+- The adopt-mode `.gitignore` parent-ignore neutralization problem gets a clean solution (`APPEND_MERGE` cannot neutralize a parent `.claude/` ignore — iter-6 F2).
+- A working `pre_skip_check` design that doesn't violate the manifest/atomic-write/restore contract is available (iter-6 F3).
+- The 3-branch acceptance verification (Claude/Codex/Other × plan-review/commit-review = 6 branches) is designed and tested (iter-5 F6, iter-5 F7).
+
+**Starting requirements (iter-1..6 F-series findings)**:
+- iter-1 F3 / iter-2 F1 / iter-3 F1 / iter-4 F1 / iter-5 F1: `.gitignore` parent-safe unignore block for `.claude/` — 5 iterations of refinement; final two-pass `adopt.py` approach still has the neutralization hole (iter-6 F2).
+- iter-6 F2: `APPEND_MERGE` cannot NEUTRALIZE a parent `.claude/` ignore — needs a `.gitignore`-rewrite mechanism not yet designed.
+- iter-6 F3: proposed `pre_skip_check` violates atomic-write/restore contract — design needs rethinking.
+- iter-2 F5 / iter-4 F5: Skill wrap-list grows incrementally; Skill encodes cross-direction reviewer rule.
+- iter-2 F6 / iter-2 F7: V-21 Skill template ↔ dogfood byte-identity test + `AskUserQuestion` in `allowed-tools`.
+- iter-5 F6 / iter-5 F7: V-1 tests all 3 approval branches (Claude/Codex/Other); commit-review same-AI branching added to Skill.
+- iter-3 F5: AGENTS.md has no approval-gate paragraph — NOT a target for keyword swap (scope confirmed removed).
+
+**Rough effort**: ~1 week. The Evidence table in `docs/plans/2026-05-27-skill-pr10-harvest-plan-tango-improvements.md` carries the full iter-1..6 triage record.
+
+---
+
+### Continue-thread mode for Codex (`continue-thread-pr-followup`)
+
+**Status**: parked — Bucket F was scoped out of PR #10. Two blocking verification gates must pass before flipping the Codex thread-continuation default from `fresh` to `continue` (iter-7 F2 fold).
+
+**Trigger to pick up**:
+- A real `codex exec --json` JSONL output is captured to `tests/fixtures/codex-json-session.jsonl` and the `session_id` field name is verified (iter-1 F5 / V-13).
+- V-13.5 passes: all 3 required assertions succeed — sandbox-denial event in JSONL stdout + file absence + `pwd == realpath(CURDIR)` (iter-5 F4).
+- A long plan loop (>8 iters) makes Codex token cost a real operational concern.
+
+**Starting requirements (iter-1..5 F-series findings)**:
+- iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested — real field name may differ; default flipped to `fresh`; `continue` deferred until V-13 passes on a real fixture.
+- iter-3 F2 / iter-4 F2: `codex exec resume` + `-C/--sandbox` flag controversy — defensive re-passing is CLI-rejected; rely on session inheritance; V-13.5 is the verification gate.
+- iter-5 F4: V-13.5 file-absence-only check can false-pass → strengthened to 3-assertion gate (sandbox-denial event + file absence + cwd assertion).
+- V-13 protocol: capture `codex exec --json` to `tests/fixtures/codex-json-session.jsonl`; verify `session_id` field name against real output.
+- V-13.5 protocol: run `make review-plan-by-codex PLAN_FILE=… ITERATION=1` inside a read-only sandbox; assert all 3 gates pass before flipping default.
+
+**Rough effort**: ~half a day to capture the fixture + run V-13/V-13.5 gates; ~1 day for the full Bucket F implementation if gates pass.
+
+---
+
 ## Follow-ups from the config-shadowing fix
 
 Parked items from [docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md) (Bucket E).

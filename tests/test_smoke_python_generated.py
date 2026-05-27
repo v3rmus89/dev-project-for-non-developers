@@ -119,6 +119,7 @@ def test_smoke_python_generated(tmp_path):
     # V-2.2: scripts/loop-status.py is rendered, executable, and exits 0 with
     # "STATUS: no-iters" when no plan-review files exist for the given KEY.
     import os
+
     loop_status = target / "scripts" / "loop-status.py"
     assert loop_status.exists(), "scripts/loop-status.py must be rendered by --apply"
     assert os.access(loop_status, os.X_OK), "scripts/loop-status.py must be executable"

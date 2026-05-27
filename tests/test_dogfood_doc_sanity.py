@@ -183,6 +183,63 @@ def test_self_improvement_loop_instruction_present(rel_path):
         )
 
 
+def test_readme_step3_names_approval_mechanisms_and_claude_md_is_agnostic():
+    """V-20: docs/plans/README.md step-3 block mentions both delivery mechanisms
+    (plan-mode ExitPlanMode + chat keyword). CLAUDE.md gate paragraph stays
+    path-agnostic — does NOT enumerate either mechanism, pointing to README step 3
+    for the canonical wording instead."""
+    readme = (SKILL_ROOT / "docs/plans/README.md").read_text()
+    assert "ExitPlanMode" in readme, (
+        "docs/plans/README.md step 3 must mention ExitPlanMode as a plan-mode delivery mechanism"
+    )
+    assert "approve" in readme and "changes:" in readme, (
+        "docs/plans/README.md step 3 must mention chat keywords as a delivery mechanism"
+    )
+
+    claude_md = (SKILL_ROOT / "CLAUDE.md").read_text()
+    gate_start = claude_md.find("## Mandatory human-approval gate")
+    assert gate_start != -1, "Mandatory human-approval gate section missing from CLAUDE.md"
+    next_sec = claude_md.find("\n## ", gate_start + 1)
+    gate_text = claude_md[gate_start:next_sec] if next_sec != -1 else claude_md[gate_start:]
+    assert "ExitPlanMode" not in gate_text, (
+        "CLAUDE.md gate paragraph must not enumerate ExitPlanMode (point to README step 3 instead)"
+    )
+    assert "**approve** / **changes:" not in gate_text, (
+        "CLAUDE.md gate paragraph must not enumerate the specific chat-keyword list "
+        "(use 'explicit user approval' and point to README step 3)"
+    )
+    assert "explicit user approval" in gate_text, (
+        "CLAUDE.md gate paragraph must use path-agnostic 'explicit user approval' phrasing"
+    )
+
+
+def test_backlog_has_deferred_bucket_entries():
+    """V-22: BACKLOG.md carries durable entries for deferred Buckets A + F (iter-7 F2 fold).
+    Both slugs present; each entry has Trigger + Starting requirements subsections;
+    iter-1..6 F-series finding numbers referenced."""
+    import re
+
+    text = (SKILL_ROOT / "BACKLOG.md").read_text()
+    assert "skill-wrapper-pr-followup" in text, (
+        "BACKLOG.md must contain skill-wrapper-pr-followup entry (deferred Bucket A)"
+    )
+    assert "continue-thread-pr-followup" in text, (
+        "BACKLOG.md must contain continue-thread-pr-followup entry (deferred Bucket F)"
+    )
+    for slug in ("skill-wrapper-pr-followup", "continue-thread-pr-followup"):
+        idx = text.find(slug)
+        assert idx != -1
+        vicinity = text[idx : idx + 3000]
+        assert "Trigger" in vicinity, f"BACKLOG entry '{slug}' must have a Trigger subsection"
+        assert "Starting requirements" in vicinity, (
+            f"BACKLOG entry '{slug}' must have a Starting requirements subsection"
+        )
+    f_refs = re.findall(r"iter-[1-6] F\d+", text)
+    assert len(f_refs) >= 4, (
+        f"BACKLOG must have ≥4 iter-1..6 F-series finding references, found {len(f_refs)}"
+    )
+
+
 def test_lessons_md_exists_with_seed_entries():
     """PR #5a: skill repo's own LESSONS.md ships with ≥3 seed entries. Schema
     validation is in tests/test_lessons_file_schema.py; this dogfood test

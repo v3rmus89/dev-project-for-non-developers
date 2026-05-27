@@ -183,6 +183,7 @@ def test_v5_hash_check_skipped_on_iter1(tmp_path):
         f"iter1 (b) should succeed even with stale hash:\n{result_b.stderr}"
     )
     import subprocess as _sp
+
     expected = _sp.run(
         ["shasum", "-a", "256", str(plan)], capture_output=True, text=True, check=True
     ).stdout.split()[0]
@@ -284,9 +285,7 @@ def test_v4_hash_check_aborts_on_unacknowledged_edit(tmp_path):
     )
     # hash-check uses `exit 2`; Make wraps recipe failures as exit 2 of its own,
     # and prints "Error 2" in stderr confirming the recipe's specific exit code.
-    assert r2.returncode != 0, (
-        f"iter2 should fail on hash mismatch; got returncode {r2.returncode}"
-    )
+    assert r2.returncode != 0, f"iter2 should fail on hash mismatch; got returncode {r2.returncode}"
     assert "Error 2" in r2.stderr, (
         f"expected 'Error 2' in stderr (recipe exit 2); got {r2.stderr!r}"
     )
@@ -348,9 +347,7 @@ def test_v4_5_legitimate_fold_with_consistency_and_ack(tmp_path):
         text=True,
     )
     # Make wraps recipe exit codes into Make's own exit 2; check stderr for "Error 3"
-    assert r_ack_no_cons.returncode != 0, (
-        "loop-ack without consistency marker should fail"
-    )
+    assert r_ack_no_cons.returncode != 0, "loop-ack without consistency marker should fail"
     assert "Error 3" in r_ack_no_cons.stderr, (
         f"expected 'Error 3' in stderr (recipe exit 3); got {r_ack_no_cons.stderr!r}"
     )
@@ -436,9 +433,7 @@ def test_v4_5_legitimate_fold_with_consistency_and_ack(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert r_ack_stale.returncode != 0, (
-        "loop-ack with stale marker should fail"
-    )
+    assert r_ack_stale.returncode != 0, "loop-ack with stale marker should fail"
     assert "Error 3" in r_ack_stale.stderr, (
         f"expected 'Error 3' in stderr (recipe exit 3); got {r_ack_stale.stderr!r}"
     )
