@@ -30,6 +30,7 @@ EXPECTED_PATHS_NONE_MODE = {
     "LESSONS.md",
     "docs/plans/README.md",
     "scripts/run-with-clean-env.py",
+    "scripts/loop-status.py",
     "tests/test_smoke.py",
     "src/main.py",
 }
@@ -114,3 +115,20 @@ def test_smoke_python_generated(tmp_path):
     )
     assert run.returncode == 0, run.stderr
     assert "smoke-test" in run.stdout
+
+    # V-2.2: scripts/loop-status.py is rendered, executable, and exits 0 with
+    # "STATUS: no-iters" when no plan-review files exist for the given KEY.
+    import os
+    loop_status = target / "scripts" / "loop-status.py"
+    assert loop_status.exists(), "scripts/loop-status.py must be rendered by --apply"
+    assert os.access(loop_status, os.X_OK), "scripts/loop-status.py must be executable"
+    ls_result = subprocess.run(
+        [str(loop_status), "dummykey000000", str(target)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert ls_result.returncode == 0, f"loop-status with no files must exit 0: {ls_result.stderr}"
+    assert "STATUS: no-iters" in ls_result.stdout, (
+        f"expected 'STATUS: no-iters' when no review files present; got: {ls_result.stdout!r}"
+    )

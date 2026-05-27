@@ -39,6 +39,7 @@ EXPECTED_PATHS_NONE_MODE = {
     "LESSONS.md",
     "docs/plans/README.md",
     "scripts/run-with-clean-env.py",
+    "scripts/loop-status.py",
     "tests/test_smoke.test.ts",
     "src/main.ts",
 }

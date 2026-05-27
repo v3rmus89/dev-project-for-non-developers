@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Loop-status classifier for the plan-review loop.
+
+Reads plan-review iter output files from a review dir (default /tmp),
+filters by the KEY field in the json verdict footer, and classifies the
+loop state.
+
+Usage:
+  scripts/loop-status.py <KEY> [<review-dir>]
+  make loop-status PLAN_FILE=docs/plans/<file>.md
+
+Output: STATUS: <classification> followed by a one-line rationale.
+
+Exit codes:
+  0  — any non-error status (needs-iter, converged, converged-with-polish,
+       oscillating, stuck, regressed, no-iters)
+  1  — malformed: last iter footer is missing or invalid JSON
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def _parse_footer(text: str) -> dict:
+    """Extract and parse the last ```json code fence in *text*.
+
+    Returns the parsed dict on success.
+    Returns {"status": "footer-missing"} if no ```json fence is found.
+    Returns {"status": "malformed"} if the fence exists but the content
+    is invalid JSON or not a JSON object.
+    """
+    fences = list(re.finditer(r"```json\s*\n(.*?)```", text, re.DOTALL))
+    if not fences:
+        return {"status": "footer-missing"}
+    raw = fences[-1].group(1)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"status": "malformed"}
+    if not isinstance(parsed, dict):
+        return {"status": "malformed"}
+    return parsed
+
+
+def _load_iters(key: str, review_dir: Path) -> list[dict]:
+    """Load plan-review iter files filtered by KEY.
+
+    Globs plan-review-*-by-*-iter-*.md in review_dir.  Skips files
+    whose footer is missing, malformed, or whose key field does not
+    match *key*.  Returns footers in filename-sort order.
+    """
+    pattern = "plan-review-*-by-*-iter-*.md"
+    files = sorted(review_dir.glob(pattern))
+    iters = []
+    for path in files:
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        footer = _parse_footer(text)
+        if footer.get("status") in ("footer-missing", "malformed"):
+            continue
+        if footer.get("key") != key:
+            continue
+        iters.append(footer)
+    return iters
+
+
+def classify(iters: list[dict]) -> tuple[str, str]:
+    """Classify the review loop state from a sequence of parsed footers.
+
+    Returns (status, rationale).  Status is one of:
+      needs-iter, converged, converged-with-polish,
+      oscillating, stuck, regressed, malformed, no-iters
+    """
+    if not iters:
+        return "no-iters", "no plan-review iter files found for this key"
+
+    last = iters[-1]
+    if last.get("status") in ("footer-missing", "malformed"):
+        return "malformed", f"last iter has status={last.get('status')}"
+
+    counts = last.get("severity_counts", {})
+    try:
+        total = sum(int(v) for v in counts.values())
+        c3 = int(counts.get("3", 0))
+    except (TypeError, ValueError):
+        total, c3 = 0, 0
+
+    verdict = last.get("verdict", "")
+
+    if verdict == "converged":
+        if total == 0:
+            return "converged", "reviewer called converged with no remaining findings"
+        return (
+            "converged-with-polish",
+            "reviewer called converged; remaining findings can be folded or parked to BACKLOG",
+        )
+
+    def _fps(footer: dict) -> set[str]:
+        return {
+            f.get("fingerprint", "") for f in footer.get("findings", []) if f.get("fingerprint")
+        }
+
+    if len(iters) >= 2:
+        curr_fps = _fps(last)
+        prev_fps = _fps(iters[-2])
+
+        if curr_fps and curr_fps == prev_fps:
+            fps_str = ", ".join(sorted(curr_fps))
+            return "stuck", f"same fingerprints as previous iter: {fps_str}"
+
+        if len(iters) >= 3:
+            ante_fps = _fps(iters[-3])
+            if curr_fps and curr_fps == ante_fps:
+                fps_str = ", ".join(sorted(curr_fps))
+                return "oscillating", f"fingerprints match iter N-2: {fps_str}"
+
+        try:
+            prev_c3 = int(iters[-2].get("severity_counts", {}).get("3", 0))
+        except (TypeError, ValueError):
+            prev_c3 = 0
+
+        if c3 > prev_c3:
+            return "regressed", f"imp-3 count grew from {prev_c3} to {c3}"
+
+    return "needs-iter", f"imp-3={c3}, verdict={verdict}"
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if not argv:
+        print("Usage: loop-status.py <KEY> [<review-dir>]", file=sys.stderr)
+        print(
+            "  Usually invoked via: make loop-status PLAN_FILE=docs/plans/<file>.md",
+            file=sys.stderr,
+        )
+        return 1
+
+    key = argv[0]
+    review_dir = Path(argv[1]) if len(argv) > 1 else Path("/tmp")
+
+    iters = _load_iters(key, review_dir)
+    status, rationale = classify(iters)
+
+    print(f"STATUS: {status}")
+    print(f"  {rationale}")
+
+    if status == "malformed":
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
