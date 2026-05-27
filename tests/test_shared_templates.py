@@ -64,6 +64,7 @@ SHARED_TEMPLATES_TO_SCAN = [
     "docs-codex-github-review-setup.md.tmpl",
     "editorconfig.tmpl",
     "scripts-run-with-clean-env.py.tmpl",
+    "scripts-loop-status.py.tmpl",
 ]
 
 

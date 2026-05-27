@@ -86,6 +86,7 @@ Both go at the *start* of the task, not after the code is written.
 
 1. **Plan**: substantive change → `docs/plans/YYYY-MM-DD-<slug>.md` plus
    the bidirectional review loop. Trivial change → skip planning.
+   Between iterations: fold findings, run `make review-plan-consistency-by-claude`, then `make loop-ack` (re-stamps the integrity hash before the next review). `make loop-status` shows convergence state; `make loop-reset` discards loop state for the plan.
 
 2. **Workspace check**:
    ```bash

@@ -16,6 +16,9 @@
 | Self-check plan for internal contradictions (Tier-1) | `make review-plan-consistency-by-claude PLAN_FILE=docs/plans/<file>.md ITERATION=N` |
 | Tier-1 Codex review of the most recent commit | `make review-commit-by-codex` |
 | Tier-1 Claude review of the most recent commit | `make review-commit-by-claude` |
+| Acknowledge a legitimate fold: re-stamp the integrity hash | `make loop-ack PLAN_FILE=docs/plans/<file>.md` |
+| Reset loop state (removes hash/consistency/snapshot artifacts) | `make loop-reset PLAN_FILE=docs/plans/<file>.md` |
+| Check convergence status of the plan-review loop | `make loop-status PLAN_FILE=docs/plans/<file>.md` |
 
 The full per-change workflow is in `CONTRIBUTING.md`. Pre-commit hooks
 (ruff on commit) and pre-push hooks (pytest on push) fire automatically
@@ -77,7 +80,7 @@ At session start: read `LESSONS.md` "Active" section and apply the rules. In a *
 
 ## Mandatory human-approval gate
 
-After the loop converges and BEFORE any `git add` / `git commit`: (1) post a final-plan summary, (2) wait for **approve** / **changes: …** / **read full file first**, (3) fold any changes and re-show, (4) commit only on **approve**. Canonical wording: `docs/plans/README.md` step 3.
+After the loop converges and BEFORE any `git add` / `git commit`: (1) post a final-plan summary, (2) wait for **explicit user approval**, (3) fold any changes and re-show, (4) commit only on **approve**. Canonical wording: `docs/plans/README.md` step 3.
 
 ## Focused commits
 

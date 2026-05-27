@@ -404,7 +404,13 @@ After commit 4, run `make check` and `make test` to confirm the full test surfac
 
 | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |---|---|---|---|
-| _(empty until implementation begins)_ | | | | |
+| f28d962 | Bucket B+C: KEY derivation, hash-check, snapshot, loop-ack, loop-reset | CONS_FILE path uses repo-aware $(KEY) (not slug-only) — matches D-12 fold intent | Tab chars in Make recipe continuations required Python-level byte replacement (Edit tool can't match literal tab in old_string) |
+| 884f165 | V-5: add stale-hash sub-case (Tier-1 F1 fold) | none | Missing coverage discovered during Tier-1 review of f28d962 |
+| 2a3c7c0 | Bucket D first pass: json-verdict footer instruction in both plan-review prompts | "json-verdict code fence" wording (caught by Tier-1 as ambiguous) | Makefile tab-char matching required Python fallback again |
+| 2341f7d | Fix(bucket-d): rename to "json code fence"; guard non-dict in _parse_footer | none (Tier-1 fix commit) | none |
+| 28ca082 | Bucket E: scripts/loop-status.py + shared template + manifest.py + make target + V-9/10/11/12/16/16.5/f2/f3 tests | classify() converged-with-polish was incorrectly nested under verdict==converged check (caught by Tier-1) | ruff format pass required after initial write; template sync after format |
+| 64c3021 | Fix(bucket-e): F1 partial oscillation, F2 malformed-on-missing-fingerprint, F3 standalone converged-with-polish branch (Tier-1 catches) | none (all 3 are deviations from initial impl corrected to match plan pseudocode) | Template re-sync (cp) after classify() fix |
+| 6dab035 | Docs/BACKLOG commit 4: Commands table, keyword swap, BACKLOG entries, V-20/V-22 tests | Pre-existing ruff lint fixes in test_loop_status.py carried in this commit | none |
 
 ## Lessons surfaced (this PR)
 

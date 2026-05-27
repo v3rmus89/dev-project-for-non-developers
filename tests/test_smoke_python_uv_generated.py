@@ -41,6 +41,7 @@ EXPECTED_PATHS_UV_MODE = {
     "LESSONS.md",
     "docs/plans/README.md",
     "scripts/run-with-clean-env.py",
+    "scripts/loop-status.py",
     "tests/test_smoke.py",
     "src/main.py",
 }

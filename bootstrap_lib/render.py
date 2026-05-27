@@ -19,6 +19,7 @@ SHARED_TEMPLATE_MAP = {
     "docs/codex-github-review-setup.md": "docs-codex-github-review-setup.md.tmpl",
     ".editorconfig": "editorconfig.tmpl",
     "scripts/run-with-clean-env.py": "scripts-run-with-clean-env.py.tmpl",
+    "scripts/loop-status.py": "scripts-loop-status.py.tmpl",
 }
 
 PYTHON_TEMPLATE_MAP = {
