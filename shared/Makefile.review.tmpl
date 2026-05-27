@@ -32,10 +32,15 @@ REVIEW_COMMIT_SHA        ?= $(shell git -C $(CURDIR) rev-parse --short HEAD 2>/d
 REVIEW_COMMIT_OUT_CODEX  ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-codex.md
 REVIEW_COMMIT_OUT_CLAUDE ?= /tmp/review-commit-$(REVIEW_COMMIT_SHA)-by-claude.md
 PLAN_CONSISTENCY_OUT     ?= /tmp/review-plan-consistency-$(notdir $(basename $(PLAN_FILE)))-iter-$(ITERATION).md
+KEY = $(shell python3 -c "import hashlib,os; k = os.path.realpath('$(CURDIR)') + ':' + os.path.realpath('$(PLAN_FILE)'); print(hashlib.sha256(k.encode()).hexdigest()[:12])")
+HASH_FILE = /tmp/plan-review-$(KEY).hash
+CONS_FILE = /tmp/plan-review-$(KEY).consistency
+SNAP_DIR  = /tmp/plan-snapshots/$(KEY)
 
 .PHONY: review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
         review-plan-consistency-by-claude \
+        loop-ack loop-reset \
         preflight-review-tooling \
         status
 
@@ -45,6 +50,26 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
 	@command -v codex >/dev/null 2>&1 || \
 	  { echo "codex CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
+	@CURR_HASH=$$(shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}'); \
+	  if [ -f "$(HASH_FILE)" ]; then \
+	    PREV_HASH=$$(cat "$(HASH_FILE)"); \
+	    if [ "$$CURR_HASH" != "$$PREV_HASH" ] && [ "$(ITERATION)" -gt 1 ]; then \
+	      echo "Plan hash changed since iter $$(( $(ITERATION) - 1 )) — external edit or unacknowledged fold detected."; \
+	      echo "Expected: $$PREV_HASH"; \
+	      echo "Got:      $$CURR_HASH"; \
+	      echo "If this was a legitimate fold:"; \
+	      echo "  1) make review-plan-consistency-by-claude PLAN_FILE=$(PLAN_FILE) ITERATION=N.5"; \
+	      echo "  2) fold any drift the consistency check finds"; \
+	      echo "  3) make loop-ack PLAN_FILE=$(PLAN_FILE)"; \
+	      echo "  4) re-run this review target."; \
+	      echo "If you want to discard the loop and start over: make loop-reset PLAN_FILE=$(PLAN_FILE) (deletes hash/cons/snapshot state)."; \
+	      echo "Snapshots remain in $(SNAP_DIR)/."; \
+	      exit 2; \
+	    fi; \
+	  fi
+	@mkdir -p "$(SNAP_DIR)"; \
+	  cp "$(PLAN_FILE)" "$(SNAP_DIR)/iter$(ITERATION).bak"; \
+	  echo "Snapshot: $(SNAP_DIR)/iter$(ITERATION).bak"
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  codex exec \
 	    -C "$(CURDIR)" \
@@ -52,6 +77,7 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	    --color never \
 	    --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" \
 	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly."
+	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(HASH_FILE)"
 	@echo "──────────────────────────────────────────"
 	@echo "Codex review written to: $(PLAN_REVIEW_OUT_CODEX)"
 	@echo "──────────────────────────────────────────"
@@ -63,6 +89,26 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
 	@command -v claude >/dev/null 2>&1 || \
 	  { echo "claude CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
+	@CURR_HASH=$$(shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}'); \
+	  if [ -f "$(HASH_FILE)" ]; then \
+	    PREV_HASH=$$(cat "$(HASH_FILE)"); \
+	    if [ "$$CURR_HASH" != "$$PREV_HASH" ] && [ "$(ITERATION)" -gt 1 ]; then \
+	      echo "Plan hash changed since iter $$(( $(ITERATION) - 1 )) — external edit or unacknowledged fold detected."; \
+	      echo "Expected: $$PREV_HASH"; \
+	      echo "Got:      $$CURR_HASH"; \
+	      echo "If this was a legitimate fold:"; \
+	      echo "  1) make review-plan-consistency-by-claude PLAN_FILE=$(PLAN_FILE) ITERATION=N.5"; \
+	      echo "  2) fold any drift the consistency check finds"; \
+	      echo "  3) make loop-ack PLAN_FILE=$(PLAN_FILE)"; \
+	      echo "  4) re-run this review target."; \
+	      echo "If you want to discard the loop and start over: make loop-reset PLAN_FILE=$(PLAN_FILE) (deletes hash/cons/snapshot state)."; \
+	      echo "Snapshots remain in $(SNAP_DIR)/."; \
+	      exit 2; \
+	    fi; \
+	  fi
+	@mkdir -p "$(SNAP_DIR)"; \
+	  cp "$(PLAN_FILE)" "$(SNAP_DIR)/iter$(ITERATION).bak"; \
+	  echo "Snapshot: $(SNAP_DIR)/iter$(ITERATION).bak"
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude \
 	    --print \
@@ -70,6 +116,7 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	    --output-format text \
 	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly." \
 	  > "$(PLAN_REVIEW_OUT_CLAUDE)"
+	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(HASH_FILE)"
 	@echo "──────────────────────────────────────────"
 	@echo "Claude review written to: $(PLAN_REVIEW_OUT_CLAUDE)"
 	@echo "──────────────────────────────────────────"
@@ -155,6 +202,32 @@ review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradicti
 	    "Read the plan file at '$(PLAN_FILE)' in full. Your ONLY job: find internal contradictions, doc-drift between sections, and places where the latest fold's wording is inconsistent with adjacent rows / tables / sections. Do NOT critique the design, scope, completeness, or correctness — that is the Codex/Claude full-review job. Just identify pairs: 'Section X says A, Section Y says B, they disagree because Z'. If the plan is internally consistent, say so explicitly. Output as a numbered list. Be terse." \
 	  > "$(PLAN_CONSISTENCY_OUT)" \
 	  && cat "$(PLAN_CONSISTENCY_OUT)"
+	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(CONS_FILE)"
+
+loop-ack:	## Acknowledge a legitimate fold: re-stamp the integrity hash (requires consistency check first)
+	@test -n "$(PLAN_FILE)" || { echo "Usage: make loop-ack PLAN_FILE=docs/plans/<file>.md"; exit 1; }
+	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
+	@CURR_HASH=$$(shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}'); \
+	  if [ ! -f "$(CONS_FILE)" ]; then \
+	    echo "No consistency marker found at $(CONS_FILE)."; \
+	    echo 'Run `make review-plan-consistency-by-claude PLAN_FILE=$(PLAN_FILE) ITERATION=N.5` before acking.'; \
+	    exit 3; \
+	  fi; \
+	  CONS_HASH=$$(cat "$(CONS_FILE)"); \
+	  if [ "$$CURR_HASH" != "$$CONS_HASH" ]; then \
+	    echo "Plan has changed since last consistency check (cons=$$CONS_HASH, curr=$$CURR_HASH)."; \
+	    echo 'Run `make review-plan-consistency-by-claude PLAN_FILE=$(PLAN_FILE) ITERATION=N.5` before acking.'; \
+	    exit 3; \
+	  fi; \
+	  echo "$$CURR_HASH" > "$(HASH_FILE)"; \
+	  echo "Acknowledged. Hash file: $(HASH_FILE) → $$CURR_HASH"
+
+loop-reset:	## Reset loop state: remove hash/consistency/snapshot artifacts for this plan
+	@test -n "$(PLAN_FILE)" || { echo "Usage: make loop-reset PLAN_FILE=docs/plans/<file>.md"; exit 1; }
+	@rm -f "$(HASH_FILE)" "$(CONS_FILE)"
+	@rm -rf "$(SNAP_DIR)"
+	@echo "Loop state reset. Hash/consistency/snapshot artifacts removed for this plan."
+	@echo "Next plan-review will start at iter 1 with no baseline."
 
 status:	## Synthesize current project state (recovery for new sessions / post-compaction). PLAN_FILE=<path> to override plan-detect; otherwise mtime-sorted with README filtered
 	@echo "── Current branch activity ──"
