@@ -63,6 +63,36 @@ def test_active_bad_plan_findings():
     )
 
 
+def test_absolute_path_outside_roots_is_unsupported_external():
+    """Codex Tier-2 P2 regression: absolute paths outside declared fact roots
+    must land in unsupported_external, NOT verified (POSIX `root / abs` drops root)."""
+    import tempfile
+
+    # Build a minimal facts JSON with an absolute path that definitely exists on
+    # the machine (the verify script itself) but is NOT under the declared root.
+    with tempfile.TemporaryDirectory() as empty_root:
+        facts_data = {
+            "plan_file": "synthetic",
+            "fact_roots": [empty_root],  # declare a root that doesn't contain VERIFY_SCRIPT
+            "facts": [
+                {
+                    "type": "file_ref",
+                    "raw": str(VERIFY_SCRIPT),
+                    "path": str(VERIFY_SCRIPT),
+                },
+            ],
+        }
+        result = _verify(json.dumps(facts_data), Path(empty_root))
+
+    assert result["summary"]["unsupported_external"] == 1, (
+        "absolute path outside declared fact roots must be unsupported_external, "
+        f"not verified/failed: {result}"
+    )
+    assert result["summary"]["verified"] == 0, (
+        "absolute path outside declared fact roots must NOT be verified"
+    )
+
+
 def test_meta_plan_snapshot_clean():
     """Facts in the meta-plan snapshot (PR-0 deliverables) must all verify
     cleanly — zero failures expected once PR-0 is merged."""

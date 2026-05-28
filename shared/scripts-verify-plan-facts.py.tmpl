@@ -135,6 +135,15 @@ def verify(facts_data: dict, default_root: Path) -> dict:
 
         if ftype == "file_ref":
             path_str = fact["path"]
+            p = Path(path_str)
+            if p.is_absolute() and not any(p.is_relative_to(root) for root in roots):
+                unsupported_external.append(
+                    {
+                        "fact": fact,
+                        "detail": f"absolute path outside declared fact roots: {path_str}",
+                    }
+                )
+                continue
             found = _find_file(path_str, roots)
             if found:
                 verified.append({"fact": fact, "detail": f"exists: {found}"})
@@ -144,6 +153,15 @@ def verify(facts_data: dict, default_root: Path) -> dict:
         elif ftype == "file_line_ref":
             path_str = fact["path"]
             lineno = fact["line"]
+            p = Path(path_str)
+            if p.is_absolute() and not any(p.is_relative_to(root) for root in roots):
+                unsupported_external.append(
+                    {
+                        "fact": fact,
+                        "detail": f"absolute path outside declared fact roots: {path_str}",
+                    }
+                )
+                continue
             found = _find_file(path_str, roots)
             if not found:
                 failed.append({"fact": fact, "detail": f"file not found under roots: {path_str}"})
