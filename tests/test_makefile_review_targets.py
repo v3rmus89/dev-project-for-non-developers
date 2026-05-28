@@ -885,7 +885,8 @@ def test_review_plan_fact_check_by_codex_materialises_output(tmp_path):
     result = subprocess.run(
         [
             "make",
-            "-C", str(target),
+            "-C",
+            str(target),
             "review-plan-fact-check-by-codex",
             f"PLAN_FILE={plan.relative_to(target)}",
             f"PLAN_FACT_CHECK_OUT_CODEX={out_file}",
@@ -912,7 +913,8 @@ def test_review_plan_fact_check_by_claude_materialises_output(tmp_path):
     result = subprocess.run(
         [
             "make",
-            "-C", str(target),
+            "-C",
+            str(target),
             "review-plan-fact-check-by-claude",
             f"PLAN_FILE={plan.relative_to(target)}",
             f"PLAN_FACT_CHECK_OUT_CLAUDE={out_file}",
@@ -957,7 +959,8 @@ def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
     result = subprocess.run(
         [
             "make",
-            "-C", str(target),
+            "-C",
+            str(target),
             "review-plan-fact-check-by-codex",
             f"PLAN_FILE={plan.relative_to(target)}",
             f"PLAN_FACT_CHECK_OUT_CODEX={out_file}",
@@ -966,6 +969,4 @@ def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0, (
-        "review-plan-fact-check-by-codex must propagate CLI failure"
-    )
+    assert result.returncode != 0, "review-plan-fact-check-by-codex must propagate CLI failure"

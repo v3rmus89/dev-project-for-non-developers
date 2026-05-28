@@ -55,9 +55,7 @@ def test_active_bad_plan_findings():
     assert summary["verified"] == 1, (
         f"expected 1 verified, got {summary['verified']}: {result['verified']}"
     )
-    assert summary["failed"] == 4, (
-        f"expected 4 failed, got {summary['failed']}: {result['failed']}"
-    )
+    assert summary["failed"] == 4, f"expected 4 failed, got {summary['failed']}: {result['failed']}"
 
     raw_values = {f["raw"] for f in facts_data["facts"]}
     assert "also-excluded-xyz.py" not in raw_values, (
