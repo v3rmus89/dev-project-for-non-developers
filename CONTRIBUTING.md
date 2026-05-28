@@ -87,6 +87,11 @@ Both go at the *start* of the task, not after the code is written.
 1. **Plan**: substantive change → `docs/plans/YYYY-MM-DD-<slug>.md` plus
    the bidirectional review loop. Trivial change → skip planning.
    Between iterations: fold findings, run `make review-plan-consistency-by-claude`, then `make loop-ack` (re-stamps the integrity hash before the next review). `make loop-status` shows convergence state; `make loop-reset` discards loop state for the plan.
+   For multi-day or cross-file plans, run the fact-check pre-pass as **iter 0.5** (before the first main review):
+   ```bash
+   make review-plan-fact-check-by-codex PLAN_FILE=docs/plans/<file>.md
+   ```
+   This validates that every file path, symbol, and Makefile target cited in the plan actually exists, catching fact-drift before it pollutes the main review.
 
 2. **Workspace check**:
    ```bash

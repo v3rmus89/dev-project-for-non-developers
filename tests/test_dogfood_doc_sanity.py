@@ -254,3 +254,29 @@ def test_lessons_md_exists_with_seed_entries():
     assert len(entries) >= 3, (
         f"skill repo LESSONS.md should ship with ≥3 seed entries, found {len(entries)}"
     )
+
+
+def test_fact_check_workflow_in_contributing():
+    """PR-0: both dogfood CONTRIBUTING.md and the rendered template must document
+    the fact-check pre-pass (iter 0.5) within the Plan checklist step."""
+    from bootstrap_lib import render
+
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    env = render.build_env("python")
+    rendered = env.get_template("CONTRIBUTING.md.tmpl").render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+    for surface_name, text in [("dogfood", dogfood), ("rendered", rendered)]:
+        assert "review-plan-fact-check-by-codex" in text, (
+            f"{surface_name} CONTRIBUTING.md must reference review-plan-fact-check-by-codex"
+        )
+        assert "iter 0.5" in text, (
+            f"{surface_name} CONTRIBUTING.md must reference iter 0.5 for the fact-check pre-pass"
+        )

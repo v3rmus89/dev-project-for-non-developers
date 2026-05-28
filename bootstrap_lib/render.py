@@ -20,6 +20,8 @@ SHARED_TEMPLATE_MAP = {
     ".editorconfig": "editorconfig.tmpl",
     "scripts/run-with-clean-env.py": "scripts-run-with-clean-env.py.tmpl",
     "scripts/loop-status.py": "scripts-loop-status.py.tmpl",
+    "scripts/extract-plan-facts.py": "scripts-extract-plan-facts.py.tmpl",
+    "scripts/verify-plan-facts.py": "scripts-verify-plan-facts.py.tmpl",
 }
 
 PYTHON_TEMPLATE_MAP = {

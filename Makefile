@@ -88,10 +88,15 @@ KEY = $(shell python3 -c "import hashlib,os; k = os.path.realpath('$(CURDIR)') +
 HASH_FILE = /tmp/plan-review-$(KEY).hash
 CONS_FILE = /tmp/plan-review-$(KEY).consistency
 SNAP_DIR  = /tmp/plan-snapshots/$(KEY)
+FACT_CHECK_FACTS_OUT  ?= /tmp/plan-fact-check-$(KEY).facts.json
+FACT_CHECK_VERIFY_OUT ?= /tmp/plan-fact-check-$(KEY).verify.json
+PLAN_FACT_CHECK_OUT_CODEX  ?= /tmp/plan-fact-check-$(notdir $(basename $(PLAN_FILE)))-by-codex.md
+PLAN_FACT_CHECK_OUT_CLAUDE ?= /tmp/plan-fact-check-$(notdir $(basename $(PLAN_FILE)))-by-claude.md
 
 .PHONY: review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
         review-plan-consistency-by-claude \
+        review-plan-fact-check-by-codex review-plan-fact-check-by-claude \
         loop-ack loop-reset loop-status \
         preflight-review-tooling \
         status
@@ -365,6 +370,46 @@ status:	## Synthesize current project state (recovery for new sessions / post-co
 	  if command -v $$tool >/dev/null 2>&1; then echo "  ok       $$tool"; \
 	  else echo "  advisory $$tool not on PATH"; fi; \
 	done
+
+review-plan-fact-check-by-codex:	## Pre-pass: fact-check active plan sections against declared fact roots (PLAN_FILE=...)
+	@test -n "$(PLAN_FILE)" || \
+	  { echo "Usage: make review-plan-fact-check-by-codex PLAN_FILE=docs/plans/<file>.md"; exit 1; }
+	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
+	@command -v codex >/dev/null 2>&1 || \
+	  { echo "codex CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
+	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
+	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
+	$(CURDIR)/scripts/run-with-clean-env.py -- \
+	  codex exec \
+	    -C "$(CURDIR)" \
+	    --sandbox read-only \
+	    --color never \
+	    --output-last-message "$(PLAN_FACT_CHECK_OUT_CODEX)" \
+	    "Interpret these fact-check results for '$(PLAN_FILE)'. The verification JSON was produced deterministically by scripts/verify-plan-facts.py and is included below. For each FAILED item explain what the drift means and whether it is blocking (imp-3) or an improvement (imp-2). For each unsupported_external item note that the path is outside the declared fact roots and cannot be verified without a ## Fact roots block in the plan. For each not_verifiable item note the reason. If all facts verified cleanly say so explicitly. VERIFICATION JSON: $$(cat '$(FACT_CHECK_VERIFY_OUT)')"
+	@echo "──────────────────────────────────────────"
+	@echo "Fact-check report written to: $(PLAN_FACT_CHECK_OUT_CODEX)"
+	@echo "──────────────────────────────────────────"
+	@cat "$(PLAN_FACT_CHECK_OUT_CODEX)"
+
+review-plan-fact-check-by-claude:	## Pre-pass: fact-check active plan sections against declared fact roots (PLAN_FILE=...)
+	@test -n "$(PLAN_FILE)" || \
+	  { echo "Usage: make review-plan-fact-check-by-claude PLAN_FILE=docs/plans/<file>.md"; exit 1; }
+	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
+	@command -v claude >/dev/null 2>&1 || \
+	  { echo "claude CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
+	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
+	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
+	$(CURDIR)/scripts/run-with-clean-env.py -- \
+	  claude \
+	    --print \
+	    --add-dir "$(CURDIR)" \
+	    --output-format text \
+	    "Interpret these fact-check results for '$(PLAN_FILE)'. The verification JSON was produced deterministically by scripts/verify-plan-facts.py and is included below. For each FAILED item explain what the drift means and whether it is blocking (imp-3) or an improvement (imp-2). For each unsupported_external item note that the path is outside the declared fact roots and cannot be verified without a ## Fact roots block in the plan. For each not_verifiable item note the reason. If all facts verified cleanly say so explicitly. VERIFICATION JSON: $$(cat '$(FACT_CHECK_VERIFY_OUT)')" \
+	  > "$(PLAN_FACT_CHECK_OUT_CLAUDE)"
+	@echo "──────────────────────────────────────────"
+	@echo "Fact-check report written to: $(PLAN_FACT_CHECK_OUT_CLAUDE)"
+	@echo "──────────────────────────────────────────"
+	@cat "$(PLAN_FACT_CHECK_OUT_CLAUDE)"
 
 preflight-review-tooling:	## verify claude+codex CLIs work with the flag shape review targets expect
 	@command -v codex >/dev/null 2>&1 || { echo "codex CLI not found"; exit 1; }

@@ -9,6 +9,11 @@ context must match the committed dogfood copies byte-for-byte.
 5. The review-section block of the skill repo's Makefile (bracketed by
    SELFTEST-OVERLAP-BEGIN/END sentinel comments) vs the rendered
    shared/Makefile.review.tmpl.
+
+6+ Script byte-identity checks (Tier-1 review F7 on PR-0):
+   Each scripts/*.py that is shipped as a verbatim shared/*.tmpl must
+   stay byte-identical so that a future edit to one without the other
+   is caught immediately.
 """
 
 from __future__ import annotations
@@ -19,6 +24,14 @@ from pathlib import Path
 import pytest
 
 from bootstrap_lib import render
+
+# Pairs that must stay byte-identical: (scripts/<name>.py, shared/<tmpl-name>.tmpl)
+_SCRIPT_TEMPLATE_PAIRS = [
+    ("scripts/run-with-clean-env.py", "scripts-run-with-clean-env.py.tmpl"),
+    ("scripts/loop-status.py", "scripts-loop-status.py.tmpl"),
+    ("scripts/extract-plan-facts.py", "scripts-extract-plan-facts.py.tmpl"),
+    ("scripts/verify-plan-facts.py", "scripts-verify-plan-facts.py.tmpl"),
+]
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
@@ -122,3 +135,22 @@ def test_overlap_makefile_review_section():
             )
         )
         pytest.fail(f"Makefile review-section drift:\n{diff}")
+
+
+@pytest.mark.parametrize("script_rel,tmpl_name", _SCRIPT_TEMPLATE_PAIRS)
+def test_script_template_byte_identity(script_rel, tmpl_name):
+    """Each scripts/*.py verbatim template must be byte-identical to its
+    shared/*.tmpl counterpart — edits to one without the other cause drift."""
+    script_text = (SKILL_ROOT / script_rel).read_text(encoding="utf-8")
+    tmpl_text = (SKILL_ROOT / "shared" / tmpl_name).read_text(encoding="utf-8")
+    if script_text != tmpl_text:
+        diff = "\n".join(
+            difflib.unified_diff(
+                script_text.splitlines(),
+                tmpl_text.splitlines(),
+                fromfile=f"scripts/{script_rel.split('/')[-1]}",
+                tofile=f"shared/{tmpl_name}",
+                lineterm="",
+            )
+        )
+        pytest.fail(f"{script_rel} vs {tmpl_name} byte-identity drift:\n{diff}")

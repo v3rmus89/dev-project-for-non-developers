@@ -858,3 +858,115 @@ def test_plan_file_structural_convention_documented(tmp_path):
     assert "Iteration log" in readme
     # Must mention `make status` extraction reliance
     assert "make status" in readme.lower()
+
+
+# ── PR-0: review-plan-fact-check targets ─────────────────────────────
+
+
+def test_make_help_lists_fact_check_targets(tmp_path):
+    """review-plan-fact-check-by-{codex,claude} must appear in `make help`."""
+    target = _bootstrap_fixture(tmp_path)
+    result = subprocess.run(["make", "help"], cwd=str(target), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    for tgt in ["review-plan-fact-check-by-codex", "review-plan-fact-check-by-claude"]:
+        assert tgt in result.stdout, f"{tgt} missing from `make help`"
+
+
+def test_review_plan_fact_check_by_codex_materialises_output(tmp_path):
+    """review-plan-fact-check-by-codex must materialise the output file."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="fact_check_smoke")
+    shim_dir = _shim_dir_with_codex_and_claude(tmp_path)
+    out_file = tmp_path / "fact-check-codex.md"
+
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-fact-check-by-codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"PLAN_FACT_CHECK_OUT_CODEX={out_file}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + "\n" + result.stdout
+    assert out_file.exists(), "output file not materialised"
+    assert "CANNED CODEX REVIEW OUTPUT" in out_file.read_text()
+
+
+def test_review_plan_fact_check_by_claude_materialises_output(tmp_path):
+    """review-plan-fact-check-by-claude must materialise the output file."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="fact_check_smoke_claude")
+    shim_dir = _shim_dir_with_codex_and_claude(tmp_path)
+    out_file = tmp_path / "fact-check-claude.md"
+
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-fact-check-by-claude",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"PLAN_FACT_CHECK_OUT_CLAUDE={out_file}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + "\n" + result.stdout
+    assert out_file.exists(), "output file not materialised"
+    assert "CANNED CLAUDE REVIEW OUTPUT" in out_file.read_text()
+
+
+def test_review_plan_fact_check_fails_without_plan_file(tmp_path):
+    """review-plan-fact-check-by-{codex,claude} must fail if PLAN_FILE is unset."""
+    target = _bootstrap_fixture(tmp_path)
+    shim_dir = _shim_dir_with_codex_and_claude(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    for tgt in ["review-plan-fact-check-by-codex", "review-plan-fact-check-by-claude"]:
+        result = subprocess.run(
+            ["make", "-C", str(target), tgt],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, f"{tgt} must fail when PLAN_FILE is unset"
+        assert "Usage:" in result.stdout, f"{tgt} must print Usage: when PLAN_FILE unset"
+
+
+def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
+    """CLI failure must not be swallowed by the fact-check target."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="fact_check_fail")
+    shim_dir, _ = _shim_dir_capturing_argv(tmp_path, codex_exit=42)
+    out_file = tmp_path / "fact-check-fail.md"
+    out_file.write_text("STALE")
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-fact-check-by-codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"PLAN_FACT_CHECK_OUT_CODEX={out_file}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "review-plan-fact-check-by-codex must propagate CLI failure"

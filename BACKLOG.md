@@ -582,7 +582,7 @@ plan file drift detector). Different problem, separate trigger.
 
 ### `review-plan-fact-check-by-{claude,codex}` subagent target (imp-2)
 
-**Status**: parked.
+**Status**: unparked → shipped in PR #30 (feat/pr0-review-plan-fact-check).
 
 **Why parked**: separate from idea-(b) consistency check. A narrow subagent
 that reads the plan + the current repo, and for every file path / test name /
