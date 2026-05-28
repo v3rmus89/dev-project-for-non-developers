@@ -14,6 +14,8 @@ from bootstrap_lib.paths import PathSafetyError, validate_target_path
 EXECUTABLE_TARGETS = {
     "scripts/run-with-clean-env.py",
     "scripts/loop-status.py",
+    "scripts/extract-plan-facts.py",
+    "scripts/verify-plan-facts.py",
     ".husky/pre-commit",
     ".husky/pre-push",
     "hooks/pre-commit",
