@@ -280,3 +280,32 @@ def test_fact_check_workflow_in_contributing():
         assert "iter 0.5" in text, (
             f"{surface_name} CONTRIBUTING.md must reference iter 0.5 for the fact-check pre-pass"
         )
+
+
+def test_architectural_blocker_split_advisory_in_contributing():
+    """Side-workstream item 2 (meta-plan ``what-else-i-want-majestic-rain``):
+    both dogfood CONTRIBUTING.md and the rendered template must carry the
+    *advisory* (NOT a hard rule) to consider splitting a PR when a new
+    architectural blocker surfaces at iter >=3. Presence-only — the guidance
+    must exist; it is explicitly a judgment call, never enforced."""
+    from bootstrap_lib import render
+
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    env = render.build_env("python")
+    rendered = env.get_template("CONTRIBUTING.md.tmpl").render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+    for surface_name, text in [("dogfood", dogfood), ("rendered", rendered)]:
+        assert "Architectural-blocker split" in text, (
+            f"{surface_name} CONTRIBUTING.md must carry the architectural-blocker-split advisory"
+        )
+        assert "consider splitting the PR" in text, (
+            f"{surface_name} CONTRIBUTING.md advisory must say to consider splitting the PR"
+        )
