@@ -113,6 +113,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-27: Over-defensive folds can introduce new imp-3 findings
+
+**Trigger**: PR #10 iter-3 F2 added `-C / --sandbox` flags to `codex exec resume` "defensively"; iter-4 F2 verified empirically that the CLI rejects them (`unexpected argument`) — resume INHERITS those settings, so the defensive add would have shipped a broken Bucket F. Surfaced in PR #10's `## Lessons surfaced`; promoted here 2026-05-29 per the meta-plan (`what-else-i-want-majestic-rain.md`) side-workstream item 1.
+
+**Rule**: When folding a "this might be unsafe" finding, prefer adding a *verification step* (test, gate, runtime check) over adding *defensive command-line flags or guards you haven't tested*. Defensive additions assert a contract that may not exist; verification steps probe what's actually true. Corollary (the meta-plan's own evidence — imp-3 trajectory 2→1→3→3→1→2→3): over-defensive folds are a recurring driver of imp-3 regressions across review iters — when an iter's imp-3 count rises right after a defensive fold, suspect the fold.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

@@ -201,6 +201,8 @@ plateau rule.
 
 **No strict iteration cap** — but watch the trajectory. If imp-3 count plateaus at 1-2 across 3 consecutive iterations and the findings are increasingly narrow edge cases, the loop is at diminishing returns; surface the remaining items to the human-approval gate with explicit framing ("these are real but deferrable; ship plan + fold during implementation"). The human decides whether to continue iterating or accept.
 
+**Architectural-blocker split (advisory, not a cap)**: distinct from the plateau rule above. If a review surfaces a *new architectural blocker* — not a narrow edge case, but a design hole that keeps regenerating importance-3 findings — at **iter ≥3**, consider splitting the PR rather than continuing to fold: carve the blocked piece into a follow-up (with the iter-1..N findings as its starting requirements) and ship the unblocked remainder. PR #10 ran to 7 iterations without plateauing because two adopt-engine blockers surfaced late and kept regenerating imp-3s; splitting at iter 3 instead of iter 6 would have saved ~3 iterations. This is a judgment call for the human-approval gate, not an automatic trigger.
+
 ---
 
 ## Tier-1 review — prompt template for in-session subagents
