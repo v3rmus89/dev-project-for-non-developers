@@ -123,6 +123,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-30: Shim/fake-CLI tests prove recipe branching, not that the REAL CLI accepts the flags
+
+**Trigger**: PR-1 (Bucket F) commit 2 — I copy-pasted the fresh-path `-C`/`--sandbox`/`--color` flags onto the `codex exec resume` invocation. My shim-based smoke test passed (a fake `codex` accepts any argv), but the real `codex exec resume` rejects those flags (`unexpected argument`) because the subcommand's flag set is a strict subset of `codex exec`'s. Tier-1 caught it by running the real CLI. Re-introduced the same class as the 2026-05-27 over-defensive-folds entry.
+
+**Rule**: A fake-CLI shim validates a Makefile recipe's branching and argv *construction*, NOT that the real subcommand *accepts* those flags — subcommands often take a narrower flag set than their parent (`codex exec resume` ⊂ `codex exec`). Before copy-pasting flags from one invocation onto a sibling subcommand, check that subcommand's `--help`, and rely on a live gate (here: the V-13.5 verifier) or a real-CLI smoke to catch rejections. When a shim test covers the branch, also assert the argv *excludes* flags the real subcommand rejects, so the regression cannot silently reappear.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

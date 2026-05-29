@@ -363,6 +363,7 @@ No business metric — internal change. Measurable proxies post-merge:
 | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |-----------|---------------------|---------------------------------|------------------------|
 | 09c6a77 | extract-codex-session-id.py + 9 subprocess unit tests: prints session_meta.payload.id from the first event; non-zero exit + empty stdout when absent | none (Tier-1 folded 2 polish tests: non-dict JSON line + directory-arg edge) | none |
+| 1d8af64 | THREAD_MODE continue branch (fresh/seed/resume) for review-plan-by-codex; byte-identical Makefile+template; loop-reset clears thread state; review prompt hoisted to one shell var | none | Tier-1 caught a reintroduced imp-3 — the resume call copy-pasted `-C`/`--sandbox`/`--color`, which `codex exec resume` rejects (`unexpected argument`, LESSONS.md 2026-05-27 / PR #10 iter-4); dropped them (resume inherits). The fake-shim smoke could not surface it (real-CLI-only); commit 4 adds a shim assertion that resume argv excludes those flags |
 
 ## Lessons surfaced (this PR)
 
