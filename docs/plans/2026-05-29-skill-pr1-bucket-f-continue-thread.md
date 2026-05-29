@@ -21,7 +21,7 @@ A/B replay gates in the Verification section pass (meta-plan PR-1).
 | D | `shared/scripts-extract-codex-session-id.py.tmpl` (new) | Mirror scope A (same content). |
 | E | `bootstrap_lib/render.py` `SHARED_TEMPLATE_MAP` | Register `D`. |
 | F | `bootstrap_lib/manifest.py` `EXECUTABLE_TARGETS` | Register the script as executable on bootstrap. |
-| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` + `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json` (writes `THREAD_JSONL_FILE` via plain redirect), then extracts `THREAD_FILE` atomically via `.tmp` + UUID validation + `mv`; extractor failure path — asserts no `THREAD_FILE` remains; (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) "session not found" exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, starts fresh; (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
+| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` extended: (a) add `scripts/extract-codex-session-id.py` ↔ `shared/scripts-extract-codex-session-id.py.tmpl` to `_SCRIPT_TEMPLATE_PAIRS` for byte-identity enforcement, (b) assert `scripts/extract-codex-session-id.py` is executable (`chmod +x` / `os.access(X_OK)`). `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json` (writes `THREAD_JSONL_FILE` via plain redirect), then extracts `THREAD_FILE` atomically via `.tmp` + UUID validation + `mv`; extractor failure path — asserts no `THREAD_FILE` remains; (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) "session not found" exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, starts fresh; (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
 | H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE` to `EXACT_DROP` (FN5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Test: shim asserts Codex does not receive these in its environment. |
 
 **NOT in scope (no code deliverable)**: default flip from `THREAD_MODE=fresh` → `continue`
@@ -111,42 +111,49 @@ The test matrix in Scope G item (3) uses a fake codex shim to assert that when
 `THREAD_FILE` exists, the Makefile recipe calls `codex exec resume $SESSION_ID`
 (not `codex exec`). This verifies the Makefile branching logic without a live API call.
 
-**Part 2 — Live inheritance probe (session UUID continuity, sandbox-denial, file absence, cwd)**:
+**Part 2 — Live inheritance probe (session UUID continuity, sandbox policy, file absence, cwd)**:
 Run FROM the repo root using the actual codex CLI:
-1. Start a fresh session to seed `THREAD_FILE`:
+1. Preconditions and cleanup (FN3 fold):
    ```
    PLAN=docs/plans/2026-05-29-skill-pr1-bucket-f-continue-thread.md
-   # Precondition: assert test file does not already exist
+   # Compute KEY for THREAD_FILE path
+   KEY=$(python3 -c "import hashlib,os; \
+     k=os.path.realpath('.')+':'+os.path.realpath('$PLAN'); \
+     print(hashlib.sha256(k.encode()).hexdigest()[:12])")
+   # Clear any stale thread state from previous runs
+   make -C /abs/path/to/repo loop-reset PLAN_FILE="$PLAN"
+   # Assert both files absent and probe file absent
+   test ! -e /tmp/plan-review-$KEY.thread || { echo "ERROR: THREAD_FILE not cleaned up"; exit 1; }
+   test ! -e /tmp/plan-review-$KEY.session.jsonl || { echo "ERROR: THREAD_JSONL_FILE not cleaned up"; exit 1; }
    test ! -e /tmp/test-v13-5-write.txt || { echo "ERROR: clean up /tmp/test-v13-5-write.txt first"; exit 1; }
+   ```
+2. Seed a fresh session:
+   ```
    make -C /abs/path/to/repo review-plan-by-codex \
      PLAN_FILE="$PLAN" ITERATION=1 THREAD_MODE=continue
    ```
    → `THREAD_JSONL_FILE` is written; `THREAD_FILE` contains a UUID (`SESSION_ID`).
-2. Probe inheritance directly using `codex exec resume --json`:
+3. Probe inheritance using `codex exec resume --json`:
    ```
-   # KEY derivation: sha256(realpath(CURDIR):realpath(PLAN_FILE))[:12]
-   KEY=$(python3 -c "import hashlib,os; \
-     k=os.path.realpath('.')+':'+os.path.realpath('$PLAN'); \
-     print(hashlib.sha256(k.encode()).hexdigest()[:12])")
    SESSION_ID=$(cat /tmp/plan-review-$KEY.thread)
    echo "Probing session: $SESSION_ID"
    codex exec resume "$SESSION_ID" --json \
      "Attempt to create a file at /tmp/test-v13-5-write.txt. Report what happened." \
      > /tmp/test-v13-5-resumed.jsonl
    ```
-3. Assert ALL FOUR from the resumed JSONL (restores the original 3-gate + adds UUID):
+4. Assert ALL FOUR from the resumed JSONL:
    a. `session_meta.payload.id` in `/tmp/test-v13-5-resumed.jsonl` equals `SESSION_ID`
       (session not renewed — UUID continuity proves resume, not restart)
-   b. At least one `response_item` or `event_msg` event shows a sandbox-denial or
-      tool-error for the write attempt — e.g. the function_call_output shows a
-      permission-denied error, or no `function_call` for a file-write was emitted
-      (sandbox-denial — read-only mode actively blocks write attempts)
-   c. `/tmp/test-v13-5-write.txt` does NOT exist after the resumed session
-      (file absence — corroborates sandbox-denial)
+   b. First `turn_context.payload.sandbox_policy.type` in resumed JSONL equals `"read-only"`
+      (deterministic proof that sandbox setting was inherited — not inferred from model behavior)
+      AND `/tmp/test-v13-5-write.txt` does NOT exist (file absence corroborates)
+   c. (redundant corroboration) No file at `/tmp/test-v13-5-write.txt` after the resumed session
    d. First `turn_context.payload.cwd` in resumed JSONL equals `realpath(CURDIR)`
       from the ORIGINAL session (cwd inherited)
 
-If any assertion fails: the default flip is blocked; file a bug and keep `THREAD_MODE=fresh`.
+If any assertion fails: this PR must NOT merge. The `THREAD_MODE=continue` branch is unsafe
+(not merely unsuitable as default) until V-13.5 passes. File a bug and keep `THREAD_MODE`
+= undefined (disabling the continue branch) until fixed.
 
 ### A/B replay gates (required before default flip; POST-PR-1)
 Per meta-plan PR-1 Verification: pick a real folded plan + its committed
@@ -243,6 +250,9 @@ No business metric — internal change. Measurable proxies post-merge:
 | 2.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 4 (folded) + 1 (rejected) | stable | D1 "iter-4 F2" unanchored → added "(PR #10 iter-4 F2)". D2 commit-4 "5-case matrix + 4b" vs Scope G 6 cases → updated to "6-case matrix (1/2/3/4a/4b/5)". D3 NOT-in-scope still said "sandbox-inheritance probe" after Part 2 sub-header rename → updated to enumerate all 4 gates. D4 Architecture omitted warning on fallback but Rollback mentioned it → "logs a warning" added to Architecture. D5 iter-1.5b log entry 3-element vs current 4-element sub-header → (c) rejected as historical record (iter-2 FN1 added the 4th element after the 1.5b entry was written). Also in this round: pinned exact CLI error string for FN3 by running `codex exec resume NONEXISTENT-UUID` — result `"no rollout found for thread id"` added to Architecture + Risks. |
 | 2.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 4 | folded | D1 V-13.5 main header still said "sandbox and cwd inheritance" (2 elements) after Part 2 enumerated 4 → header updated to "session UUID continuity, sandbox-denial, file absence, and cwd inheritance". D2 commit-1 attributed atomic write + UUID validation (commit-2 work) → stripped from commit-1 description. D3 Scope G misplaced "no THREAD_FILE remains" assertion in script unit tests instead of Makefile-recipe tests → moved to test_makefile_review_targets.py description. D4 Risks row 6 said "Extraction script" but Makefile recipe owns THREAD_FILE writes → updated to "Makefile recipe". |
 | 2.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 1 | folded | D1 Risk row 6 said "Test case 2" asserts extractor failure, but Scope G case (2) only showed success path → case (2) description extended to also enumerate the extractor-failure sub-case explicitly. Plan internally consistent on all other cross-section checks (V-13.5 four-gate, KEY derivation, stale-session string, commit/scope mapping, --json carve-outs all matched). |
+| 2.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 1 | folded | D1 Scope G item (2) said "atomically" for THREAD_JSONL_FILE but Architecture shows plain redirect → case (2) reworded to "writes THREAD_JSONL_FILE via plain redirect, then extracts THREAD_FILE atomically". |
+| 2.5e | Claude (consistency self-check, round 5) | 2026-05-29 | 0 drifts | stable | 2.5d fold left the plan consistent. Loop-ack stamped. Proceeding to iter 3. |
+| 3 | Codex | 2026-05-29 | 3 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) V-13.5 failure said "blocks default flip" but correct: failure must block PR merge entirely (continue branch unsafe if sandbox not inherited). FN2 (imp-3) (a) assertion b "no function_call emitted" proves model behavior not sandbox → replaced with `turn_context.payload.sandbox_policy.type == "read-only"` (deterministic). FN3 (imp-3) (a) probe step 1 doesn't clear stale thread state first → added `make loop-reset` + assert-absent pre-steps. FN4 (imp-2) (c) THREAD_JSONL_FILE atomic write unnecessary — plain redirect sufficient because THREAD_FILE is the state invariant; if extraction fails, THREAD_FILE is cleaned up; next run overwrites JSONL. FN5 (imp-2) (a) new script not in `test_selftest_overlap.py` `_SCRIPT_TEMPLATE_PAIRS` → added to Scope G. |
 
 ## Implementation log
 
