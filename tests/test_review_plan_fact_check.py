@@ -270,3 +270,52 @@ def test_make_target_via_symlinked_makefile_not_verified(tmp_path):
     assert result["summary"]["verified"] == 0, (
         f"target in a symlinked-out Makefile must not verify: {result}"
     )
+
+
+# ── Gap 3: under-scan regression — active is scanned, historical is excluded ──
+
+
+def test_active_subsections_and_tables_are_scanned(tmp_path):
+    """Under-scan regression (iter-7 FN1): facts in active ``###`` sub-blocks
+    AND active table rows ARE extracted. The denylist design scans everything
+    not explicitly historical, so the previously-missed cases (a sub-section
+    like PR-1's "First concrete step", a side-workstream table row) are covered."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## PR-1\n\n"
+        "### First concrete step\n\n"
+        "Capture output; see `scripts/extract-plan-facts.py:1` for the shape.\n\n"
+        "## Side items\n\n"
+        "| # | file | note |\n"
+        "|---|---|---|\n"
+        "| 1 | `bootstrap_lib/render.py` | the render map |\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "scripts/extract-plan-facts.py:1" in raws, (
+        f"fact in an active ### sub-block must be scanned: {raws}"
+    )
+    assert "bootstrap_lib/render.py" in raws, f"fact in an active table row must be scanned: {raws}"
+
+
+def test_iteration_log_and_evidence_table_excluded(tmp_path):
+    """Under-scan regression: facts under Iteration log / Evidence table
+    (historical) must NOT be extracted, even though they contain backtick file
+    refs — otherwise the fact-checker would flag now-fixed historical mentions."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Scope\n\nReal active ref: `scripts/verify-plan-facts.py`.\n\n"
+        "## Iteration log\n\n"
+        "iter 1 touched `bogus/iterlog_only.py:999`.\n\n"
+        "## Evidence table\n\n"
+        "| src | file |\n|---|---|\n| x | `bogus/evidence_only.py` |\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "scripts/verify-plan-facts.py" in raws, f"active Scope fact must be extracted: {raws}"
+    assert not any("iterlog_only" in r for r in raws), (
+        f"Iteration log fact leaked into extraction: {raws}"
+    )
+    assert not any("evidence_only" in r for r in raws), (
+        f"Evidence table fact leaked into extraction: {raws}"
+    )
