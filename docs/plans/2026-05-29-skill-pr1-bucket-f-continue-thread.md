@@ -21,23 +21,25 @@ A/B replay gates in the Verification section pass (meta-plan PR-1).
 | D | `shared/scripts-extract-codex-session-id.py.tmpl` (new) | Mirror scope A (same content). |
 | E | `bootstrap_lib/render.py` `SHARED_TEMPLATE_MAP` | Register `D`. |
 | F | `bootstrap_lib/manifest.py` `EXECUTABLE_TARGETS` | Register the script as executable on bootstrap. |
-| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` extended: (a) add `scripts/extract-codex-session-id.py` ↔ `shared/scripts-extract-codex-session-id.py.tmpl` to `_SCRIPT_TEMPLATE_PAIRS` for byte-identity enforcement, (b) assert `scripts/extract-codex-session-id.py` is executable (`chmod +x` / `os.access(X_OK)`). `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json` (writes `THREAD_JSONL_FILE` via plain redirect), then extracts `THREAD_FILE` atomically via `.tmp` + UUID validation + `mv`; extractor failure path — asserts no `THREAD_FILE`, `THREAD_FILE.tmp`, or `THREAD_JSONL_FILE` remains (all three cleaned up); also asserts `THREAD_JSONL_FILE` is deleted on the success path (FN4 fold) and retained when `KEEP_THREAD_JSONL=1` (only on success — failure path always removes it); (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) `"no rollout found for thread id"` exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, runs a one-shot fresh `codex exec` (no `--json`), and asserts BOTH `THREAD_FILE` and `THREAD_JSONL_FILE` remain ABSENT afterward (re-seed happens on the next continue call, not this one — iter-6 FN3); (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
-| H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE`, **`KEEP_THREAD_JSONL`** to `EXACT_DROP` (FN5 fold + FN3 iter-5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Test: shim asserts Codex does not receive these in its environment. |
-| I | `BACKLOG.md` (sweep — not just one entry) | Update the V-13.5 description to the current gate (`turn_context.payload.sandbox_policy.type == "read-only"` + `--skip-git-repo-check` on the `/tmp` probe), **then sweep** for stale text the single-entry edit would miss: `grep -nE 'V-13\.5\|sandbox-denial\|sandbox_policy' BACKLOG.md` and fix every bullet that still enumerates the gate as "sandbox-denial" (notably the "UPDATED to 4-assertion gate" trigger bullet, which currently contradicts the corrected bullet above it). After the sweep, no `BACKLOG.md` line should describe the 2nd gate as "sandbox-denial". Add to rollout commit 4 (docs-only change). |
+| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` extended: (a) add `scripts/extract-codex-session-id.py` ↔ `shared/scripts-extract-codex-session-id.py.tmpl` to `_SCRIPT_TEMPLATE_PAIRS` for byte-identity enforcement, (b) assert `scripts/extract-codex-session-id.py` is executable (`chmod +x` / `os.access(X_OK)`). `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json` (writes `THREAD_JSONL_FILE` via plain redirect), then extracts `THREAD_FILE` atomically via `.tmp` + strict-UUID validation (`8-4-4-4-12` hyphen positions; iter-7 FN3 — negative tests assert all-hyphen, no-hyphen, and wrong-length IDs are REJECTED and trigger the failure cleanup, never promoted to `THREAD_FILE`) + `mv`; extractor failure path — asserts no `THREAD_FILE`, `THREAD_FILE.tmp`, or `THREAD_JSONL_FILE` remains (all three cleaned up); also asserts `THREAD_JSONL_FILE` is deleted on the success path (FN4 fold) and retained when `KEEP_THREAD_JSONL=1` (only on success — failure path always removes it); (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) `"no rollout found for thread id"` exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, runs a one-shot fresh `codex exec` (no `--json`), and asserts BOTH `THREAD_FILE` and `THREAD_JSONL_FILE` remain ABSENT afterward (re-seed happens on the next continue call, not this one — iter-6 FN3); (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
+| H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE`, **`KEEP_THREAD_JSONL`** to `EXACT_DROP` (FN5 fold + FN3 iter-5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Tests: the Makefile shim asserts Codex does not receive these in its environment, **AND** the 4 vars are added to `tests/test_env_scrubber.py` (the repo's existing direct `EXACT_DROP` test) so the scrubber's own exact-drop contract covers them — not just the one Makefile path (iter-7 FN4). |
+| I | `BACKLOG.md` (sweep — not just one entry) | Update the V-13.5 description to the current gate (`turn_context.payload.sandbox_policy.type == "read-only"` + `--skip-git-repo-check` on the `/tmp` probe), **then sweep** for stale text the single-entry edit would miss: `grep -n -e 'V-13[.]5' -e 'sandbox-denial' -e 'sandbox_policy' BACKLOG.md` (multiple `-e` patterns — NOT `|` alternation: inside a markdown table the `|` must be escaped `\|`, which `grep -E` then treats as a *literal* pipe that matches nothing; iter-7 FN2 caught the broken escaped-pipe form) and fix every bullet that still enumerates the gate as "sandbox-denial" (notably the "UPDATED to 4-assertion gate" trigger bullet, which currently contradicts the corrected bullet above it). After the sweep, re-run the same `grep` and require it to show no `BACKLOG.md` line describing the 2nd gate as "sandbox-denial". Add to rollout commit 4 (docs-only change). |
+| J | `scripts/verify-v13-5.py` (new, repo-internal) + `tests/test_verify_v13_5.py` (new) | iter-7 FN1: V-13.5 Part 2 promoted from a manual copy-paste block to a tested verifier script. Orchestrates the live gate (seed → normal-path resume smoke through the Make/clean-env path → `/tmp` inheritance probe → 4-gate + artifact assertions → cleanup, `KEEP_V13_5_JSONL=1` opt-out). Repo-internal — NOT bootstrapped (not in `SHARED_TEMPLATE_MAP`/`EXECUTABLE_TARGETS`); generated projects inherit the proven feature, not the proof harness. Unit tests cover the pure assertion functions (JSONL parse, 4-gate, normal-path artifacts) with fixtures; the live `codex`/`make` calls are the manual pre-merge run only. |
 
 **NOT in scope (no code deliverable)**: default flip from `THREAD_MODE=fresh` → `continue`
-(deferred to post-A/B-replay gates — see Verification). V-13.5 Part 2 live
-inheritance probe (UUID continuity + sandbox-policy-type inheritance + file absence + cwd;
-manual operator step — failure blocks PR merge; run before merging;
-Part 1 is automated via Scope G test-matrix case (3)). Tier-2 bot quality comparison
+(deferred to post-A/B-replay gates — see Verification). Tier-2 bot quality comparison
 (secondary signal only).
+
+(iter-7 FN1: V-13.5 Part 2 is no longer listed here — it moved IN scope as a code
+deliverable, Scope row J above; see Verification.)
 
 ## Architecture decisions
 
 ### Session ID extraction
 **V-13 confirmed (2026-05-29, commit da776ee)**: session ID lives at
-`session_meta.payload.id` in the `--json` event stream (ULIDv7 UUID, NOT
-a top-level `session_id` field). The extraction script reads JSONL line by
+`session_meta.payload.id` in the `--json` event stream (a UUIDv7 — a time-ordered
+UUID in standard `8-4-4-4-12` form, so the strict UUID-validation regex below applies;
+NOT a top-level `session_id` field). The extraction script reads JSONL line by
 line and prints the ID from the first `session_meta` event.
 
 **Guard required**: the first `token_count` event has `info: null`. Any
@@ -56,7 +58,7 @@ On the FIRST call when `THREAD_MODE=continue` and no `THREAD_FILE` exists:
    codex exec --json --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" ... \
      > "$(THREAD_JSONL_FILE)" \
    && scripts/extract-codex-session-id.py "$(THREAD_JSONL_FILE)" > "$(THREAD_FILE).tmp" \
-   && grep -qE '^[0-9a-f-]{36}$' "$(THREAD_FILE).tmp" \
+   && grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' "$(THREAD_FILE).tmp" \
    && mv "$(THREAD_FILE).tmp" "$(THREAD_FILE)" \
    || { rm -f "$(THREAD_FILE).tmp" "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"; \
         echo "ERROR: codex exec or session ID extraction failed"; exit 1; }
@@ -94,10 +96,11 @@ On SUBSEQUENT calls when `THREAD_FILE` exists:
    auth/network/quota errors.
 4. Display review as normal
 
-**V-13.5 exception**: when running the V-13.5 inheritance verification, the
-resume call explicitly uses `--json` to capture the resumed JSONL for
-assertion (see Verification). This is a one-time verification step, not
-normal operation.
+**V-13.5 exception**: the V-13.5 verifier script (`scripts/verify-v13-5.py`, see
+Verification) uses `--json` ONLY in its inheritance-probe step (capturing the resumed
+JSONL for the 4-gate assertion); its normal-path resume smoke step uses the plain Make
+resume path (no `--json`), matching normal operation. This is a one-time pre-merge
+verification, not normal operation.
 
 When `THREAD_MODE=fresh` (the default — unchanged): current behavior, no
 `--json`, no session-ID tracking.
@@ -123,86 +126,67 @@ These paths are stable across sessions for the same repo + plan file, so
 Fixture at `tests/fixtures/codex-json-session.jsonl` (commit da776ee).
 Field path pinned: `session_meta.payload.id`. 7 tests pass.
 
-### V-13.5 — session UUID continuity, sandbox-policy-type inheritance, file absence, and cwd (mixed gate: Part 1 automated, Part 2 manual, failure blocks PR merge)
+### V-13.5 — session UUID continuity, sandbox-policy-type inheritance, file absence, and cwd (Part 1 automated shim test; Part 2 a unit-tested verifier script run live before merge; failure blocks PR merge)
 
 **Part 1 — Makefile resume branch (shim-based, part of automated test matrix)**:
 The test matrix in Scope G item (3) uses a fake codex shim to assert that when
 `THREAD_FILE` exists, the Makefile recipe calls `codex exec resume $SESSION_ID`
 (not `codex exec`). This verifies the Makefile branching logic without a live API call.
 
-**Part 2 — Live inheritance probe (session UUID continuity, sandbox-policy-type inheritance, file absence, cwd)**:
-Run the single self-contained block below **from the repo root** using the actual
-codex CLI (iter-6 FN1 fold — the previous version interleaved `/abs/path/to/repo`,
-`<KEY>`, and `<realpath-of-repo>` placeholders that defeated "copy-pasteable"; this
-version computes every path itself and distinguishes "probe DID NOT RUN" from
-"inheritance FAILED"). What each gate proves:
-- **a. UUID continuity** — `session_meta.payload.id` in the resumed JSONL equals the
-  seed `SESSION_ID` (resume, not restart).
-- **b. sandbox-policy-type inheritance** — first `turn_context.payload.sandbox_policy.type`
-  equals `"read-only"` (deterministic proof the sandbox setting was inherited, not
-  inferred from model behaviour).
-- **c. file absence** — no file at `/tmp/test-v13-5-write.txt` (corroborates b).
-- **d. cwd inheritance** — first `turn_context.payload.cwd` equals the ORIGINAL
-  session's `realpath(CURDIR)`. The probe runs resume from `/tmp` (the contrast
-  condition — FN1 iter-4 fold), so a matching cwd proves inheritance, not caller-cwd.
+**Part 2 — V-13.5 verifier script (`scripts/verify-v13-5.py`, repo-internal; run live before merge)**:
+iter-7 FN1 fold. The earlier copy-paste block seeded through `make review-plan-by-codex`
+but then probed inheritance by calling `codex exec resume --json` **directly**, bypassing
+the Makefile resume branch + `run-with-clean-env.py` wrapper — so it never live-tested the
+NORMAL resumed Make path it claims to gate (that path could fail to materialize output or
+mishandle the cleaned env and still pass the old gate). Promoting the gate to a script lets
+it **(a)** live-test the normal resume path AND **(b)** inspect inheritance, with the pure
+assertion logic unit-tested so the gate stops re-drifting as prose (the recurring imp-3
+across iters 1/4/5/6/7). The script is **repo-internal**: it verifies the skill's own
+dogfood resume behaviour and is NOT bootstrapped to generated projects (they inherit the
+proven feature, not the proof harness), so it is not in `SHARED_TEMPLATE_MAP` /
+`EXECUTABLE_TARGETS`.
 
-```bash
-set -euo pipefail
-REPO="$(git rev-parse --show-toplevel)"            # repo root — computed, no placeholder
-PLAN="docs/plans/2026-05-29-skill-pr1-bucket-f-continue-thread.md"
-KEY=$(python3 -c "import hashlib,os; \
-  k=os.path.realpath('$REPO')+':'+os.path.realpath('$REPO/$PLAN'); \
-  print(hashlib.sha256(k.encode()).hexdigest()[:12])")
-THREAD_FILE="/tmp/plan-review-$KEY.thread"
-JSONL_FILE="/tmp/plan-review-$KEY.session.jsonl"
-PROBE_FILE="/tmp/test-v13-5-write.txt"
-RESUMED_JSONL="/tmp/test-v13-5-resumed.jsonl"
+Run `python3 scripts/verify-v13-5.py` from the repo root before merging. It:
+1. Computes `KEY`/paths, runs `make loop-reset`, asserts clean preconditions (no
+   `THREAD_FILE` / `THREAD_JSONL_FILE` / `PROBE_FILE` / `RESUMED_JSONL`).
+2. **Seeds** a continue session: `make review-plan-by-codex THREAD_MODE=continue
+   ITERATION=1` → asserts `THREAD_FILE` now holds a UUID (`SESSION_ID`), else "probe DID
+   NOT RUN".
+3. **Normal-path resume smoke (the actual gated path)**: `make review-plan-by-codex
+   THREAD_MODE=continue ITERATION=2` (THREAD_FILE exists → resume branch **through**
+   `run-with-clean-env.py`, no `--json`). Asserts: exit 0; `PLAN_REVIEW_OUT_CODEX`
+   materialized (non-empty); `THREAD_FILE` unchanged (same UUID); JSONL cleanup holds
+   (`THREAD_JSONL_FILE` absent by default).
+4. **Inheritance probe (4 gates)**: `cd /tmp && codex exec resume "$SESSION_ID"
+   --skip-git-repo-check --json > RESUMED_JSONL` (the `/tmp` contrast condition;
+   `--skip-git-repo-check` required — codex resume fails in non-git dirs), then asserts ALL
+   FOUR from the resumed JSONL:
+   - **a. UUID continuity** — `session_meta.payload.id == SESSION_ID` (resume, not restart).
+   - **b. sandbox-policy-type inheritance** — first `turn_context.payload.sandbox_policy.type
+     == "read-only"` (deterministic proof the sandbox was inherited, not inferred from model
+     behaviour).
+   - **c. file absence** — no file at `PROBE_FILE` (corroborates b).
+   - **d. cwd inheritance** — first `turn_context.payload.cwd == realpath(repo root)`; a
+     matching cwd when resuming from `/tmp` proves inheritance, not caller-cwd (FN1 iter-4 fold).
+5. **Cleanup (iter-7 FN5)**: on a PASS, removes `RESUMED_JSONL` + `PROBE_FILE` (same
+   data-exposure rationale as `THREAD_JSONL_FILE`); on a FAILURE it RETAINS them so the
+   failed gate can be debugged; `KEEP_V13_5_JSONL=1` retains them regardless. (This
+   success-only cleanup is the deliberate inverse of `KEEP_THREAD_JSONL`'s
+   always-remove-on-failure rule — the verifier's artifacts are short-lived debugging aids
+   for a one-time manual gate run, not persistent state, so retaining them on failure aids
+   debugging without a standing leak.)
+6. Exits non-zero on any failed assertion, distinguishing "probe DID NOT RUN" (a seed/resume
+   command failed) from "inheritance/normal-path FAILED" (an assertion failed).
 
-# (1) Clear stale state; assert clean preconditions
-make -C "$REPO" loop-reset PLAN_FILE="$PLAN"
-test ! -e "$THREAD_FILE" || { echo "ERROR: THREAD_FILE not cleaned up"; exit 1; }
-test ! -e "$JSONL_FILE"  || { echo "ERROR: THREAD_JSONL_FILE not cleaned up"; exit 1; }
-test ! -e "$PROBE_FILE"  || { echo "ERROR: clean up $PROBE_FILE first"; exit 1; }
-rm -f "$RESUMED_JSONL"
+**Unit tests** (`tests/test_verify_v13_5.py`): cover the script's **pure** functions — JSONL
+parsing, the 4-gate check, and the normal-path artifact check — using fixtures (the committed
+`codex-json-session.jsonl` plus a resumed-JSONL fixture with PASS and FAIL variants). The
+live `codex` / `make` calls are exercised only by the manual pre-merge run, not by the unit
+tests (no live API call in CI).
 
-# (2) Seed a fresh continue session (writes THREAD_FILE; JSONL deleted by default)
-make -C "$REPO" review-plan-by-codex PLAN_FILE="$PLAN" ITERATION=1 THREAD_MODE=continue
-test -s "$THREAD_FILE" || { echo "ERROR: seed wrote no THREAD_FILE — probe DID NOT RUN"; exit 1; }
-SESSION_ID="$(cat "$THREAD_FILE")"
-echo "Probing session: $SESSION_ID"
-
-# (3) Probe inheritance from a DIFFERENT cwd (/tmp) — the contrast condition.
-#     --skip-git-repo-check required (codex exec resume fails in non-git dirs).
-( cd /tmp && codex exec resume "$SESSION_ID" --skip-git-repo-check --json \
-    "Attempt to create a file at $PROBE_FILE. Report what happened." \
-    > "$RESUMED_JSONL" ) \
-  || { echo "ERROR: resume failed — probe DID NOT RUN (distinct from inheritance FAILED)"; exit 1; }
-test -s "$RESUMED_JSONL" || { echo "ERROR: no resumed JSONL captured — probe DID NOT RUN"; exit 1; }
-
-# (4) Assert ALL FOUR (Python reads paths from the environment — no placeholders)
-REPO_CWD="$(cd "$REPO" && pwd -P)" \
-SESSION_ID="$SESSION_ID" RESUMED_JSONL="$RESUMED_JSONL" PROBE_FILE="$PROBE_FILE" \
-python3 - <<'PY'
-import json, os, sys
-events       = [json.loads(l) for l in open(os.environ["RESUMED_JSONL"]) if l.strip()]
-session_meta = next(e for e in events if e.get("type") == "session_meta")
-turn_ctx     = next(e for e in events if e.get("type") == "turn_context")
-results = {
-  "uuid_continuity":   session_meta["payload"]["id"] == os.environ["SESSION_ID"],
-  "sandbox_read_only": turn_ctx["payload"]["sandbox_policy"]["type"] == "read-only",
-  "cwd_inherited":     turn_ctx["payload"]["cwd"] == os.environ["REPO_CWD"],
-  "file_absent":       not os.path.exists(os.environ["PROBE_FILE"]),
-}
-for k, v in results.items():
-    print(f"{'PASS' if v else 'FAIL'}: {k}")
-if not all(results.values()):
-    sys.exit(1)
-print("ALL FOUR PASS")
-PY
-```
-If any assertion fails (non-zero exit): this PR must NOT merge. The `THREAD_MODE=continue`
-branch is unsafe until V-13.5 passes. File a bug and keep `THREAD_MODE=fresh` (the safe
-default) until fixed.
+If the verifier exits non-zero: this PR must NOT merge. The `THREAD_MODE=continue` branch is
+unsafe until V-13.5 passes. File a bug and keep `THREAD_MODE=fresh` (the safe default) until
+fixed.
 
 ### A/B replay gates (required before default flip; POST-PR-1)
 Per meta-plan PR-1 Verification: pick a real folded plan + its committed
@@ -232,9 +216,9 @@ is opt-in via env var.
 | Risk | Mitigation |
 |------|-----------|
 | `--json` breaks current review display | `--output-last-message` file is unchanged; `cat` at end still works. V-13.5 Part 2 checks inheritance, not display — display is verified by the `--output-last-message` path independently. |
-| `codex exec resume` drops `-C`/`--sandbox` | V-13.5 Part 2 all-4-gate failure blocks PR merge (continue branch is unsafe). |
+| `codex exec resume` drops `-C`/`--sandbox` | V-13.5 verifier failure (4-gate inheritance probe OR normal-path resume smoke) blocks PR merge (continue branch is unsafe). |
 | THREAD_JSONL_FILE data exposure | Written during first-continue call then deleted after successful extraction (default). Stale JSONL doesn't persist across runs. `KEEP_THREAD_JSONL=1` retains it for debugging (success-path only; failure path always removes it). |
-| V-13.5 Part 2 needs `--json` on resume but normal ops don't | V-13.5 is a one-time manual gate; it explicitly passes `--json` to the `codex exec resume` probe command. Normal resumed calls in `review-plan-by-codex` do NOT use `--json`. |
+| V-13.5 Part 2 needs `--json` on resume but normal ops don't | The V-13.5 verifier script uses `--json` ONLY in its inheritance-probe step; its normal-path resume smoke step — and all normal resumed calls in `review-plan-by-codex` — do NOT use `--json`. |
 | `info: null` guard missing in future A/B code | Parked reminder in BACKLOG. Not in this PR's scope. |
 | Makefile recipe leaves corrupt state on extraction failure | On failure: removes `THREAD_FILE.tmp` + `THREAD_FILE` + `THREAD_JSONL_FILE` (all three). Test case 2 in `test_makefile_review_targets.py` asserts none of the three remain on extractor failure. |
 | Session TTL: fallback swallows unrelated failures | Recipe captures stderr and falls back ONLY when stderr contains `"no rollout found for thread id"` (pinned by live probe 2026-05-29). All other non-zero exits propagate unchanged. Two tests: positive fallback + unrelated-failure must NOT clear thread state. |
@@ -260,13 +244,16 @@ is opt-in via env var.
 | 1 | `scripts/extract-codex-session-id.py` + unit tests (no-session-meta → non-zero exit; reads JSONL, prints session ID) | `scripts/extract-codex-session-id.py`, `tests/test_extract_codex_session_id.py` |
 | 2 | Extend Makefile + template (THREAD vars, atomic recipe branch, `&&`-gated extraction, THREAD_JSONL_FILE deletion + `KEEP_THREAD_JSONL=1` opt-out, stale-session exact-match fallback, loop-reset cleanup) | `Makefile`, `shared/Makefile.review.tmpl` |
 | 3 | Register in SHARED_TEMPLATE_MAP + EXECUTABLE_TARGETS; add THREAD_MODE/FILE/JSONL_FILE + KEEP_THREAD_JSONL to clean-env EXACT_DROP | `bootstrap_lib/render.py`, `bootstrap_lib/manifest.py`, `shared/scripts-extract-codex-session-id.py.tmpl`, `scripts/run-with-clean-env.py`, `shared/scripts-run-with-clean-env.py.tmpl` |
-| 4 | Extend selftest-overlap + makefile-review-targets tests (6-case matrix: 1/2/3/4a/4b/5 + clean-env leak test); update + sweep BACKLOG.md V-13.5 references (Scope I — docs-only) | `tests/test_selftest_overlap.py`, `tests/test_makefile_review_targets.py`, `BACKLOG.md` |
+| 4 | Extend selftest-overlap + makefile-review-targets tests (6-case matrix: 1/2/3/4a/4b/5 + clean-env leak test); add `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE`/`KEEP_THREAD_JSONL` to `tests/test_env_scrubber.py` exact-drop assertions (iter-7 FN4); update + sweep BACKLOG.md V-13.5 references (Scope I — docs-only) | `tests/test_selftest_overlap.py`, `tests/test_makefile_review_targets.py`, `tests/test_env_scrubber.py`, `BACKLOG.md` |
+| 5 | `scripts/verify-v13-5.py` (V-13.5 verifier) + `tests/test_verify_v13_5.py` (unit tests for its pure assertion functions — JSONL parse, 4-gate, normal-path artifacts) (iter-7 FN1) | `scripts/verify-v13-5.py`, `tests/test_verify_v13_5.py` |
 
 Tier-1 review (same-AI fresh subagent) after each commit before push.
-`make check` passes before commit 4 merges. V-13.5 Part 2 manual gate runs after
-commit 3 (after `run-with-clean-env.py` EXACT_DROP change — FN3 iter-4 fold) and
-before the PR is opened for Tier-2 review. The gate tests the final execution path
-(including the clean-env wrapper), not a partial state.
+`make check` passes before the final commit merges. The **V-13.5 verifier**
+(`python3 scripts/verify-v13-5.py`, commit 5) runs **live after commit 5** — i.e., after
+the `run-with-clean-env.py` EXACT_DROP change (commit 3) AND after the verifier itself
+exists — and before the PR is opened for Tier-2 review. It exercises the final execution
+path (the normal `THREAD_MODE=continue` resume branch *through* `run-with-clean-env.py`,
+plus the inheritance probe), not a partial state (iter-7 FN1).
 
 ## Outcome measurement
 
@@ -309,6 +296,8 @@ No business metric — internal change. Measurable proxies post-merge:
 | 6.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 5 (all soft) | folded | Reviewer verdict: "largely internally consistent, no substantive contradictions." D1 (a) Lessons iter-enumeration re-flagged (iters 2/3 also touched V-13.5) → removed the iter list. D2–D5 (driver-exit): UUID-vs-session-UUID wording; cwd-vs-cwd-inheritance header/detail gradient (surfaces internally consistent); historical pinned-string-command narrative (output string unchanged); commit-4-vs-V-13.5 sequencing (commit-4 is docs/tests-only, execution-path claim holds). Substantive invariants PASSED. NOTE: D1's iter-list removal was a half-measure — the defect-type enumeration still competed with the Evidence table; 6.5e/6.5f below land the full strip. |
 | 6.5e | Claude (consistency self-check, round 5) | 2026-05-29 | doc-drift × 3 | folded | Caught that the Lessons "enumeration vs Evidence table" magnet still wasn't dead: "one proof-validity fix" undercounted (Evidence table has 2 — iter-3 FN2 + iter-4 FN1); the executability list omitted iter-3 FN3 (stale-state precondition). (minor) Scope G 4a asserted both-absent but Architecture/Rollback only said THREAD_FILE. |
 | 6.5f | Claude (consistency self-check, round 6) | 2026-05-29 | 0 substantive (driver-exit) | folded + driver-exit | Landed the definitive durable fix the checker recommended: stripped ALL iter/type/count enumeration from Lessons surfaced (now "multiple executability and proof-validity fixes — see Evidence table"), so it can no longer drift against the Evidence table on future V-13.5 folds. Aligned Architecture step 3 + Rollback to state both THREAD_FILE + THREAD_JSONL_FILE stay absent post-fallback (matches Scope G 4a). 6-round consistency cycle (6.5/b/c/d/e/f): every round confirmed the substantive invariants (V-13.5 4-gate, KEEP/stale/fallback/EXACT_DROP/counts); all drift was narrative/precision (the recurring item was the Lessons magnet, now neutralized). Driver-exit (5.5b precedent). Loop-ack stamped; ready for iter 7. |
+| 7 | Codex | 2026-05-29 | 1 / 4 / 0 | do not implement yet | **Driver-decision point** (handoff): imp-3 stuck at 1, 5th iter on V-13.5 (a structural manual-prose-gate problem). Surfaced to user → chose **option A: script V-13.5**. FN1 (imp-3) (a) the V-13.5 probe bypassed the Make resume path it claimed to gate (direct `codex exec resume --json` vs the `run-with-clean-env.py`-wrapped Make branch; contradicted the rollout's "tests the final execution path" claim) → promoted Part 2 to a tested verifier `scripts/verify-v13-5.py` (repo-internal, Scope row J + commit 5): seeds → NORMAL-PATH resume smoke through the wrapper (exit 0 + output materialized + THREAD_FILE unchanged + JSONL cleanup) → `/tmp` `--json` inheritance probe (4 gates) → cleanup; pure assertion logic unit-tested; moved Part 2 OUT of NOT-in-scope. FN2 (imp-2) (a) the iter-6 BACKLOG sweep grep was broken — `'V-13\.5\|...'` escaped pipes are literals in ERE (verified: 0 matches) → `grep -n -e ... -e ... -e ...` (no pipes, table-safe). FN3 (imp-2) (a) loose UUID regex `[0-9a-f-]{36}` → strict `8-4-4-4-12` + negative tests (all-hyphen/no-hyphen/wrong-length rejected). FN4 (imp-2) (a) clean-env coverage only on the Makefile shim → also add the 4 vars to `tests/test_env_scrubber.py` (existing direct EXACT_DROP test). FN5 (imp-2) (a) manual probe left `/tmp/test-v13-5-resumed.jsonl` uncleaned → subsumed by FN1 (the verifier cleans RESUMED_JSONL + PROBE_FILE; `KEEP_V13_5_JSONL=1` opt-out). imp-3 trajectory 2→3→3→2→2→1→1. |
+| 7.5 | Claude (consistency self-check; rounds a–c) | 2026-05-29 | doc-drift × 3→2→0 | folded + driver-exit | Round a: caught a regression *I* introduced in the iter-7 fold — the Lessons rewrite re-added the iter-enumeration ("iters 1,4,5,6,7" + "5 iters") that iter-6.5f had stripped as the drift-magnet (and it undercounted vs the Evidence table) → re-applied 6.5f's strip (the iter-7 "folds introduce defects" Lessons bullet, lived in real time). Round b: (a) "ULIDv7 UUID" (line 41) was self-contradictory — the FN3 strict-UUID regex surfaced the latent error → "UUIDv7"; (a) the verifier's `KEEP_V13_5_JSONL` cleanup semantics were unspecified → pinned (success-only cleanup; retain on failure for debugging; deliberate inverse of `KEEP_THREAD_JSONL`). Driver-exit: V-13.5 header "inheritance" gradient (already accepted iter-6.5d), and the 6.5f-log-quote-vs-current-Lessons mismatch (frozen historical narrative). Substantive invariants PASSED every round. Round c = final stamp on this row. Loop-ack stamped; ready for iter 8. |
 
 ## Evidence table — what was folded and where
 
@@ -342,7 +331,12 @@ No business metric — internal change. Measurable proxies post-merge:
 | Codex iter-6 FN2 | Architecture's unconditional `rm -f THREAD_JSONL_FILE` fence contradicted the `KEEP_THREAD_JSONL=1` prose | 2 | Made the fence conditional: `[ "$${KEEP_THREAD_JSONL:-}" = "1" ] \|\| rm -f`. | Architecture step 2 |
 | Codex iter-6 FN3 | Stale-session fallback didn't define whether it re-seeds a new THREAD_FILE | 2 | Specified one-shot fresh (no re-seed; THREAD_FILE stays absent; next continue call self-heals). Scope G 4a asserts absence. | Architecture subsequent-call; Scope G 4a; Rollback |
 | Codex iter-6 FN4 | Plan lacked Evidence table + Lessons surfaced; Critical files not last (README §6/§8/§9) | 2 | Added this Evidence table + Lessons surfaced; moved Critical files to the end. | Iteration log; Evidence table (new); Lessons surfaced (new); Critical files (moved last) |
-| Codex iter-6 FN5 | Scope I's single-entry update would miss stale "sandbox-denial" at BACKLOG:122 | 2 | Broadened Scope I to a `grep`-driven sweep of BACKLOG.md. | Scope I; Critical files |
+| Codex iter-6 FN5 | Scope I's single-entry update would miss stale "sandbox-denial" at BACKLOG:122 | 2 | Broadened Scope I to a `grep`-driven sweep of BACKLOG.md. **[sweep command itself fixed by iter-7 FN2 — the escaped-pipe form was broken]** | Scope I; Critical files |
+| Codex iter-7 FN1 | V-13.5 probe called `codex exec resume --json` directly, bypassing the Make resume branch + clean-env wrapper it claims to gate — so the normal resume path was never live-tested (contradicted the rollout's "tests the final execution path" claim) | 3 | **Driver chose option A (script it).** Promoted V-13.5 Part 2 to a tested verifier `scripts/verify-v13-5.py` (repo-internal): seed → normal-path resume smoke *through* `run-with-clean-env.py` → `/tmp` `--json` inheritance probe (4 gates) → cleanup; pure assertion logic unit-tested. Moved Part 2 OUT of NOT-in-scope into Scope J + commit 5. Structurally ends the recurring V-13.5 imp-3 (code reviewed once + unit-tested, not re-litigated as prose). | NOT-in-scope; Scope row J (new); Verification V-13.5 (header + Part 2); Architecture V-13.5 exception; Implementation rollout (commit 5 + gate timing); Critical files; Lessons surfaced; Iteration log |
+| Codex iter-7 FN2 | The iter-6 FN5 BACKLOG sweep grep `'V-13\.5\|sandbox-denial\|sandbox_policy'` is broken — escaped `\|` are *literal* pipes in ERE, so it matches nothing (verified: 0 hits, while the real stale text sits at BACKLOG:122) | 2 | Replaced with `grep -n -e 'V-13[.]5' -e 'sandbox-denial' -e 'sandbox_policy'` (multiple `-e`, no pipe chars — table-safe AND functional); require a post-edit re-run to show no stale wording. | Scope I (supersedes the iter-6 FN5 sweep command) |
+| Codex iter-7 FN3 | UUID-validation regex `^[0-9a-f-]{36}$` too loose — accepts 36 hyphens or no-hyphen hex, so a malformed ID could be promoted to durable `THREAD_FILE` | 2 | Tightened to strict `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`; added negative tests (all-hyphen / no-hyphen / wrong-length → rejected → failure cleanup fires, never promoted). | Architecture first-continue snippet; Scope G case 2 |
+| Codex iter-7 FN4 | Clean-env verification assigned only to the new Makefile shim; the repo's existing `tests/test_env_scrubber.py` (direct `EXACT_DROP` test) omits the 4 new vars, so the scrubber's own contract can drift | 2 | Add the 4 THREAD vars to `tests/test_env_scrubber.py` setup + stripped assertions; list it in Scope H, rollout commit 4, and Critical files. | Scope H; Implementation rollout commit 4; Critical files |
+| Codex iter-7 FN5 | The manual V-13.5 probe wrote `/tmp/test-v13-5-resumed.jsonl` with no post-run cleanup — same data-exposure class as `THREAD_JSONL_FILE` | 2 | **Subsumed by FN1**: the verifier script removes `RESUMED_JSONL` + `PROBE_FILE` after asserting, with a `KEEP_V13_5_JSONL=1` debug opt-out. | Verification V-13.5 Part 2 (cleanup step) |
 
 ## Implementation log
 
@@ -351,16 +345,24 @@ No business metric — internal change. Measurable proxies post-merge:
 
 ## Lessons surfaced (this PR)
 
-- **Manual copy-paste verification gates accrue defects across iters.**
-  V-13.5 Part 2 needed multiple executability and proof-validity fixes across the loop
-  (see the Evidence table for the per-iter detail) — each a different way the manual gate
-  fell short. For a *safety-critical* gate (this one blocks
-  PR merge), a prose / copy-paste block is hard to get right in one pass. **Rule
-  candidate**: when a verification step is BOTH safety-critical AND repeatedly flagged
-  for executability or proof-validity, prefer promoting it to an actual tested script
-  over iterating on a manual block. Deferred here (would expand this PR's scope + change
-  the NOT-in-scope line); flagged for the driver as the decision point if iter-7 surfaces
-  yet another V-13.5 gate defect. Candidate for `LESSONS.md`.
+- **Manual prose verification gates for runtime behaviour accrue defects across iters — change their FORM, don't keep re-wording.**
+  V-13.5 Part 2 generated fresh review findings repeatedly throughout this loop (see the
+  Evidence table for the per-iter record) — each a different way a prose gate fell short of
+  verifying runtime behaviour; at iter 7 it was found to test the wrong path entirely (a
+  direct `--json` probe, not the Make resume path it claimed to gate). **Resolution
+  (iter-7, driver-approved option A):** promoted V-13.5 to a tested verifier script
+  (`scripts/verify-v13-5.py` + unit tests on its pure logic) — code is reviewed once and
+  unit-tested, so it stops re-drifting as prose. **Rule (strong `LESSONS.md` candidate):**
+  when a verification step is BOTH safety-critical AND covers runtime behaviour a prose
+  block can't fully capture, script + unit-test it from the START rather than specifying it
+  in prose. **Plan-loop signal:** if the SAME section keeps generating an imp-3 across
+  several consecutive iters, the section is structurally wrong for prose — change its form
+  and surface a driver decision rather than looping (what happened here → driver chose to
+  script it).
+- **Folds can introduce new defects — re-review the fold itself.** iter-7 FN2 (broken
+  escaped-pipe grep) and FN5 (uncleaned RESUMED_JSONL) were both defects introduced by
+  iter-6 folds. Echoes the over-defensive-folds lesson (`LESSONS.md` 2026-05-27): a fold is
+  new code/text and deserves the same scrutiny as the original.
 
 ## Critical files
 
@@ -376,3 +378,6 @@ No business metric — internal change. Measurable proxies post-merge:
 - `tests/fixtures/codex-json-session.jsonl` — already committed (V-13)
 - `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` — add THREAD_MODE/FILE/JSONL_FILE/KEEP_THREAD_JSONL to EXACT_DROP
 - `BACKLOG.md` — update V-13.5 description **and sweep stale `sandbox-denial` text** (`sandbox_policy.type` check + `--skip-git-repo-check`; see Scope I)
+- `scripts/verify-v13-5.py` (new, repo-internal) — the V-13.5 verifier (iter-7 FN1); NOT bootstrapped (not in `SHARED_TEMPLATE_MAP`/`EXECUTABLE_TARGETS`)
+- `tests/test_verify_v13_5.py` (new) — unit tests for the verifier's pure assertion functions (JSONL parse, 4-gate, normal-path artifacts) using fixtures; no live calls
+- `tests/test_env_scrubber.py` — add `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE`/`KEEP_THREAD_JSONL` to its `EXACT_DROP` assertions (iter-7 FN4)
