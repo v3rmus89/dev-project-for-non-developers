@@ -168,8 +168,8 @@ Run FROM the repo root using the actual codex CLI:
       from the ORIGINAL session (cwd inherited)
 
 If any assertion fails: this PR must NOT merge. The `THREAD_MODE=continue` branch is unsafe
-(not merely unsuitable as default) until V-13.5 passes. File a bug and keep `THREAD_MODE`
-= undefined (disabling the continue branch) until fixed.
+(not merely unsuitable as default) until V-13.5 passes. File a bug and keep `THREAD_MODE=fresh`
+(the safe default) until fixed.
 
 ### A/B replay gates (required before default flip; POST-PR-1)
 Per meta-plan PR-1 Verification: pick a real folded plan + its committed
@@ -275,8 +275,9 @@ No business metric — internal change. Measurable proxies post-merge:
 | 3.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 1 | folded | D1 Part 2 sub-header still said "sandbox policy" after 3.5 D4 rename → added "sandbox-policy-type". |
 | 3.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Scope G case (4a) used colloquial "session not found" → updated to pinned `"no rollout found for thread id"`. D2 NOT-in-scope said "sandbox-policy-type check" but header says "inheritance" → updated. |
 | 3.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 3 | folded | D1 Missing 3.5b log entry (was placed before 3.5) → reordered + added. D2 Part 2 sub-header lacked "inheritance" qualifier → added. D3 Asymmetric cleanup note: THREAD_JSONL_FILE not removed on extraction failure → added explanatory note (intentional; harmless; overwritten on next call). |
-| 4.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 6 + 1 process-obs | folded | All 6 from iter-4 FN4 fold not propagated. D1/D3 Scope G case (2) test missing THREAD_JSONL_FILE absence + JSONL-deletion assertions → added. D2 Risks row 6 omitted THREAD_JSONL_FILE from failure cleanup → updated to "all three". D4 KEEP_THREAD_JSONL semantics ambiguous (applies success-only; failure always removes) → clarified. D5 Risks row 3 stale (JSONL no longer persists by default) → rewritten as "data exposure" row. D6 Rollout commit 2 missing JSONL deletion + KEEP_THREAD_JSONL opt-out → added. D7 (process-obs, c) no 3.5e stable row in iter log — accepted as historical gap. |
 | 4 | Codex | 2026-05-29 | 2 / 2 / 1 | do not implement yet | FN1 (imp-3) (a) V-13.5 probe runs from same cwd as seed → cwd assertion trivially passes; contrast requires running resume from /tmp. FN2 (imp-3) (a) first-continue path doesn't gate extraction on codex exit → `&&` chain + clean all three artifacts on failure. FN3 (imp-2) (a) V-13.5 live gate scheduled after commit 2 but commit 3 changes execution path → gate moved to after commit 3. FN4 (imp-2) (a) THREAD_JSONL_FILE retained in /tmp exposes review content → delete after successful extraction (KEEP_THREAD_JSONL=1 opt-out). FN5 (imp-1) (a) iter log had 3.5b before 3.5 → reordered. |
+| 4.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 6 + 1 process-obs | folded | All 6 from iter-4 FN4 fold not propagated. D1/D3 Scope G case (2) test missing THREAD_JSONL_FILE absence + JSONL-deletion assertions → added. D2 Risks row 6 omitted THREAD_JSONL_FILE from failure cleanup → updated to "all three". D4 KEEP_THREAD_JSONL semantics ambiguous (applies success-only; failure always removes) → clarified. D5 Risks row 3 stale (JSONL no longer persists by default) → rewritten as "data exposure" row. D6 Rollout commit 2 missing JSONL deletion + KEEP_THREAD_JSONL opt-out → added. D7 (process-obs, c) no 3.5e stable row in iter log — accepted as historical gap. |
+| 4.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 2 | folded | D1 Iter log had 4.5 before 4 → reordered. D2 V-13.5 failure action said THREAD_MODE=undefined → standardized to THREAD_MODE=fresh. |
 
 ## Implementation log
 
