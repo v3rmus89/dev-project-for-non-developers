@@ -98,19 +98,37 @@ still useful.
 
 **Status**: parked — Bucket F was scoped out of PR #10. Two blocking verification gates must pass before flipping the Codex thread-continuation default from `fresh` to `continue` (iter-7 F2 fold).
 
+**V-13 COMPLETE (2026-05-29, commit da776ee)**: fixture captured at
+`tests/fixtures/codex-json-session.jsonl`; 7 validation tests pass. Key findings:
+- **Session ID field confirmed**: `session_meta.payload.id` (ULIDv7 UUID) — NOT a
+  top-level `session_id`. Bucket F must extract `payload["id"]` from `session_meta`
+  events, not a top-level field.
+- **Cache token field confirmed**: `event_msg.payload.info.total_token_usage.cached_input_tokens`
+  (field name matches plan assumption).
+- **Guard required**: `info` can be `null` on the first `token_count` event (before
+  the model's first call). Any Bucket F code reading `cached_input_tokens` must guard
+  `if info is not None`. Fixture null-info variant + guard test parked below.
+
 **Trigger to pick up**:
-- A real `codex exec --json` JSONL output is captured to `tests/fixtures/codex-json-session.jsonl` and the `session_id` field name is verified (iter-1 F5 / V-13).
+- ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
 - V-13.5 passes: all 3 required assertions succeed — sandbox-denial event in JSONL stdout + file absence + `pwd == realpath(CURDIR)` (iter-5 F4).
 - A long plan loop (>8 iters) makes Codex token cost a real operational concern.
 
 **Starting requirements (iter-1..5 F-series findings)**:
-- iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested — real field name may differ; default flipped to `fresh`; `continue` deferred until V-13 passes on a real fixture.
+- ~~iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested~~ — **RESOLVED by V-13**. Field is `session_meta.payload.id`.
 - iter-3 F2 / iter-4 F2: `codex exec resume` + `-C/--sandbox` flag controversy — defensive re-passing is CLI-rejected; rely on session inheritance; V-13.5 is the verification gate.
 - iter-5 F4: V-13.5 file-absence-only check can false-pass → strengthened to 3-assertion gate (sandbox-denial event + file absence + cwd assertion).
-- V-13 protocol: capture `codex exec --json` to `tests/fixtures/codex-json-session.jsonl`; verify `session_id` field name against real output.
 - V-13.5 protocol: run `make review-plan-by-codex PLAN_FILE=… ITERATION=1` inside a read-only sandbox; assert all 3 gates pass before flipping default.
 
-**Rough effort**: ~half a day to capture the fixture + run V-13/V-13.5 gates; ~1 day for the full Bucket F implementation if gates pass.
+**Parked items from V-13 Tier-1 review (2026-05-29)**:
+- (F1) Add null-info `token_count` fixture line + `test_token_count_info_can_be_null`
+  test before any Bucket F code reads `info.total_token_usage`.
+- (F2) Add `test_no_user_instructions_or_base_instructions` assertion (absent-or-short)
+  before any fixture update that includes these large fields from the real stream.
+- (F3/F4) Extend fixture with `turn_context` stubs (`effort`, `permission_profile`,
+  `user_instructions=null`) and `session_meta.git` block before Bucket F impl.
+
+**Rough effort**: V-13 complete (~30 min actual). Remaining: ~30 min V-13.5 + ~1 day full impl.
 
 ---
 
