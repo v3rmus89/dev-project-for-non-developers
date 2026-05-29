@@ -140,7 +140,8 @@ Run FROM the repo root using the actual codex CLI:
    make -C /abs/path/to/repo review-plan-by-codex \
      PLAN_FILE="$PLAN" ITERATION=1 THREAD_MODE=continue
    ```
-   → `THREAD_JSONL_FILE` is written; `THREAD_FILE` contains a UUID (`SESSION_ID`).
+   → `THREAD_FILE` contains a UUID (`SESSION_ID`); `THREAD_JSONL_FILE` is written
+   then deleted by default (set `KEEP_THREAD_JSONL=1` to retain it for debugging).
 3. Probe inheritance from a DIFFERENT directory (FN1 iter-4 fold — contrast condition):
    Running resume from a different cwd is the only way to distinguish "resume
    inherited the original cwd" from "resume used the caller's current cwd".
