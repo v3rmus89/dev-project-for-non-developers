@@ -21,7 +21,7 @@ A/B replay gates in the Verification section pass (meta-plan PR-1).
 | D | `shared/scripts-extract-codex-session-id.py.tmpl` (new) | Mirror scope A (same content). |
 | E | `bootstrap_lib/render.py` `SHARED_TEMPLATE_MAP` | Register `D`. |
 | F | `bootstrap_lib/manifest.py` `EXECUTABLE_TARGETS` | Register the script as executable on bootstrap. |
-| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A, including JSONL-with-no-session-meta → assert no THREAD_FILE remains). `tests/test_selftest_overlap.py` + `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json`, writes `THREAD_FILE` + `THREAD_JSONL_FILE` atomically; (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) "session not found" exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, starts fresh; (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
+| G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` + `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json`, writes `THREAD_FILE` + `THREAD_JSONL_FILE` atomically; (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) "session not found" exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, starts fresh; (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
 | H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE` to `EXACT_DROP` (FN5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Test: shim asserts Codex does not receive these in its environment. |
 
 **NOT in scope (no code deliverable)**: default flip from `THREAD_MODE=fresh` → `continue`
@@ -65,12 +65,14 @@ On SUBSEQUENT calls when `THREAD_FILE` exists:
 1. Read `SESSION_ID = $(cat $(THREAD_FILE))`
 2. Run `codex exec resume $SESSION_ID --output-last-message ...`
    (`--json` NOT needed for normal operation — session ID already known)
-3. On resume failure: capture stderr; log a warning; if it matches the pinned
-   "session not found" error string (pinned by running `codex exec resume
-   NONEXISTENT-UUID` before impl and recording the exact stderr text — same
-   approach as V-13 fixture capture), clear `THREAD_FILE` + `THREAD_JSONL_FILE`
-   and fall back to a fresh `codex exec` call. Any OTHER non-zero exit propagates
-   unchanged — do NOT swallow auth/network/quota errors.
+3. On resume failure: capture stderr; log a warning; if it contains the pinned
+   string `"no rollout found for thread id"` (verified 2026-05-29 by running
+   `codex exec resume 00000000-0000-0000-0000-000000000000 --ephemeral NOOP`,
+   which emits `Error: thread/resume: thread/resume failed: no rollout found for
+   thread id 00000000-0000-0000-0000-000000000000 (code -32600)`), clear
+   `THREAD_FILE` + `THREAD_JSONL_FILE` and fall back to a fresh `codex exec`
+   call. Any OTHER non-zero exit propagates unchanged — do NOT swallow
+   auth/network/quota errors.
 4. Display review as normal
 
 **V-13.5 exception**: when running the V-13.5 inheritance verification, the
@@ -102,7 +104,7 @@ These paths are stable across sessions for the same repo + plan file, so
 Fixture at `tests/fixtures/codex-json-session.jsonl` (commit da776ee).
 Field path pinned: `session_meta.payload.id`. 7 tests pass.
 
-### V-13.5 — sandbox and cwd inheritance (mixed gate: Part 1 automated, Part 2 manual, required before merge)
+### V-13.5 — session UUID continuity, sandbox-denial, file absence, and cwd inheritance (mixed gate: Part 1 automated, Part 2 manual, required before merge)
 
 **Part 1 — Makefile resume branch (shim-based, part of automated test matrix)**:
 The test matrix in Scope G item (3) uses a fake codex shim to assert that when
@@ -192,8 +194,8 @@ is opt-in via env var.
 | THREAD_JSONL_FILE grows large | First-continue call writes it once; subsequent resumed calls don't capture JSONL. No accumulation across iters. |
 | V-13.5 Part 2 needs `--json` on resume but normal ops don't | V-13.5 is a one-time manual gate; it explicitly passes `--json` to the `codex exec resume` probe command. Normal resumed calls in `review-plan-by-codex` do NOT use `--json`. |
 | `info: null` guard missing in future A/B code | Parked reminder in BACKLOG. Not in this PR's scope. |
-| Extraction script leaves corrupt THREAD_FILE on failure | Atomic write: extract to `.tmp`, validate UUID format, mv only on success; on failure remove tmp + state file. Test: JSONL-with-no-session-meta → assert no THREAD_FILE. |
-| Session TTL: fallback swallows unrelated failures | Recipe captures stderr and falls back ONLY when stderr matches the pinned "session not found" string (pinned in a pre-impl fixture step — see FN3 note in Architecture). All other non-zero exits propagate unchanged. Two tests: positive fallback + unrelated-failure must NOT clear thread state. |
+| Makefile recipe leaves corrupt THREAD_FILE on extraction failure | Atomic write in recipe: extract to `.tmp`, validate UUID format (`grep -qE '^[0-9a-f-]{36}$'`), mv only on success; on failure remove tmp + state file. Test case 2 in `test_makefile_review_targets.py` asserts no THREAD_FILE remains on extractor failure. |
+| Session TTL: fallback swallows unrelated failures | Recipe captures stderr and falls back ONLY when stderr contains `"no rollout found for thread id"` (pinned by live probe 2026-05-29). All other non-zero exits propagate unchanged. Two tests: positive fallback + unrelated-failure must NOT clear thread state. |
 | A/B replay has no JSONL capture path for resumed iters | A/B replay bypasses the Makefile and uses direct `codex exec/resume --json` CLI commands (not the Make target). The Make target is for normal operation; the A/B measurement tool is a separate script. |
 
 ## Rollback
@@ -212,7 +214,7 @@ is opt-in via env var.
 
 | Commit | Scope | Files |
 |--------|-------|-------|
-| 1 | `scripts/extract-codex-session-id.py` + unit tests (atomic write + UUID validation + no-session-meta guard) | `scripts/extract-codex-session-id.py`, `tests/test_extract_codex_session_id.py` |
+| 1 | `scripts/extract-codex-session-id.py` + unit tests (no-session-meta → non-zero exit; reads JSONL, prints session ID) | `scripts/extract-codex-session-id.py`, `tests/test_extract_codex_session_id.py` |
 | 2 | Extend Makefile + template (THREAD vars, atomic recipe branch, stale-session fallback with exact-match guard, loop-reset cleanup) | `Makefile`, `shared/Makefile.review.tmpl` |
 | 3 | Register in SHARED_TEMPLATE_MAP + EXECUTABLE_TARGETS; add THREAD vars to clean-env EXACT_DROP | `bootstrap_lib/render.py`, `bootstrap_lib/manifest.py`, `shared/scripts-extract-codex-session-id.py.tmpl`, `scripts/run-with-clean-env.py`, `shared/scripts-run-with-clean-env.py.tmpl` |
 | 4 | Extend selftest-overlap + makefile-review-targets tests (6-case matrix: 1/2/3/4a/4b/5 — cases 4a+4b split from orig. 4 — + clean-env leak test) | `tests/test_selftest_overlap.py`, `tests/test_makefile_review_targets.py` |
@@ -238,7 +240,8 @@ No business metric — internal change. Measurable proxies post-merge:
 | 1.5c | Claude (consistency self-check, round 3) | 2026-05-29 | 0 drifts | stable | No internal contradictions found. Loop-ack run; HASH_FILE stamped. Proceeding to iter 2. |
 | 1.5d (re-stamp) | Claude | 2026-05-29 | — | re-stamp | Plan changed after 1.5c ack (1.5c log entry added). Re-ran consistency to re-stamp CONS_FILE. Loop-ack stamped again. |
 | 2 | Codex | 2026-05-29 | 3 / 2 / 1 | do not implement yet | All 6 folded as (a). FN1 (imp-3) iter-1 fold REPLACED sandbox-denial with UUID continuity instead of adding it → V-13.5 now asserts all 4: UUID continuity + sandbox-denial event + file absence + cwd. FN2 (imp-3) THREAD_FILE written via direct shell redirect — corrupt on failure → atomic write (.tmp + validate UUID + mv; on failure remove tmp+final). FN3 (imp-3) stale-session fallback underspecified (resume || fresh swallows unrelated failures) → fallback matches ONLY pinned exact CLI error string (pre-impl fixture step); other non-zero exits propagate. Added test 4b (unrelated failure must not clear state). FN4 (imp-2) A/B replay needs --json on resumed calls but Make target doesn't use it → A/B replay bypasses Make target, uses direct `codex exec/resume --json`; note added to A/B gates. FN5 (imp-2) THREAD_MODE/FILE/JSONL_FILE not in clean-env EXACT_DROP → added to Scope H + Critical files + commit 3. FN6 (imp-1) V-13.5 probe placeholder inconsistency + missing pre-check → PLAN variable defined once, precondition assertion added. |
-| 2.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 4 (folded) + 1 (rejected) | stable | D1 "iter-4 F2" unanchored → added "(PR #10 iter-4 F2)". D2 commit-4 "5-case matrix + 4b" vs Scope G 6 cases → updated to "6-case matrix (1/2/3/4a/4b/5)". D3 NOT-in-scope still said "sandbox-inheritance probe" after Part 2 sub-header rename → updated to enumerate all 4 gates. D4 Architecture omitted warning on fallback but Rollback mentioned it → "logs a warning" added to Architecture. D5 iter-1.5b log entry 3-element vs current 4-element sub-header → (c) rejected as historical record (iter-2 FN1 added the 4th element after the 1.5b entry was written). |
+| 2.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 4 (folded) + 1 (rejected) | stable | D1 "iter-4 F2" unanchored → added "(PR #10 iter-4 F2)". D2 commit-4 "5-case matrix + 4b" vs Scope G 6 cases → updated to "6-case matrix (1/2/3/4a/4b/5)". D3 NOT-in-scope still said "sandbox-inheritance probe" after Part 2 sub-header rename → updated to enumerate all 4 gates. D4 Architecture omitted warning on fallback but Rollback mentioned it → "logs a warning" added to Architecture. D5 iter-1.5b log entry 3-element vs current 4-element sub-header → (c) rejected as historical record (iter-2 FN1 added the 4th element after the 1.5b entry was written). Also in this round: pinned exact CLI error string for FN3 by running `codex exec resume NONEXISTENT-UUID` — result `"no rollout found for thread id"` added to Architecture + Risks. |
+| 2.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 4 | folded | D1 V-13.5 main header still said "sandbox and cwd inheritance" (2 elements) after Part 2 enumerated 4 → header updated to "session UUID continuity, sandbox-denial, file absence, and cwd inheritance". D2 commit-1 attributed atomic write + UUID validation (commit-2 work) → stripped from commit-1 description. D3 Scope G misplaced "no THREAD_FILE remains" assertion in script unit tests instead of Makefile-recipe tests → moved to test_makefile_review_targets.py description. D4 Risks row 6 said "Extraction script" but Makefile recipe owns THREAD_FILE writes → updated to "Makefile recipe". |
 
 ## Implementation log
 
