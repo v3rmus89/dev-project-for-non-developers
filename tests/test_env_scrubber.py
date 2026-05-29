@@ -28,6 +28,12 @@ def _env_with_prefix_vars():
     env["REVIEW_COMMIT_OUT_CODEX"] = "/tmp/x-codex.md"
     env["REVIEW_COMMIT_OUT_CLAUDE"] = "/tmp/x-claude.md"
     env["PLAN_CONSISTENCY_OUT"] = "/tmp/x-consistency.md"
+    # Bucket F thread-continuation Make vars (iter-7 FN4): must not leak into
+    # the Codex subprocess env.
+    env["THREAD_MODE"] = "continue"
+    env["THREAD_FILE"] = "/tmp/plan-review-x.thread"
+    env["THREAD_JSONL_FILE"] = "/tmp/plan-review-x.session.jsonl"
+    env["KEEP_THREAD_JSONL"] = "1"
     return env
 
 
@@ -56,6 +62,10 @@ def test_strips_claude_code_and_codex_prefixes(tmp_path):
         "REVIEW_COMMIT_OUT_CODEX",
         "REVIEW_COMMIT_OUT_CLAUDE",
         "PLAN_CONSISTENCY_OUT",
+        "THREAD_MODE",
+        "THREAD_FILE",
+        "THREAD_JSONL_FILE",
+        "KEEP_THREAD_JSONL",
     ]:
         assert stripped not in child_env, f"{stripped} survived scrubbing"
     assert child_env.get("UNRELATED_VAR") == "kept"

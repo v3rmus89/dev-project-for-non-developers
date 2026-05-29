@@ -970,3 +970,381 @@ def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
         text=True,
     )
     assert result.returncode != 0, "review-plan-fact-check-by-codex must propagate CLI failure"
+
+
+# ── PR-1 Bucket F: THREAD_MODE continue-thread matrix ────────────────────────
+# Six cases (plan Scope G): (1) fresh, (2) first-continue seed [+ extraction
+# failure + KEEP_THREAD_JSONL sub-cases], (3) resume, (4a) stale-session
+# fallback on the pinned string, (4b) unrelated-failure preserves state,
+# (5) loop-reset. Driven by a controllable codex shim (env-configured).
+
+# session_meta.payload.id the seed shim emits — a valid 8-4-4-4-12 UUID.
+_SEED_SESSION_ID = "00000000-0000-7000-8000-000000000abc"
+
+# A controllable codex shim. Behaviour is entirely env-driven so one static
+# script covers every case; uses print() throughout to avoid newline escaping.
+_THREAD_CODEX_SHIM = '''#!/usr/bin/env python3
+"""Controllable codex shim for THREAD_MODE tests (env-driven).
+
+SHIM_ARGV_LOG          JSON file; each call appends its argv list
+SHIM_RESUME_BEHAVIOR   success | fail-pinned | fail-other  (resume calls)
+SHIM_EMIT_SESSION_META 1 | 0  (seed --json calls: emit a session_meta line)
+"""
+import json
+import os
+import sys
+
+argv = sys.argv[1:]
+if "--version" in argv:
+    print("codex-cli 0.130.0")
+    sys.exit(0)
+
+out = None
+i = 0
+while i < len(argv):
+    if argv[i] == "--output-last-message":
+        out = argv[i + 1]
+        i += 2
+        continue
+    i += 1
+
+logf = os.environ.get("SHIM_ARGV_LOG")
+if logf:
+    try:
+        with open(logf) as fh:
+            existing = json.load(fh)
+    except FileNotFoundError:
+        existing = []
+    existing.append(argv)
+    with open(logf, "w") as fh:
+        json.dump(existing, fh)
+
+if "resume" in argv:
+    mode = os.environ.get("SHIM_RESUME_BEHAVIOR", "success")
+    if mode == "fail-pinned":
+        print(
+            "Error: thread/resume: thread/resume failed: no rollout found for "
+            "thread id deadbeef (code -32600)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if mode == "fail-other":
+        # Write the output file even on this failure so that a hypothetical
+        # "swallow the error" regression would let the recipe's trailing `cat`
+        # SUCCEED (exit 0). That isolates the exit-code-propagation signal: the
+        # only way `make` exits non-zero is the recipe's own `exit $$rc`, not an
+        # incidental missing-output `cat` failure (Tier-1 imp-2 fix).
+        if out:
+            with open(out, "w") as fh:
+                print("CANNED RESUME REVIEW (unrelated failure)", file=fh)
+        print("Error: unrelated network/quota failure", file=sys.stderr)
+        sys.exit(7)
+    if out:
+        with open(out, "w") as fh:
+            print("CANNED RESUME REVIEW", file=fh)
+    print("resumed ok")
+    sys.exit(0)
+
+if "--json" in argv:
+    if out:
+        with open(out, "w") as fh:
+            print("CANNED SEED REVIEW", file=fh)
+    if os.environ.get("SHIM_EMIT_SESSION_META", "1") == "1":
+        print('{"type":"session_meta","payload":{"id":"00000000-0000-7000-8000-000000000abc"}}')
+    else:
+        print('{"type":"token_count","payload":{"info":null}}')
+    sys.exit(0)
+
+if out:
+    with open(out, "w") as fh:
+        print("CANNED FRESH REVIEW", file=fh)
+print("fresh ok")
+sys.exit(0)
+'''
+
+
+def _thread_shim_dir(tmp_path):
+    shim_dir = tmp_path / "thread-shims"
+    shim_dir.mkdir()
+    codex = shim_dir / "codex"
+    codex.write_text(_THREAD_CODEX_SHIM)
+    codex.chmod(0o755)
+    return shim_dir
+
+
+def _run_review_codex(
+    target,
+    plan,
+    shim_dir,
+    *,
+    thread_mode,
+    argv_log,
+    out_file,
+    thread_file,
+    jsonl_file,
+    extra_env=None,
+):
+    """Run `make review-plan-by-codex` against the fixture with the thread shim,
+    overriding THREAD_FILE / THREAD_JSONL_FILE / output to tmp paths so the
+    test never collides with the KEY-derived /tmp defaults."""
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    env["SHIM_ARGV_LOG"] = str(argv_log)
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-by-codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=1",
+            f"THREAD_MODE={thread_mode}",
+            f"PLAN_REVIEW_OUT_CODEX={out_file}",
+            f"THREAD_FILE={thread_file}",
+            f"THREAD_JSONL_FILE={jsonl_file}",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _exec_calls(argv_log):
+    """All codex argv lists that include 'exec' (skips bare --version probes)."""
+    data = json.loads(argv_log.read_text())
+    return [a for a in data if "exec" in a]
+
+
+def test_thread_mode_fresh_uses_no_json_and_writes_no_thread_file(tmp_path):
+    """Case 1: THREAD_MODE=fresh (default) — plain codex exec, no --json, no
+    session tracking. The thread machinery must stay completely dormant."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_fresh")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="fresh",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    calls = _exec_calls(argv_log)
+    assert calls, "codex exec never invoked"
+    assert "--json" not in calls[-1], "fresh path must not pass --json"
+    assert "resume" not in calls[-1], "fresh path must not resume"
+    assert not tf.exists(), "fresh path must not write THREAD_FILE"
+    assert not tj.exists()
+
+
+def test_thread_mode_continue_seeds_thread_file_and_deletes_jsonl(tmp_path):
+    """Case 2: continue + no THREAD_FILE — seeds via codex exec --json, extracts
+    the session id into THREAD_FILE, and deletes THREAD_JSONL_FILE on success."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_seed")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    calls = _exec_calls(argv_log)
+    assert "--json" in calls[-1], "seed path must pass --json"
+    assert tf.exists(), "seed must write THREAD_FILE"
+    assert tf.read_text().strip() == _SEED_SESSION_ID
+    assert not tj.exists(), "THREAD_JSONL_FILE must be deleted after extraction"
+
+
+def test_thread_mode_continue_extraction_failure_cleans_all_artifacts(tmp_path):
+    """Case 2 (extractor-failure sub-case): seed JSONL has no session_meta →
+    extraction fails → recipe exits non-zero and removes THREAD_FILE,
+    THREAD_FILE.tmp, AND THREAD_JSONL_FILE (no corrupt state left behind)."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_seedfail")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+        extra_env={"SHIM_EMIT_SESSION_META": "0"},
+    )
+    assert r.returncode != 0, "extraction failure must propagate non-zero"
+    assert not tf.exists(), "THREAD_FILE must not exist after extraction failure"
+    assert not Path(str(tf) + ".tmp").exists(), "THREAD_FILE.tmp must be cleaned"
+    assert not tj.exists(), "THREAD_JSONL_FILE must be cleaned on failure"
+
+
+def test_thread_mode_continue_keep_jsonl_retains_it_on_success(tmp_path):
+    """Case 2 (KEEP sub-case): KEEP_THREAD_JSONL=1 retains the JSONL on a
+    successful seed (debug opt-out)."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_keep")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+        extra_env={"KEEP_THREAD_JSONL": "1"},
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert tf.read_text().strip() == _SEED_SESSION_ID
+    assert tj.exists(), "KEEP_THREAD_JSONL=1 must retain THREAD_JSONL_FILE"
+
+
+def test_thread_mode_continue_resume_uses_resume_subcommand(tmp_path):
+    """Case 3: continue + existing THREAD_FILE — runs codex exec resume
+    $SESSION_ID, NOT a fresh exec. The resume argv must carry neither --json
+    NOR -C/--sandbox/--color (the resume subcommand rejects those — commit-2
+    Tier-1 regression guard; LESSONS.md 2026-05-27 / PR #10 iter-4)."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_resume")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+    tf.write_text("11111111-2222-7333-8444-555555555555")
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+        extra_env={"SHIM_RESUME_BEHAVIOR": "success"},
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    resume_calls = [a for a in _exec_calls(argv_log) if "resume" in a]
+    assert resume_calls, "resume subcommand never invoked"
+    ra = resume_calls[-1]
+    assert "11111111-2222-7333-8444-555555555555" in ra, "resume must pass the session id"
+    assert "--json" not in ra, "resume must not pass --json"
+    for rejected in ("-C", "--sandbox", "--color"):
+        assert rejected not in ra, (
+            f"resume must NOT pass {rejected} — codex exec resume rejects it "
+            "(unexpected argument); resume inherits it from the seed"
+        )
+    assert tf.read_text().strip() == "11111111-2222-7333-8444-555555555555", (
+        "THREAD_FILE must be unchanged on a successful resume"
+    )
+
+
+def test_thread_mode_continue_stale_session_falls_back_to_fresh(tmp_path):
+    """Case 4a: resume fails with the pinned 'no rollout found for thread id'
+    string → clear THREAD_FILE + THREAD_JSONL_FILE and run a one-shot fresh
+    codex exec (no --json). Both files stay absent (self-heals next call)."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_stale")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+    tf.write_text("11111111-2222-7333-8444-555555555555")
+    tj.write_text("stale jsonl")
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+        extra_env={"SHIM_RESUME_BEHAVIOR": "fail-pinned"},
+    )
+    assert r.returncode == 0, "fallback fresh exec should succeed → exit 0\n" + r.stderr + r.stdout
+    assert not tf.exists(), "stale THREAD_FILE must be cleared"
+    assert not tj.exists(), "stale THREAD_JSONL_FILE must be cleared"
+    calls = _exec_calls(argv_log)
+    assert any("resume" in a for a in calls), "resume must have been attempted"
+    fallback = [a for a in calls if "resume" not in a]
+    assert fallback, "a fresh codex exec must run as the fallback"
+    assert "--json" not in fallback[-1], "fallback fresh exec must not pass --json"
+
+
+def test_thread_mode_continue_unrelated_failure_preserves_state(tmp_path):
+    """Case 4b: resume fails with an UNRELATED error (not the pinned string) →
+    the recipe exits non-zero and does NOT clear thread state (no swallowing of
+    auth/network/quota errors)."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_other")
+    shim_dir = _thread_shim_dir(tmp_path)
+    argv_log = tmp_path / "argv.json"
+    tf, tj, out = tmp_path / "x.thread", tmp_path / "x.jsonl", tmp_path / "out.md"
+    tf.write_text("11111111-2222-7333-8444-555555555555")
+
+    r = _run_review_codex(
+        target,
+        plan,
+        shim_dir,
+        thread_mode="continue",
+        argv_log=argv_log,
+        out_file=out,
+        thread_file=tf,
+        jsonl_file=tj,
+        extra_env={"SHIM_RESUME_BEHAVIOR": "fail-other"},
+    )
+    assert r.returncode != 0, "unrelated resume failure must propagate non-zero"
+    assert tf.exists(), "thread state must NOT be cleared on an unrelated failure"
+    assert tf.read_text().strip() == "11111111-2222-7333-8444-555555555555"
+
+
+def test_loop_reset_removes_thread_state(tmp_path):
+    """Case 5: loop-reset removes THREAD_FILE + THREAD_JSONL_FILE alongside the
+    hash/consistency/snapshot artifacts."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="thread_loopreset")
+    tf, tj = tmp_path / "x.thread", tmp_path / "x.jsonl"
+    tf.write_text("11111111-2222-7333-8444-555555555555")
+    tj.write_text("jsonl")
+
+    r = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "loop-reset",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"THREAD_FILE={tf}",
+            f"THREAD_JSONL_FILE={tj}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert not tf.exists(), "loop-reset must remove THREAD_FILE"
+    assert not tj.exists(), "loop-reset must remove THREAD_JSONL_FILE"

@@ -19,6 +19,7 @@ context must match the committed dogfood copies byte-for-byte.
 from __future__ import annotations
 
 import difflib
+import os
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,15 @@ _SCRIPT_TEMPLATE_PAIRS = [
     ("scripts/run-with-clean-env.py", "scripts-run-with-clean-env.py.tmpl"),
     ("scripts/loop-status.py", "scripts-loop-status.py.tmpl"),
     ("scripts/extract-plan-facts.py", "scripts-extract-plan-facts.py.tmpl"),
+    ("scripts/extract-codex-session-id.py", "scripts-extract-codex-session-id.py.tmpl"),
     ("scripts/verify-plan-facts.py", "scripts-verify-plan-facts.py.tmpl"),
+]
+
+# scripts/*.py that the review recipes exec directly and that must carry the
+# executable bit in the skill repo (the bootstrap sets it via EXECUTABLE_TARGETS
+# for generated projects; the dogfood copy must match).
+_EXECUTABLE_SCRIPTS = [
+    "scripts/extract-codex-session-id.py",
 ]
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -154,3 +163,38 @@ def test_script_template_byte_identity(script_rel, tmpl_name):
             )
         )
         pytest.fail(f"{script_rel} vs {tmpl_name} byte-identity drift:\n{diff}")
+
+
+@pytest.mark.parametrize("script_rel", _EXECUTABLE_SCRIPTS)
+def test_review_script_is_executable(script_rel):
+    """Bucket F Scope G: scripts the review recipe execs directly (e.g.
+    extract-codex-session-id.py, called as $(CURDIR)/scripts/...) must carry
+    the executable bit in the skill repo. The bootstrap sets it for generated
+    projects via EXECUTABLE_TARGETS; this guards the dogfood copy from drifting
+    to 0644 (which would break the seed path's extraction step)."""
+    path = SKILL_ROOT / script_rel
+    assert path.exists(), f"{script_rel} missing"
+    assert os.access(path, os.X_OK), f"{script_rel} is not executable (expected +x)"
+
+
+def test_makefile_review_section_carries_thread_mode_machinery():
+    """Bucket F Scope B/C parity guard. test_overlap_makefile_review_section
+    proves Makefile and the rendered template are byte-IDENTICAL — but two
+    identical files could BOTH be missing the THREAD_MODE branch (a delete on
+    both sides passes byte-identity). This asserts the machinery is actually
+    PRESENT in both surfaces, so an accidental removal fails loudly."""
+    rendered = _render("Makefile.review.tmpl", SKILL_REPO_CONTEXT)
+    dogfood = (SKILL_ROOT / "Makefile").read_text()
+    needles = [
+        "THREAD_MODE       ?= fresh",
+        "THREAD_FILE       = /tmp/plan-review-$(KEY).thread",
+        "THREAD_JSONL_FILE = /tmp/plan-review-$(KEY).session.jsonl",
+        'if [ "$(THREAD_MODE)" = "continue" ]; then',
+        "codex exec resume",
+        "scripts/extract-codex-session-id.py",
+        "no rollout found for thread id",
+        '[ "$${KEEP_THREAD_JSONL:-}" = "1" ] || rm -f "$(THREAD_JSONL_FILE)"',
+    ]
+    for needle in needles:
+        assert needle in rendered, f"rendered Makefile.review.tmpl missing: {needle!r}"
+        assert needle in dogfood, f"dogfood Makefile missing: {needle!r}"

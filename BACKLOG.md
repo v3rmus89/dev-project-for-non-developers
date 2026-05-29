@@ -113,13 +113,13 @@ still useful.
 Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 - Stale-session fallback matcher: `"no rollout found for thread id"` (verified live 2026-05-29).
 - Atomic THREAD_FILE write pattern (`.tmp` + UUID validate + `mv`).
-- V-13.5 now 4-gate: UUID continuity + `turn_context.sandbox_policy.type == "read-only"` (NOT sandbox-denial event) + file absence + cwd. Probe runs from `/tmp` with `--skip-git-repo-check`.
+- V-13.5 now 4-gate: UUID continuity + `turn_context.payload.sandbox_policy.type == "read-only"` (NOT sandbox-denial event) + file absence + cwd. Probe runs from `/tmp` with `--skip-git-repo-check`.
 - A/B replay uses direct `codex exec/resume --json` (bypasses Make target).
 - `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE` added to `run-with-clean-env.py` EXACT_DROP.
 
 **Trigger to pick up**:
 - ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
-- ~~V-13.5 protocol: 3-assertion gate~~ — **UPDATED to 4-assertion gate** (UUID continuity + sandbox-denial + file absence + cwd). Run Part 2 live probe before merge.
+- ~~V-13.5 protocol: 3-assertion gate~~ — **UPDATED to 4-assertion gate** (UUID continuity + `turn_context.payload.sandbox_policy.type == "read-only"` inheritance + file absence + cwd). Run the V-13.5 verifier (`scripts/verify-v13-5.py`) before merge.
 - A long plan loop (>8 iters) makes Codex token cost a real operational concern.
 
 **Starting requirements (iter-1..5 F-series findings)**:
