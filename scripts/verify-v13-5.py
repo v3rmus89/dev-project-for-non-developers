@@ -89,6 +89,15 @@ _ENV_SIGNATURES = (
     "could not connect",
     "econnrefused",
     "authentication failed",
+    # OAuth / connected-MCP-server auth failures (surfaced by the first live
+    # run: an expired Meta-ads MCP token aborted codex before it emitted
+    # session_meta). These are specific machine-error tokens, not prose, so
+    # they stay env-class without re-introducing bare-word false positives.
+    "invalid_grant",
+    "tokenrefreshfailed",
+    "authrequired",
+    "www-authenticate",
+    "www_authenticate",
 )
 
 

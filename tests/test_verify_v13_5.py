@@ -247,6 +247,11 @@ def test_normal_path_artifacts_fail_variants(kwargs, failing_key):
         "rate limit exceeded",
         "connection refused",
         "request timed out",
+        # Connected-MCP-server OAuth failures, observed verbatim on the first
+        # live gate run (an expired Meta-ads MCP token aborted codex):
+        'AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer ..." })',
+        'Auth(TokenRefreshFailed("...invalid_grant: The provided authorization grant ... '
+        'is invalid, expired, revoked..."))',
     ],
 )
 def test_looks_like_env_failure_true(text):
