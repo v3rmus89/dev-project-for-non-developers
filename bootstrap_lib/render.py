@@ -21,6 +21,7 @@ SHARED_TEMPLATE_MAP = {
     "scripts/run-with-clean-env.py": "scripts-run-with-clean-env.py.tmpl",
     "scripts/loop-status.py": "scripts-loop-status.py.tmpl",
     "scripts/extract-plan-facts.py": "scripts-extract-plan-facts.py.tmpl",
+    "scripts/extract-codex-session-id.py": "scripts-extract-codex-session-id.py.tmpl",
     "scripts/verify-plan-facts.py": "scripts-verify-plan-facts.py.tmpl",
     "scripts/propagate-shared-rules.py": "scripts-propagate-shared-rules.py.tmpl",
 }

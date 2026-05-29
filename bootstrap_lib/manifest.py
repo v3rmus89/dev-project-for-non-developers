@@ -15,6 +15,7 @@ EXECUTABLE_TARGETS = {
     "scripts/run-with-clean-env.py",
     "scripts/loop-status.py",
     "scripts/extract-plan-facts.py",
+    "scripts/extract-codex-session-id.py",
     "scripts/verify-plan-facts.py",
     "scripts/propagate-shared-rules.py",
     ".husky/pre-commit",
