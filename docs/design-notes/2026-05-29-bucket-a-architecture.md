@@ -46,8 +46,12 @@ END of `.gitignore`:
 .claude/commands/*
 !.claude/commands/dev-project-setup.md
 ```
-The 5-line block uses the "re-ignore then un-ignore" pattern that works because
-later rules take precedence within the same file.
+The 6-line block uses the "re-ignore then un-ignore" pattern that works because
+later rules take precedence within the same file. **The intermediate `!.claude/commands/`
+line is required** — without it, git cannot descend into the `commands/` subdirectory,
+making the final un-ignore unreachable. A 5-line block (omitting the `!.claude/commands/`
+line) would silently fail `git check-ignore` verification (V-13 analog for this feature).
+(Finding from focused Codex review 2026-05-29.)
 
 *Selected*. The block is self-contained, append-only, and carries its own
 sentinel comment so it can be identified and removed by `--restore`.
@@ -69,7 +73,7 @@ is solving. The Skill file is a first-class deliverable; requiring manual
 ### Acceptance criteria
 
 1. `recommend_policy(".claude/commands/dev-project-setup.md", ..., target_meta.ignored_by_git="<source>")` returns `policy="NEUTRALIZE"` (a new policy value) when the parent `.gitignore` contains `.claude/` or `.claude/**`.
-2. `apply_neutralize(target_gitignore_path)` appends the 5-line block from Option B.
+2. `apply_neutralize(target_gitignore_path)` appends the 6-line block from Option B (including the required `!.claude/commands/` line).
 3. `--restore` on a NEUTRALIZE target removes the appended block (sentinel-delimited) and leaves the rest of `.gitignore` unchanged.
 4. `recommend_policy` still returns `SKIP` with `manual_review_needed=True` for ignored paths that are NOT `.claude/`-pattern-ignored (other ignore sources → still conservative default).
 5. Existing `APPEND_MERGE` contract is unchanged; NEUTRALIZE is a parallel policy path.
@@ -160,14 +164,24 @@ always cross-AI and happens automatically on PR open — the Skill does not invo
 
 ### Options considered
 
-**Option A: Single branching Skill** — one `dev-project-setup` Skill that reads
-a `REVIEWER` env var (or AskUserQuestion) and branches to the correct target.
+**Option A: Single branching Skill using env-var injection** — one `dev-project-setup`
+Skill that reads a `REVIEWER` env var to detect which AI is calling, branches to the
+correct target.
 
-*Selected*. The Skill already uses `AskUserQuestion` for the "Other" case per
-iter-4 F5. The branch logic is:
-1. If current session AI == Claude → cross-direction = Codex target
-2. If current session AI == Codex → cross-direction = Claude target
-3. If Other → AskUserQuestion: which AI authored the plan/commit?
+*Selected*. **There is no runtime API to detect session AI in a Skill.** The Skill is
+markdown executed by whatever agent loaded it; the caller's identity is not injected
+automatically. The only reliable mechanism is **env-var injection at invocation time**:
+CLAUDE.md instructs Claude to set `export REVIEWER=claude` before invoking the Skill;
+AGENTS.md instructs Codex to set `export REVIEWER=codex`. If neither is set, the Skill
+falls back to AskUserQuestion.
+
+The branch logic is:
+1. `REVIEWER=claude` → cross-direction = Codex target
+2. `REVIEWER=codex` → cross-direction = Claude target
+3. `REVIEWER` unset or `other` → AskUserQuestion: which AI authored the plan/commit?
+
+(Finding from focused Codex review 2026-05-29: session-AI is not detectable without
+an env-var convention.)
 
 **Option B: Two separate Skills** (`dev-project-setup-claude`, `dev-project-setup-codex`).
 
@@ -210,7 +224,9 @@ separate concern.
    needed in the future, a full dependency graph is cleaner. Recommendation: start
    with `sort_key` (simpler manifest schema); extend to DAG only if needed.
 
-3. **6-branch harness test isolation**: should each branch test be a pytest test
+3. **Manifest schema extension for sort_key**: `plan_adoption_entries` currently returns plain dicts; `_restore_v2` iterates `m.entries` in list order. Adding `sort_key` requires: (a) the entry builder emits the field, (b) `plan_adoption_entries` sorts before returning, (c) `_restore_v2` reverse-sorts before iterating. These three touch-points must be enumerated in the plan body's Scope section (not just in the AC). Low-risk change (the manifest schema already uses an open-ended entries list), but must be explicit. (Finding from focused Codex review 2026-05-29.)
+
+4. **6-branch harness test isolation**: should each branch test be a pytest test
    or an integration smoke? Given that `make` targets themselves are tested in
    `test_makefile_review_targets.py`, the Skill branch test should mock `make` at
    the subprocess level and assert the correct target was invoked. This is already
@@ -218,4 +234,4 @@ separate concern.
 
 ---
 
-_Last updated: 2026-05-29 (pre-plan-review, pre-Codex-focused-review)_
+_Last updated: 2026-05-29 (post-focused-Codex-review — 3 findings folded: imp-3 6-line block correction, imp-2 session-AI env-var, imp-2 manifest schema open question)_
