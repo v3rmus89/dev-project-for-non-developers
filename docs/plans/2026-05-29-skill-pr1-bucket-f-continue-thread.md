@@ -59,6 +59,9 @@ On the FIRST call when `THREAD_MODE=continue` and no `THREAD_FILE` exists:
      || { rm -f $(THREAD_FILE).tmp $(THREAD_FILE); echo "ERROR: session ID extraction failed"; exit 1; }
    ```
    On failure: no `THREAD_FILE` remains (subsequent calls use fresh mode safely).
+   Note: `THREAD_JSONL_FILE` is NOT removed on extraction failure — it will be
+   overwritten on the next first-continue call. This is intentional: THREAD_FILE
+   is the state invariant; stale JSONL is harmless because it is overwritten, not re-used.
 3. Display review: `cat $(PLAN_REVIEW_OUT_CODEX)` (unchanged)
 
 On SUBSEQUENT calls when `THREAD_FILE` exists:
@@ -111,7 +114,7 @@ The test matrix in Scope G item (3) uses a fake codex shim to assert that when
 `THREAD_FILE` exists, the Makefile recipe calls `codex exec resume $SESSION_ID`
 (not `codex exec`). This verifies the Makefile branching logic without a live API call.
 
-**Part 2 — Live inheritance probe (session UUID continuity, sandbox-policy-type, file absence, cwd)**:
+**Part 2 — Live inheritance probe (session UUID continuity, sandbox-policy-type inheritance, file absence, cwd)**:
 Run FROM the repo root using the actual codex CLI:
 1. Preconditions and cleanup (FN3 fold):
    ```
@@ -253,6 +256,9 @@ No business metric — internal change. Measurable proxies post-merge:
 | 2.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 1 | folded | D1 Scope G item (2) said "atomically" for THREAD_JSONL_FILE but Architecture shows plain redirect → case (2) reworded to "writes THREAD_JSONL_FILE via plain redirect, then extracts THREAD_FILE atomically". |
 | 2.5e | Claude (consistency self-check, round 5) | 2026-05-29 | 0 drifts | stable | 2.5d fold left the plan consistent. Loop-ack stamped. Proceeding to iter 3. |
 | 3 | Codex | 2026-05-29 | 3 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) V-13.5 failure said "blocks default flip" but correct: failure must block PR merge entirely (continue branch unsafe if sandbox not inherited). FN2 (imp-3) (a) assertion b "no function_call emitted" proves model behavior not sandbox → replaced with `turn_context.payload.sandbox_policy.type == "read-only"` (deterministic). FN3 (imp-3) (a) probe step 1 doesn't clear stale thread state first → added `make loop-reset` + assert-absent pre-steps. FN4 (imp-2) (c) THREAD_JSONL_FILE atomic write unnecessary — plain redirect sufficient because THREAD_FILE is the state invariant; if extraction fails, THREAD_FILE is cleaned up; next run overwrites JSONL. FN5 (imp-2) (a) new script not in `test_selftest_overlap.py` `_SCRIPT_TEMPLATE_PAIRS` → added to Scope G. |
+| 3.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 1 | folded | D1 Part 2 sub-header still said "sandbox policy" after 3.5 D4 rename → added "sandbox-policy-type". (Commit ac8ae64) |
+| 3.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Scope G case (4a) used colloquial "session not found" → updated to pinned `"no rollout found for thread id"`. D2 NOT-in-scope said "sandbox-policy-type check" but header says "inheritance" → updated. |
+| 3.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 3 | folded | D1 Missing 3.5b log entry → added. D2 Part 2 sub-header lacked "inheritance" qualifier → added. D3 Asymmetric cleanup note: THREAD_JSONL_FILE not removed on extraction failure → added explanatory note (intentional; harmless; overwritten on next call). |
 | 3.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 3 + 1 borderline | folded | D1 Risks row 2 said "prevents flip" but iter-3 FN1 escalated to "blocks merge" → updated. D2 Rollback used generic "session not found" instead of pinned string → updated to `"no rollout found for thread id"`. D3 Critical files `test_selftest_overlap.py` description omitted `_SCRIPT_TEMPLATE_PAIRS` + executable-bit check → added. D4 (borderline, a) header/NOT-in-scope said "sandbox-denial" but assertion checks `sandbox_policy.type` → both updated to "sandbox-policy-type inheritance". |
 
 ## Implementation log
