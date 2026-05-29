@@ -109,16 +109,23 @@ still useful.
   the model's first call). Any Bucket F code reading `cached_input_tokens` must guard
   `if info is not None`. Fixture null-info variant + guard test parked below.
 
+**PR-1 PLAN IN REVIEW (2026-05-29)**: plan at `docs/plans/2026-05-29-skill-pr1-bucket-f-continue-thread.md`.
+Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
+- Stale-session fallback matcher: `"no rollout found for thread id"` (verified live 2026-05-29).
+- Atomic THREAD_FILE write pattern (`.tmp` + UUID validate + `mv`).
+- V-13.5 now 4-gate: UUID continuity + sandbox-denial event + file absence + cwd.
+- A/B replay uses direct `codex exec/resume --json` (bypasses Make target).
+- `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE` added to `run-with-clean-env.py` EXACT_DROP.
+
 **Trigger to pick up**:
 - ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
-- V-13.5 passes: all 3 required assertions succeed — sandbox-denial event in JSONL stdout + file absence + `pwd == realpath(CURDIR)` (iter-5 F4).
+- ~~V-13.5 protocol: 3-assertion gate~~ — **UPDATED to 4-assertion gate** (UUID continuity + sandbox-denial + file absence + cwd). Run Part 2 live probe before merge.
 - A long plan loop (>8 iters) makes Codex token cost a real operational concern.
 
 **Starting requirements (iter-1..5 F-series findings)**:
 - ~~iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested~~ — **RESOLVED by V-13**. Field is `session_meta.payload.id`.
-- iter-3 F2 / iter-4 F2: `codex exec resume` + `-C/--sandbox` flag controversy — defensive re-passing is CLI-rejected; rely on session inheritance; V-13.5 is the verification gate.
-- iter-5 F4: V-13.5 file-absence-only check can false-pass → strengthened to 3-assertion gate (sandbox-denial event + file absence + cwd assertion).
-- V-13.5 protocol: run `make review-plan-by-codex PLAN_FILE=… ITERATION=1` inside a read-only sandbox; assert all 3 gates pass before flipping default.
+- iter-3 F2 / iter-4 F2: `codex exec resume` + `-C/--sandbox` flag controversy — defensive re-passing is CLI-rejected; rely on session inheritance; V-13.5 Part 2 is the verification gate.
+- ~~iter-5 F4: V-13.5 file-absence-only check~~ — **UPGRADED to 4-gate** per PR-1 plan iter 1/2 review.
 
 **Parked items from V-13 Tier-1 review (2026-05-29)**:
 - (F1) Add null-info `token_count` fixture line + `test_token_count_info_can_be_null`
