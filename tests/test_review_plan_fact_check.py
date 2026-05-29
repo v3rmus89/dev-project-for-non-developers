@@ -109,3 +109,117 @@ def test_meta_plan_snapshot_clean():
     assert result["summary"]["verified"] > 0, (
         "no facts verified — snapshot may be empty or all facts unrecognised"
     )
+
+
+# ── Gap 2: fact-root containment + privacy scoping (PR-0 hardening) ──────────
+
+
+def test_relative_parent_escape_not_verified(tmp_path):
+    """Containment: a relative ``../`` path that climbs out of the declared
+    root must NEVER verify, even when the escaped file exists. It lands in
+    unsupported_external, not verified."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    # A real file OUTSIDE the root, reachable only via ../
+    (tmp_path / "outside.py").write_text("def secret(): pass\n")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`../outside.py`", "path": "../outside.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+
+    assert result["summary"]["verified"] == 0, (
+        f"relative ../ escape must not verify even though the file exists: {result}"
+    )
+    assert result["summary"]["unsupported_external"] == 1, (
+        f"relative ../ escape should be unsupported_external: {result}"
+    )
+
+
+def test_fact_roots_ignored_in_historical_section(tmp_path):
+    """Privacy scoping: a Fact-roots heading nested under an excluded
+    historical section does NOT declare read roots (parse runs on active text)."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\nReal active work.\n\n## Iteration log\n\n### Fact roots\n\n- /etc\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == [], (
+        f"Fact-roots under a historical section must be ignored: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_ignored_in_code_fence(tmp_path):
+    """Privacy scoping: a Fact-roots block shown inside a code fence is an
+    example, not a declaration — it must be ignored."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\nDeclare roots like this:\n\n"
+        "```\n## Fact roots\n\n- /etc\n```\n\nThat is the syntax.\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == [], (
+        f"Fact-roots inside a code fence must be ignored: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_parsed_in_active_section(tmp_path):
+    """Positive case: a Fact-roots block in an active, non-fenced section IS
+    parsed (both bare and backtick-wrapped absolute paths)."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Fact roots\n\n- /Users/example/repo\n- `/opt/other`\n\n## Scope\n\nwork\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == ["/Users/example/repo", "/opt/other"], (
+        f"active Fact-roots block must be parsed: {facts_data['fact_roots']}"
+    )
+
+
+def test_buried_symlink_via_rglob_not_verified(tmp_path):
+    """Containment (rglob branch): a bare filename whose only match under the
+    root is a buried symlink pointing OUTSIDE the root must not verify. This
+    exercises the _find_file rglob fallback specifically (the exact-path join
+    does not exist, so the _escapes_all_roots gate passes and the rglob branch
+    is reached)."""
+    import os
+
+    root = tmp_path / "repo"
+    (root / "deep").mkdir(parents=True)
+    outside = tmp_path / "secret.py"
+    outside.write_text("def leak(): pass\n")
+    os.symlink(outside, root / "deep" / "shadow.py")  # buried symlink, escapes root
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`shadow.py`", "path": "shadow.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"buried symlink escaping the root must not verify via rglob: {result}"
+    )
+
+
+def test_exact_path_symlink_escape_not_verified(tmp_path):
+    """Containment (exact-path / gate): a symlink at the referenced path that
+    resolves outside the root must not verify."""
+    import os
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secret.py"
+    outside.write_text("def leak(): pass\n")
+    os.symlink(outside, root / "link.py")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`link.py`", "path": "link.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"exact-path symlink escaping the root must not verify: {result}"
+    )
