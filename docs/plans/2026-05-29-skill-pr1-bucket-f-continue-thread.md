@@ -234,13 +234,14 @@ is opt-in via env var.
 - `tests/test_selftest_overlap.py` — extend parity check for new Makefile vars + add `scripts/extract-codex-session-id.py` ↔ template to `_SCRIPT_TEMPLATE_PAIRS` + assert executable bit
 - `tests/test_makefile_review_targets.py` — extend for new targets/vars
 - `tests/fixtures/codex-json-session.jsonl` — already committed (V-13)
-- `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` — add THREAD vars to EXACT_DROP
+- `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` — add THREAD_MODE/FILE/JSONL_FILE/KEEP_THREAD_JSONL to EXACT_DROP
+- `BACKLOG.md` — update V-13.5 description (sandbox_policy.type check + --skip-git-repo-check)
 
 ## Risks
 
 | Risk | Mitigation |
 |------|-----------|
-| `--json` breaks current review display | `--output-last-message` file is unchanged; `cat` at end still works. V-13.5 verifies end-to-end display. |
+| `--json` breaks current review display | `--output-last-message` file is unchanged; `cat` at end still works. V-13.5 Part 2 checks inheritance, not display — display is verified by the `--output-last-message` path independently. |
 | `codex exec resume` drops `-C`/`--sandbox` | V-13.5 Part 2 all-4-gate failure blocks PR merge (continue branch is unsafe). |
 | THREAD_JSONL_FILE data exposure | Written during first-continue call then deleted after successful extraction (default). Stale JSONL doesn't persist across runs. `KEEP_THREAD_JSONL=1` retains it for debugging (success-path only; failure path always removes it). |
 | V-13.5 Part 2 needs `--json` on resume but normal ops don't | V-13.5 is a one-time manual gate; it explicitly passes `--json` to the `codex exec resume` probe command. Normal resumed calls in `review-plan-by-codex` do NOT use `--json`. |
@@ -268,7 +269,7 @@ is opt-in via env var.
 | 1 | `scripts/extract-codex-session-id.py` + unit tests (no-session-meta → non-zero exit; reads JSONL, prints session ID) | `scripts/extract-codex-session-id.py`, `tests/test_extract_codex_session_id.py` |
 | 2 | Extend Makefile + template (THREAD vars, atomic recipe branch, `&&`-gated extraction, THREAD_JSONL_FILE deletion + `KEEP_THREAD_JSONL=1` opt-out, stale-session exact-match fallback, loop-reset cleanup) | `Makefile`, `shared/Makefile.review.tmpl` |
 | 3 | Register in SHARED_TEMPLATE_MAP + EXECUTABLE_TARGETS; add THREAD vars to clean-env EXACT_DROP | `bootstrap_lib/render.py`, `bootstrap_lib/manifest.py`, `shared/scripts-extract-codex-session-id.py.tmpl`, `scripts/run-with-clean-env.py`, `shared/scripts-run-with-clean-env.py.tmpl` |
-| 4 | Extend selftest-overlap + makefile-review-targets tests (6-case matrix: 1/2/3/4a/4b/5 — cases 4a+4b split from orig. 4 — + clean-env leak test) | `tests/test_selftest_overlap.py`, `tests/test_makefile_review_targets.py` |
+| 4 | Extend selftest-overlap + makefile-review-targets tests (6-case matrix: 1/2/3/4a/4b/5 + clean-env leak test); update BACKLOG.md V-13.5 description (Scope I — docs-only) | `tests/test_selftest_overlap.py`, `tests/test_makefile_review_targets.py`, `BACKLOG.md` |
 
 Tier-1 review (same-AI fresh subagent) after each commit before push.
 `make check` passes before commit 4 merges. V-13.5 Part 2 manual gate runs after
@@ -308,6 +309,7 @@ No business metric — internal change. Measurable proxies post-merge:
 | 4.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 2 | folded | D1 Iter log had 4.5 before 4 → reordered. D2 V-13.5 failure action said THREAD_MODE=undefined → standardized to THREAD_MODE=fresh. |
 | 4.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Log had 4.5 before 4 again → reordered. D2 V-13.5 failure THREAD_MODE=undefined → THREAD_MODE=fresh. (Same bug as 3.5b/3.5 — log has an ordering defect that recurs; 4.5d fixed again.) |
 | 5 | Codex | 2026-05-29 | 2 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) /tmp probe fails without --skip-git-repo-check (verified) → added to probe command. FN2 (imp-3) (a) 4-gate assertion is prose-only → added copy-pasteable Python script. FN3 (imp-2) (a) KEEP_THREAD_JSONL not in EXACT_DROP → added to Scope H + Scope I (BACKLOG update). FN4 (imp-2) (a) BACKLOG V-13.5 description stale (sandbox-denial) → updated to sandbox_policy.type check + /tmp flag. |
+| 5.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 4 | folded | D1 Scope I said "commit 4" but commit 4 file list omitted BACKLOG.md → added. D2 Critical files omitted BACKLOG.md → added. D3 Critical files shorthand "THREAD vars" missed KEEP_THREAD_JSONL → enumerated all 4. D4 Risks row 1 attributed display-verification to V-13.5 but V-13.5 only checks inheritance → corrected. |
 
 ## Implementation log
 
