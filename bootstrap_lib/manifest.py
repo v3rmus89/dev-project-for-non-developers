@@ -16,6 +16,7 @@ EXECUTABLE_TARGETS = {
     "scripts/loop-status.py",
     "scripts/extract-plan-facts.py",
     "scripts/verify-plan-facts.py",
+    "scripts/propagate-shared-rules.py",
     ".husky/pre-commit",
     ".husky/pre-push",
     "hooks/pre-commit",
