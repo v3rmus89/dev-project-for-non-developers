@@ -26,8 +26,8 @@ A/B replay gates in the Verification section pass (meta-plan PR-1).
 
 **NOT in scope (no code deliverable)**: default flip from `THREAD_MODE=fresh` → `continue`
 (deferred to post-A/B-replay gates — see Verification). V-13.5 Part 2 live
-inheritance probe covering UUID continuity, sandbox-denial, file absence, and cwd
-(manual operator step, no code shipped — run before merging;
+inheritance probe (UUID continuity + sandbox-policy-type check + file absence + cwd;
+manual operator step — failure blocks PR merge; run before merging;
 Part 1 is automated via the Scope G test matrix). Tier-2 bot quality comparison
 (secondary signal only).
 
@@ -104,7 +104,7 @@ These paths are stable across sessions for the same repo + plan file, so
 Fixture at `tests/fixtures/codex-json-session.jsonl` (commit da776ee).
 Field path pinned: `session_meta.payload.id`. 7 tests pass.
 
-### V-13.5 — session UUID continuity, sandbox-denial, file absence, and cwd inheritance (mixed gate: Part 1 automated, Part 2 manual, required before merge)
+### V-13.5 — session UUID continuity, sandbox-policy-type inheritance, file absence, and cwd (mixed gate: Part 1 automated, Part 2 manual, failure blocks PR merge)
 
 **Part 1 — Makefile resume branch (shim-based, part of automated test matrix)**:
 The test matrix in Scope G item (3) uses a fake codex shim to assert that when
@@ -187,7 +187,7 @@ is opt-in via env var.
 - `bootstrap_lib/render.py` — `SHARED_TEMPLATE_MAP`
 - `bootstrap_lib/manifest.py` — `EXECUTABLE_TARGETS`
 - `tests/test_extract_codex_session_id.py` (new)
-- `tests/test_selftest_overlap.py` — extend parity check for new vars
+- `tests/test_selftest_overlap.py` — extend parity check for new Makefile vars + add `scripts/extract-codex-session-id.py` ↔ template to `_SCRIPT_TEMPLATE_PAIRS` + assert executable bit
 - `tests/test_makefile_review_targets.py` — extend for new targets/vars
 - `tests/fixtures/codex-json-session.jsonl` — already committed (V-13)
 - `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` — add THREAD vars to EXACT_DROP
@@ -197,7 +197,7 @@ is opt-in via env var.
 | Risk | Mitigation |
 |------|-----------|
 | `--json` breaks current review display | `--output-last-message` file is unchanged; `cat` at end still works. V-13.5 verifies end-to-end display. |
-| `codex exec resume` drops `-C`/`--sandbox` | V-13.5 Part 2 all-4-gate prevents flip if inheritance fails. |
+| `codex exec resume` drops `-C`/`--sandbox` | V-13.5 Part 2 all-4-gate failure blocks PR merge (continue branch is unsafe). |
 | THREAD_JSONL_FILE grows large | First-continue call writes it once; subsequent resumed calls don't capture JSONL. No accumulation across iters. |
 | V-13.5 Part 2 needs `--json` on resume but normal ops don't | V-13.5 is a one-time manual gate; it explicitly passes `--json` to the `codex exec resume` probe command. Normal resumed calls in `review-plan-by-codex` do NOT use `--json`. |
 | `info: null` guard missing in future A/B code | Parked reminder in BACKLOG. Not in this PR's scope. |
@@ -208,10 +208,10 @@ is opt-in via env var.
 ## Rollback
 
 - **Escape hatch**: `THREAD_MODE=fresh` always bypasses thread continuation. No rebuild needed.
-- **Stale session recovery**: if `codex exec resume` returns a "session not found" error, the
-  Makefile recipe clears `THREAD_FILE` + `THREAD_JSONL_FILE`, logs a warning, and falls back
-  to a fresh `codex exec` call for that iteration. The fallback does NOT silently swallow errors
-  from other failure modes.
+- **Stale session recovery**: if `codex exec resume` stderr contains `"no rollout found for
+  thread id"` (pinned string), the Makefile recipe clears `THREAD_FILE` + `THREAD_JSONL_FILE`,
+  logs a warning, and falls back to a fresh `codex exec` call. The fallback does NOT silently
+  swallow errors from other failure modes.
 - **Full cleanup**: `make loop-reset PLAN_FILE=...` removes `THREAD_FILE` + `THREAD_JSONL_FILE`
   in addition to the existing hash/consistency/snapshot cleanup.
 - **Default flip**: any flip from `THREAD_MODE=fresh` → `continue` as default is a SEPARATE PR
@@ -253,6 +253,7 @@ No business metric — internal change. Measurable proxies post-merge:
 | 2.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 1 | folded | D1 Scope G item (2) said "atomically" for THREAD_JSONL_FILE but Architecture shows plain redirect → case (2) reworded to "writes THREAD_JSONL_FILE via plain redirect, then extracts THREAD_FILE atomically". |
 | 2.5e | Claude (consistency self-check, round 5) | 2026-05-29 | 0 drifts | stable | 2.5d fold left the plan consistent. Loop-ack stamped. Proceeding to iter 3. |
 | 3 | Codex | 2026-05-29 | 3 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) V-13.5 failure said "blocks default flip" but correct: failure must block PR merge entirely (continue branch unsafe if sandbox not inherited). FN2 (imp-3) (a) assertion b "no function_call emitted" proves model behavior not sandbox → replaced with `turn_context.payload.sandbox_policy.type == "read-only"` (deterministic). FN3 (imp-3) (a) probe step 1 doesn't clear stale thread state first → added `make loop-reset` + assert-absent pre-steps. FN4 (imp-2) (c) THREAD_JSONL_FILE atomic write unnecessary — plain redirect sufficient because THREAD_FILE is the state invariant; if extraction fails, THREAD_FILE is cleaned up; next run overwrites JSONL. FN5 (imp-2) (a) new script not in `test_selftest_overlap.py` `_SCRIPT_TEMPLATE_PAIRS` → added to Scope G. |
+| 3.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 3 + 1 borderline | folded | D1 Risks row 2 said "prevents flip" but iter-3 FN1 escalated to "blocks merge" → updated. D2 Rollback used generic "session not found" instead of pinned string → updated to `"no rollout found for thread id"`. D3 Critical files `test_selftest_overlap.py` description omitted `_SCRIPT_TEMPLATE_PAIRS` + executable-bit check → added. D4 (borderline, a) header/NOT-in-scope said "sandbox-denial" but assertion checks `sandbox_policy.type` → both updated to "sandbox-policy-type inheritance". |
 
 ## Implementation log
 
