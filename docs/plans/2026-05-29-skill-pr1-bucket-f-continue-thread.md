@@ -362,6 +362,7 @@ No business metric — internal change. Measurable proxies post-merge:
 
 | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |-----------|---------------------|---------------------------------|------------------------|
+| 09c6a77 | extract-codex-session-id.py + 9 subprocess unit tests: prints session_meta.payload.id from the first event; non-zero exit + empty stdout when absent | none (Tier-1 folded 2 polish tests: non-dict JSON line + directory-arg edge) | none |
 
 ## Lessons surfaced (this PR)
 
