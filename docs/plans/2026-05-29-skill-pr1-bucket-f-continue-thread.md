@@ -111,7 +111,7 @@ The test matrix in Scope G item (3) uses a fake codex shim to assert that when
 `THREAD_FILE` exists, the Makefile recipe calls `codex exec resume $SESSION_ID`
 (not `codex exec`). This verifies the Makefile branching logic without a live API call.
 
-**Part 2 — Live inheritance probe (session UUID continuity, sandbox policy, file absence, cwd)**:
+**Part 2 — Live inheritance probe (session UUID continuity, sandbox-policy-type, file absence, cwd)**:
 Run FROM the repo root using the actual codex CLI:
 1. Preconditions and cleanup (FN3 fold):
    ```
