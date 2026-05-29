@@ -50,18 +50,23 @@ terminal-friendly display). `--output-last-message` continues to write the
 review text to the specified file; the JSONL stdout is captured separately.
 
 On the FIRST call when `THREAD_MODE=continue` and no `THREAD_FILE` exists:
-1. Run `codex exec --json --output-last-message ... > $(THREAD_JSONL_FILE)`
-2. Extract session ID atomically (FN2 fold):
+1. Gate extraction behind successful Codex exit (FN2 iter-4 fold):
    ```
-   scripts/extract-codex-session-id.py $(THREAD_JSONL_FILE) > $(THREAD_FILE).tmp
-   # validate: non-empty and UUID pattern
-   grep -qE '^[0-9a-f-]{36}$' $(THREAD_FILE).tmp && mv $(THREAD_FILE).tmp $(THREAD_FILE) \
-     || { rm -f $(THREAD_FILE).tmp $(THREAD_FILE); echo "ERROR: session ID extraction failed"; exit 1; }
+   codex exec --json --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" ... \
+     > "$(THREAD_JSONL_FILE)" \
+   && scripts/extract-codex-session-id.py "$(THREAD_JSONL_FILE)" > "$(THREAD_FILE).tmp" \
+   && grep -qE '^[0-9a-f-]{36}$' "$(THREAD_FILE).tmp" \
+   && mv "$(THREAD_FILE).tmp" "$(THREAD_FILE)" \
+   || { rm -f "$(THREAD_FILE).tmp" "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"; \
+        echo "ERROR: codex exec or session ID extraction failed"; exit 1; }
    ```
-   On failure: no `THREAD_FILE` remains (subsequent calls use fresh mode safely).
-   Note: `THREAD_JSONL_FILE` is NOT removed on extraction failure — it will be
-   overwritten on the next first-continue call. This is intentional: THREAD_FILE
-   is the state invariant; stale JSONL is harmless because it is overwritten, not re-used.
+   On failure: no `THREAD_FILE`, `THREAD_FILE.tmp`, or `THREAD_JSONL_FILE` remains.
+2. Delete THREAD_JSONL_FILE after successful extraction (FN4 iter-4 fold — review
+   content in JSONL is a data exposure risk; session ID is now safely in THREAD_FILE):
+   ```
+   rm -f "$(THREAD_JSONL_FILE)"
+   ```
+   If debugging is needed: set `KEEP_THREAD_JSONL=1` to skip this deletion.
 3. Display review: `cat $(PLAN_REVIEW_OUT_CODEX)` (unchanged)
 
 On SUBSEQUENT calls when `THREAD_FILE` exists:
@@ -136,13 +141,18 @@ Run FROM the repo root using the actual codex CLI:
      PLAN_FILE="$PLAN" ITERATION=1 THREAD_MODE=continue
    ```
    → `THREAD_JSONL_FILE` is written; `THREAD_FILE` contains a UUID (`SESSION_ID`).
-3. Probe inheritance using `codex exec resume --json`:
+3. Probe inheritance from a DIFFERENT directory (FN1 iter-4 fold — contrast condition):
+   Running resume from a different cwd is the only way to distinguish "resume
+   inherited the original cwd" from "resume used the caller's current cwd".
    ```
    SESSION_ID=$(cat /tmp/plan-review-$KEY.thread)
    echo "Probing session: $SESSION_ID"
-   codex exec resume "$SESSION_ID" --json \
+   # Run resume from /tmp — NOT the repo root
+   cd /tmp && codex exec resume "$SESSION_ID" --json \
      "Attempt to create a file at /tmp/test-v13-5-write.txt. Report what happened." \
      > /tmp/test-v13-5-resumed.jsonl
+   # Return to repo root for subsequent assertions
+   cd -
    ```
 4. Assert ALL FOUR from the resumed JSONL:
    a. `session_meta.payload.id` in `/tmp/test-v13-5-resumed.jsonl` equals `SESSION_ID`
@@ -231,7 +241,9 @@ is opt-in via env var.
 
 Tier-1 review (same-AI fresh subagent) after each commit before push.
 `make check` passes before commit 4 merges. V-13.5 Part 2 manual gate runs after
-commit 2 and before the PR is opened for Tier-2 review.
+commit 3 (after `run-with-clean-env.py` EXACT_DROP change — FN3 iter-4 fold) and
+before the PR is opened for Tier-2 review. The gate tests the final execution path
+(including the clean-env wrapper), not a partial state.
 
 ## Outcome measurement
 
@@ -256,10 +268,11 @@ No business metric — internal change. Measurable proxies post-merge:
 | 2.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 1 | folded | D1 Scope G item (2) said "atomically" for THREAD_JSONL_FILE but Architecture shows plain redirect → case (2) reworded to "writes THREAD_JSONL_FILE via plain redirect, then extracts THREAD_FILE atomically". |
 | 2.5e | Claude (consistency self-check, round 5) | 2026-05-29 | 0 drifts | stable | 2.5d fold left the plan consistent. Loop-ack stamped. Proceeding to iter 3. |
 | 3 | Codex | 2026-05-29 | 3 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) V-13.5 failure said "blocks default flip" but correct: failure must block PR merge entirely (continue branch unsafe if sandbox not inherited). FN2 (imp-3) (a) assertion b "no function_call emitted" proves model behavior not sandbox → replaced with `turn_context.payload.sandbox_policy.type == "read-only"` (deterministic). FN3 (imp-3) (a) probe step 1 doesn't clear stale thread state first → added `make loop-reset` + assert-absent pre-steps. FN4 (imp-2) (c) THREAD_JSONL_FILE atomic write unnecessary — plain redirect sufficient because THREAD_FILE is the state invariant; if extraction fails, THREAD_FILE is cleaned up; next run overwrites JSONL. FN5 (imp-2) (a) new script not in `test_selftest_overlap.py` `_SCRIPT_TEMPLATE_PAIRS` → added to Scope G. |
-| 3.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 1 | folded | D1 Part 2 sub-header still said "sandbox policy" after 3.5 D4 rename → added "sandbox-policy-type". (Commit ac8ae64) |
-| 3.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Scope G case (4a) used colloquial "session not found" → updated to pinned `"no rollout found for thread id"`. D2 NOT-in-scope said "sandbox-policy-type check" but header says "inheritance" → updated. |
-| 3.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 3 | folded | D1 Missing 3.5b log entry → added. D2 Part 2 sub-header lacked "inheritance" qualifier → added. D3 Asymmetric cleanup note: THREAD_JSONL_FILE not removed on extraction failure → added explanatory note (intentional; harmless; overwritten on next call). |
 | 3.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 3 + 1 borderline | folded | D1 Risks row 2 said "prevents flip" but iter-3 FN1 escalated to "blocks merge" → updated. D2 Rollback used generic "session not found" instead of pinned string → updated to `"no rollout found for thread id"`. D3 Critical files `test_selftest_overlap.py` description omitted `_SCRIPT_TEMPLATE_PAIRS` + executable-bit check → added. D4 (borderline, a) header/NOT-in-scope said "sandbox-denial" but assertion checks `sandbox_policy.type` → both updated to "sandbox-policy-type inheritance". |
+| 3.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 1 | folded | D1 Part 2 sub-header still said "sandbox policy" after 3.5 D4 rename → added "sandbox-policy-type". |
+| 3.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Scope G case (4a) used colloquial "session not found" → updated to pinned `"no rollout found for thread id"`. D2 NOT-in-scope said "sandbox-policy-type check" but header says "inheritance" → updated. |
+| 3.5d | Claude (consistency self-check, round 4) | 2026-05-29 | doc-drift × 3 | folded | D1 Missing 3.5b log entry (was placed before 3.5) → reordered + added. D2 Part 2 sub-header lacked "inheritance" qualifier → added. D3 Asymmetric cleanup note: THREAD_JSONL_FILE not removed on extraction failure → added explanatory note (intentional; harmless; overwritten on next call). |
+| 4 | Codex | 2026-05-29 | 2 / 2 / 1 | do not implement yet | FN1 (imp-3) (a) V-13.5 probe runs from same cwd as seed → cwd assertion trivially passes; contrast requires running resume from /tmp. FN2 (imp-3) (a) first-continue path doesn't gate extraction on codex exit → `&&` chain + clean all three artifacts on failure. FN3 (imp-2) (a) V-13.5 live gate scheduled after commit 2 but commit 3 changes execution path → gate moved to after commit 3. FN4 (imp-2) (a) THREAD_JSONL_FILE retained in /tmp exposes review content → delete after successful extraction (KEEP_THREAD_JSONL=1 opt-out). FN5 (imp-1) (a) iter log had 3.5b before 3.5 → reordered. |
 
 ## Implementation log
 
