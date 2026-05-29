@@ -109,3 +109,213 @@ def test_meta_plan_snapshot_clean():
     assert result["summary"]["verified"] > 0, (
         "no facts verified — snapshot may be empty or all facts unrecognised"
     )
+
+
+# ── Gap 2: fact-root containment + privacy scoping (PR-0 hardening) ──────────
+
+
+def test_relative_parent_escape_not_verified(tmp_path):
+    """Containment: a relative ``../`` path that climbs out of the declared
+    root must NEVER verify, even when the escaped file exists. It lands in
+    unsupported_external, not verified."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    # A real file OUTSIDE the root, reachable only via ../
+    (tmp_path / "outside.py").write_text("def secret(): pass\n")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`../outside.py`", "path": "../outside.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+
+    assert result["summary"]["verified"] == 0, (
+        f"relative ../ escape must not verify even though the file exists: {result}"
+    )
+    assert result["summary"]["unsupported_external"] == 1, (
+        f"relative ../ escape should be unsupported_external: {result}"
+    )
+
+
+def test_fact_roots_ignored_in_historical_section(tmp_path):
+    """Privacy scoping: a Fact-roots heading nested under an excluded
+    historical section does NOT declare read roots (parse runs on active text)."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\nReal active work.\n\n## Iteration log\n\n### Fact roots\n\n- /etc\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == [], (
+        f"Fact-roots under a historical section must be ignored: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_ignored_in_code_fence(tmp_path):
+    """Privacy scoping: a Fact-roots block shown inside a code fence is an
+    example, not a declaration — it must be ignored."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\nDeclare roots like this:\n\n"
+        "```\n## Fact roots\n\n- /etc\n```\n\nThat is the syntax.\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == [], (
+        f"Fact-roots inside a code fence must be ignored: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_parsed_in_active_section(tmp_path):
+    """Positive case: a Fact-roots block in an active, non-fenced section IS
+    parsed (both bare and backtick-wrapped absolute paths)."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Fact roots\n\n- /Users/example/repo\n- `/opt/other`\n\n## Scope\n\nwork\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == ["/Users/example/repo", "/opt/other"], (
+        f"active Fact-roots block must be parsed: {facts_data['fact_roots']}"
+    )
+
+
+def test_buried_symlink_via_rglob_not_verified(tmp_path):
+    """Containment (rglob branch): a bare filename whose only match under the
+    root is a buried symlink pointing OUTSIDE the root must not verify. This
+    exercises the _find_file rglob fallback specifically (the exact-path join
+    does not exist, so the _escapes_all_roots gate passes and the rglob branch
+    is reached)."""
+    import os
+
+    root = tmp_path / "repo"
+    (root / "deep").mkdir(parents=True)
+    outside = tmp_path / "secret.py"
+    outside.write_text("def leak(): pass\n")
+    os.symlink(outside, root / "deep" / "shadow.py")  # buried symlink, escapes root
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`shadow.py`", "path": "shadow.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"buried symlink escaping the root must not verify via rglob: {result}"
+    )
+
+
+def test_exact_path_symlink_escape_not_verified(tmp_path):
+    """Containment (exact-path / gate): a symlink at the referenced path that
+    resolves outside the root must not verify."""
+    import os
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secret.py"
+    outside.write_text("def leak(): pass\n")
+    os.symlink(outside, root / "link.py")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "file_ref", "raw": "`link.py`", "path": "link.py"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"exact-path symlink escaping the root must not verify: {result}"
+    )
+
+
+def test_symbol_ref_via_buried_symlink_not_verified(tmp_path):
+    """Containment (symbol_ref): _grep_symbol must not read a buried symlink
+    whose target is outside the root, so a symbol defined ONLY in an escaped
+    file is not verified."""
+    import os
+
+    root = tmp_path / "repo"
+    (root / "sub").mkdir(parents=True)
+    outside = tmp_path / "secret_src.py"
+    outside.write_text("def secret_symbol():\n    pass\n")
+    os.symlink(outside, root / "sub" / "shadow.py")  # buried symlink, escapes root
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "symbol_ref", "raw": "`secret_symbol()`", "symbol": "secret_symbol"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"symbol defined only in an escaped symlink must not verify: {result}"
+    )
+
+
+def test_make_target_via_symlinked_makefile_not_verified(tmp_path):
+    """Containment (make_target_ref): _grep_make_target must not read a Makefile
+    that is a symlink pointing outside the root."""
+    import os
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "EvilMakefile"
+    outside.write_text("evil-target:\n\techo hi\n")
+    os.symlink(outside, root / "Makefile")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [
+            {"type": "make_target_ref", "raw": "`make evil-target`", "target": "evil-target"}
+        ],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"target in a symlinked-out Makefile must not verify: {result}"
+    )
+
+
+# ── Gap 3: under-scan regression — active is scanned, historical is excluded ──
+
+
+def test_active_subsections_and_tables_are_scanned(tmp_path):
+    """Under-scan regression (iter-7 FN1): facts in active ``###`` sub-blocks
+    AND active table rows ARE extracted. The denylist design scans everything
+    not explicitly historical, so the previously-missed cases (a sub-section
+    like PR-1's "First concrete step", a side-workstream table row) are covered."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## PR-1\n\n"
+        "### First concrete step\n\n"
+        "Capture output; see `scripts/extract-plan-facts.py:1` for the shape.\n\n"
+        "## Side items\n\n"
+        "| # | file | note |\n"
+        "|---|---|---|\n"
+        "| 1 | `bootstrap_lib/render.py` | the render map |\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "scripts/extract-plan-facts.py:1" in raws, (
+        f"fact in an active ### sub-block must be scanned: {raws}"
+    )
+    assert "bootstrap_lib/render.py" in raws, f"fact in an active table row must be scanned: {raws}"
+
+
+def test_iteration_log_and_evidence_table_excluded(tmp_path):
+    """Under-scan regression: facts under Iteration log / Evidence table
+    (historical) must NOT be extracted, even though they contain backtick file
+    refs — otherwise the fact-checker would flag now-fixed historical mentions."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Scope\n\nReal active ref: `scripts/verify-plan-facts.py`.\n\n"
+        "## Iteration log\n\n"
+        "iter 1 touched `bogus/iterlog_only.py:999`.\n\n"
+        "## Evidence table\n\n"
+        "| src | file |\n|---|---|\n| x | `bogus/evidence_only.py` |\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "scripts/verify-plan-facts.py" in raws, f"active Scope fact must be extracted: {raws}"
+    assert not any("iterlog_only" in r for r in raws), (
+        f"Iteration log fact leaked into extraction: {raws}"
+    )
+    assert not any("evidence_only" in r for r in raws), (
+        f"Evidence table fact leaked into extraction: {raws}"
+    )

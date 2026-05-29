@@ -8,6 +8,68 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from PR-0 hardening (fact-check post-merge review)
+
+PR #30 shipped the `review-plan-fact-check-by-{codex,claude}` targets +
+`scripts/extract-plan-facts.py` + `scripts/verify-plan-facts.py`. A post-merge
+review surfaced four gaps; containment (gap 2) and the under-scan regression
+tests (gap 3) were fixed in the PR-0-hardening PR. The two below are deferred.
+
+### Deterministic CLI-flag semantic verification (`fact-check-cli-flag-verification`)
+
+**Status**: parked — `verify-plan-facts.py` classifies every `cli_flag_ref` as
+`not_verifiable` (documented in its docstring). Catching a semantic flag
+conflict (e.g. `--apply` + `--dry-run`, mutually exclusive in
+`bootstrap_lib/_flags.py`) needs either (a) importing the CLI-under-test's
+parser — impossible, because the script ships to downstream projects via
+`shared/scripts-verify-plan-facts.py.tmpl` and must stay stdlib-only (no
+`bootstrap_lib` dependency), or (b) executing the CLI — which violates the
+no-execute safety boundary (iter-4 FN1). Generic, safe flag-semantics
+verification is a genuine design problem, not a quick addition.
+
+**Trigger to pick up**:
+- A plan loop repeatedly ships CLI-flag-conflict drift the deterministic
+  extractor can't catch (the iter-3 F3 `--apply --dry-run` class recurs).
+
+**Starting requirements / candidate design**:
+- An OPT-IN, repo-local verifier hook: the generic script looks for an optional
+  `scripts/verify-plan-facts-local.py` (NOT shipped in the template) that the
+  host repo provides; if present, delegate `cli_flag_ref` checks to it. The
+  host hook MAY import its own resolver (e.g. `bootstrap_lib.cli._resolve_mode`)
+  and run `parse_args` on flag combinations in a no-`main()`, side-effect-free
+  harness. Absent the hook, `cli_flag_ref` stays `not_verifiable`.
+- Requires capturing flag COMBINATIONS (full command incantations) in
+  `extract-plan-facts.py`, not just individual `--flag` tokens.
+- Tests: repo-local hook fixture proving `--apply --dry-run` fails + a valid
+  combo passes; downstream-shaped fixture proving the generic script stays
+  `not_verifiable` (no hook) without error.
+
+**Rough effort**: ~1–1.5 days.
+
+---
+
+### Live-AI fallback for the fact-check review targets (`fact-check-ai-fallback`)
+
+**Status**: parked — the `review-plan-fact-check-by-{codex,claude}` Makefile
+targets only check `command -v` for the CLI. If `codex`/`claude` is installed
+but unauthenticated / rate-limited / network-blocked, the target fails even
+though the deterministic `extract`+`verify` JSON (the load-bearing part) is
+still useful.
+
+**Trigger to pick up**:
+- The fact-check pre-pass runs where the live CLI is flaky (CI, offline) and
+  the deterministic output alone would suffice.
+
+**Starting requirements**:
+- Add a deterministic-only path: run `extract-plan-facts.py | verify-plan-facts.py`
+  and emit the JSON even when the live-AI judgment layer is unavailable; the
+  target degrades to "deterministic findings only" with a clear notice rather
+  than a hard failure.
+
+**Rough effort**: ~1–2 hours.
+
+---
+
 ## Follow-ups from skill-pr10 (harvest plan-tango B/C/D/E)
 
 ### Skill wrapper in plan mode (`skill-wrapper-pr-followup`)

@@ -19,10 +19,10 @@ Fact-root resolution:
   - The caller passes a DEFAULT_ROOT (the current repo) as the second
     argument.  If fact_roots is empty the default root is used.
   - A relative path fact is searched under each declared root in order.
-  - An absolute-path fact is checked directly; if it falls outside every
-    declared root it is classified as unsupported_external.
-  - Facts referencing paths not under ANY declared root are also
-    classified as unsupported_external.
+  - Containment is enforced by resolving the candidate (collapsing ``..``
+    and symlinks): an absolute path OR a relative path that climbs out via
+    ``..`` and lands outside every declared root is classified as
+    unsupported_external — never verified.
 
 Usage:
   scripts/extract-plan-facts.py plan.md | scripts/verify-plan-facts.py - /repo/root
@@ -48,6 +48,17 @@ def _count_lines(path: Path) -> int:
         return -1
 
 
+def _within(path: Path, root: Path) -> bool:
+    """True if *path* resolves to a location inside *root* (already resolved).
+
+    ``resolve()`` collapses ``..`` and symlinks, so neither can smuggle a read
+    outside the declared root.  This is the SINGLE containment predicate shared
+    by every read site (``_escapes_all_roots``, ``_find_file``, ``_grep_symbol``,
+    ``_grep_make_target``) so the guarantee cannot drift between them.
+    """
+    return path.resolve().is_relative_to(root)
+
+
 _SYMBOL_EXTENSIONS = (".py", ".go", ".ts", ".tsx", ".js")
 
 
@@ -67,7 +78,7 @@ def _grep_symbol(roots: list[Path], symbol: str) -> bool:
     ]
     for root in roots:
         for src_file in root.rglob("*"):
-            if src_file.suffix not in _SYMBOL_EXTENSIONS:
+            if src_file.suffix not in _SYMBOL_EXTENSIONS or not _within(src_file, root):
                 continue
             try:
                 text = src_file.read_text(encoding="utf-8", errors="replace")
@@ -81,7 +92,7 @@ def _grep_symbol(roots: list[Path], symbol: str) -> bool:
 def _grep_make_target(root: Path, target: str) -> bool:
     """Return True if *target* appears as a Makefile target in root/Makefile."""
     makefile = root / "Makefile"
-    if not makefile.exists():
+    if not makefile.exists() or not _within(makefile, root):
         return False
     try:
         text = makefile.read_text(encoding="utf-8", errors="replace")
@@ -93,10 +104,24 @@ def _grep_make_target(root: Path, target: str) -> bool:
 
 
 def _resolve_roots(fact_roots_from_json: list[str], default_root: Path) -> list[Path]:
-    """Return the list of root directories to search."""
+    """Return the list of root directories to search (all resolved)."""
     if fact_roots_from_json:
-        return [Path(r) for r in fact_roots_from_json]
+        return [Path(r).resolve() for r in fact_roots_from_json]
     return [default_root.resolve()]
+
+
+def _escapes_all_roots(path_str: str, roots: list[Path]) -> bool:
+    """True if *path_str* resolves outside EVERY declared root.
+
+    Handles both absolute paths and relative paths that climb out via
+    ``..``.  ``resolve()`` collapses ``..`` segments AND symlinks, so
+    neither can smuggle a read outside the declared roots.  *roots* are
+    already resolved by ``_resolve_roots``.
+    """
+    p = Path(path_str)
+    if p.is_absolute():
+        return not any(_within(p, root) for root in roots)
+    return all(not _within(root / p, root) for root in roots)
 
 
 def _find_file(rel_path: str, roots: list[Path]) -> Path | None:
@@ -106,17 +131,24 @@ def _find_file(rel_path: str, roots: list[Path]) -> Path | None:
     exact path under each root.  For bare filenames (no ``/``), also
     fall back to a recursive glob so that shorthand references like
     ``adopt.py`` resolve to ``bootstrap_lib/adopt.py``.
+
+    Containment guard: a candidate is only returned if its resolved path
+    stays under the root it was found in, so a ``../`` climb-out cannot
+    be reported as found even if the escaped file happens to exist.
     """
     for root in roots:
         candidate = root / rel_path
-        if candidate.exists():
+        if candidate.exists() and _within(candidate, root):
             return candidate
-    # Bare filename fallback: search recursively under each root.
+    # Bare filename fallback: search recursively under each root.  Apply the
+    # SAME containment guard as the exact-path branch so a buried symlink
+    # pointing outside the root cannot be returned (skip non-contained matches
+    # rather than only inspecting the first).
     if "/" not in rel_path:
         for root in roots:
-            matches = sorted(root.rglob(rel_path))
-            if matches:
-                return matches[0]
+            for match in sorted(root.rglob(rel_path)):
+                if _within(match, root):
+                    return match
     return None
 
 
@@ -135,12 +167,11 @@ def verify(facts_data: dict, default_root: Path) -> dict:
 
         if ftype == "file_ref":
             path_str = fact["path"]
-            p = Path(path_str)
-            if p.is_absolute() and not any(p.is_relative_to(root) for root in roots):
+            if _escapes_all_roots(path_str, roots):
                 unsupported_external.append(
                     {
                         "fact": fact,
-                        "detail": f"absolute path outside declared fact roots: {path_str}",
+                        "detail": f"path resolves outside declared fact roots: {path_str}",
                     }
                 )
                 continue
@@ -153,12 +184,11 @@ def verify(facts_data: dict, default_root: Path) -> dict:
         elif ftype == "file_line_ref":
             path_str = fact["path"]
             lineno = fact["line"]
-            p = Path(path_str)
-            if p.is_absolute() and not any(p.is_relative_to(root) for root in roots):
+            if _escapes_all_roots(path_str, roots):
                 unsupported_external.append(
                     {
                         "fact": fact,
-                        "detail": f"absolute path outside declared fact roots: {path_str}",
+                        "detail": f"path resolves outside declared fact roots: {path_str}",
                     }
                 )
                 continue

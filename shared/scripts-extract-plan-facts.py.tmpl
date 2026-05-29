@@ -112,14 +112,27 @@ def extract_active_text(plan_text: str) -> str:
 def parse_fact_roots(plan_text: str) -> list[str]:
     """Return absolute paths from a '## Fact roots' block, if present.
 
-    Looks for a level-2 heading that starts with "fact roots" (case-
-    insensitive) and collects list items that look like absolute paths.
+    Looks for a heading that starts with "fact roots" (case-insensitive)
+    and collects list items that look like absolute paths.
+
+    Privacy scoping: lines inside fenced code blocks (``` or ~~~) are
+    ignored, so a Fact-roots example shown inside a code fence does NOT
+    declare real read roots.  Callers should pass ACTIVE plan text
+    (historical sections already stripped) so a Fact-roots block nested
+    under an excluded section is not honoured either.
     """
     roots: list[str] = []
     in_block = False
     block_depth = 2
+    in_fence = False
 
     for line in plan_text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         lvl = _heading_level(line)
         if lvl is not None:
             heading = _heading_text(line)
@@ -254,8 +267,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot read plan file: {exc}", file=sys.stderr)
         return 1
 
-    fact_roots = parse_fact_roots(plan_text)
     active_text = extract_active_text(plan_text)
+    # parse_fact_roots runs on ACTIVE text so a "## Fact roots" block nested
+    # under a historical section cannot declare read roots (privacy scoping).
+    fact_roots = parse_fact_roots(active_text)
     facts = extract_facts(active_text)
 
     result = {
