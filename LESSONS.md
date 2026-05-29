@@ -133,6 +133,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-30: Env-vs-feature failure classifiers must be calibrated against REAL failure strings
+
+**Trigger**: PR-1 (Bucket F) — the V-13.5 verifier's `looks_like_env_failure` heuristic was written from *imagined* env-error strings (auth / quota / network). The FIRST live run hit a real one it didn't cover: a connected MCP server's expired OAuth token (`TokenRefreshFailed` / `invalid_grant` from a Meta-ads MCP, `mcp.facebook.com`) aborted codex before it emitted `session_meta`. The gate correctly blocked (non-zero, merge-blocking) but mislabelled the environment failure as "probe DID NOT RUN — file a bug" instead of "environment unavailable — rerun".
+
+**Rule**: A heuristic that classifies external-tool failures (env-vs-feature, transient-vs-permanent) can only be calibrated against REAL failure output, not imagined strings. Treat the first live run of such a classifier as calibration data: capture the actual failure text and fold the unmatched env signatures back in. Prefer SPECIFIC machine-error tokens (`invalid_grant`, `TokenRefreshFailed`) over bare words (`connection`, `network`) that false-positive on prose. And note: a connected MCP server is part of the environment — its auth/transport failures are env-unavailable, NOT a bug in the code under test.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)
