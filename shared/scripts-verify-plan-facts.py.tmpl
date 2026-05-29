@@ -48,6 +48,17 @@ def _count_lines(path: Path) -> int:
         return -1
 
 
+def _within(path: Path, root: Path) -> bool:
+    """True if *path* resolves to a location inside *root* (already resolved).
+
+    ``resolve()`` collapses ``..`` and symlinks, so neither can smuggle a read
+    outside the declared root.  This is the SINGLE containment predicate shared
+    by every read site (``_escapes_all_roots``, ``_find_file``, ``_grep_symbol``,
+    ``_grep_make_target``) so the guarantee cannot drift between them.
+    """
+    return path.resolve().is_relative_to(root)
+
+
 _SYMBOL_EXTENSIONS = (".py", ".go", ".ts", ".tsx", ".js")
 
 
@@ -67,7 +78,7 @@ def _grep_symbol(roots: list[Path], symbol: str) -> bool:
     ]
     for root in roots:
         for src_file in root.rglob("*"):
-            if src_file.suffix not in _SYMBOL_EXTENSIONS:
+            if src_file.suffix not in _SYMBOL_EXTENSIONS or not _within(src_file, root):
                 continue
             try:
                 text = src_file.read_text(encoding="utf-8", errors="replace")
@@ -81,7 +92,7 @@ def _grep_symbol(roots: list[Path], symbol: str) -> bool:
 def _grep_make_target(root: Path, target: str) -> bool:
     """Return True if *target* appears as a Makefile target in root/Makefile."""
     makefile = root / "Makefile"
-    if not makefile.exists():
+    if not makefile.exists() or not _within(makefile, root):
         return False
     try:
         text = makefile.read_text(encoding="utf-8", errors="replace")
@@ -109,9 +120,8 @@ def _escapes_all_roots(path_str: str, roots: list[Path]) -> bool:
     """
     p = Path(path_str)
     if p.is_absolute():
-        rp = p.resolve()
-        return not any(rp.is_relative_to(root) for root in roots)
-    return all(not (root / p).resolve().is_relative_to(root) for root in roots)
+        return not any(_within(p, root) for root in roots)
+    return all(not _within(root / p, root) for root in roots)
 
 
 def _find_file(rel_path: str, roots: list[Path]) -> Path | None:
@@ -128,7 +138,7 @@ def _find_file(rel_path: str, roots: list[Path]) -> Path | None:
     """
     for root in roots:
         candidate = root / rel_path
-        if candidate.exists() and candidate.resolve().is_relative_to(root):
+        if candidate.exists() and _within(candidate, root):
             return candidate
     # Bare filename fallback: search recursively under each root.  Apply the
     # SAME containment guard as the exact-path branch so a buried symlink
@@ -137,7 +147,7 @@ def _find_file(rel_path: str, roots: list[Path]) -> Path | None:
     if "/" not in rel_path:
         for root in roots:
             for match in sorted(root.rglob(rel_path)):
-                if match.resolve().is_relative_to(root):
+                if _within(match, root):
                     return match
     return None
 

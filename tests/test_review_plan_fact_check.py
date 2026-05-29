@@ -223,3 +223,50 @@ def test_exact_path_symlink_escape_not_verified(tmp_path):
     assert result["summary"]["verified"] == 0, (
         f"exact-path symlink escaping the root must not verify: {result}"
     )
+
+
+def test_symbol_ref_via_buried_symlink_not_verified(tmp_path):
+    """Containment (symbol_ref): _grep_symbol must not read a buried symlink
+    whose target is outside the root, so a symbol defined ONLY in an escaped
+    file is not verified."""
+    import os
+
+    root = tmp_path / "repo"
+    (root / "sub").mkdir(parents=True)
+    outside = tmp_path / "secret_src.py"
+    outside.write_text("def secret_symbol():\n    pass\n")
+    os.symlink(outside, root / "sub" / "shadow.py")  # buried symlink, escapes root
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [{"type": "symbol_ref", "raw": "`secret_symbol()`", "symbol": "secret_symbol"}],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"symbol defined only in an escaped symlink must not verify: {result}"
+    )
+
+
+def test_make_target_via_symlinked_makefile_not_verified(tmp_path):
+    """Containment (make_target_ref): _grep_make_target must not read a Makefile
+    that is a symlink pointing outside the root."""
+    import os
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "EvilMakefile"
+    outside.write_text("evil-target:\n\techo hi\n")
+    os.symlink(outside, root / "Makefile")
+
+    facts_data = {
+        "plan_file": "synthetic",
+        "fact_roots": [str(root)],
+        "facts": [
+            {"type": "make_target_ref", "raw": "`make evil-target`", "target": "evil-target"}
+        ],
+    }
+    result = _verify(json.dumps(facts_data), root)
+    assert result["summary"]["verified"] == 0, (
+        f"target in a symlinked-out Makefile must not verify: {result}"
+    )
