@@ -113,7 +113,7 @@ still useful.
 Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 - Stale-session fallback matcher: `"no rollout found for thread id"` (verified live 2026-05-29).
 - Atomic THREAD_FILE write pattern (`.tmp` + UUID validate + `mv`).
-- V-13.5 now 4-gate: UUID continuity + sandbox-denial event + file absence + cwd.
+- V-13.5 now 4-gate: UUID continuity + `turn_context.sandbox_policy.type == "read-only"` (NOT sandbox-denial event) + file absence + cwd. Probe runs from `/tmp` with `--skip-git-repo-check`.
 - A/B replay uses direct `codex exec/resume --json` (bypasses Make target).
 - `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE` added to `run-with-clean-env.py` EXACT_DROP.
 

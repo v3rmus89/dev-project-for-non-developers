@@ -22,7 +22,8 @@ A/B replay gates in the Verification section pass (meta-plan PR-1).
 | E | `bootstrap_lib/render.py` `SHARED_TEMPLATE_MAP` | Register `D`. |
 | F | `bootstrap_lib/manifest.py` `EXECUTABLE_TARGETS` | Register the script as executable on bootstrap. |
 | G | Tests | `tests/test_extract_codex_session_id.py` (unit tests for script A: JSONL-with-session-meta → prints ID to stdout; JSONL-without-session-meta → non-zero exit and prints nothing). `tests/test_selftest_overlap.py` extended: (a) add `scripts/extract-codex-session-id.py` ↔ `shared/scripts-extract-codex-session-id.py.tmpl` to `_SCRIPT_TEMPLATE_PAIRS` for byte-identity enforcement, (b) assert `scripts/extract-codex-session-id.py` is executable (`chmod +x` / `os.access(X_OK)`). `tests/test_makefile_review_targets.py` extended to cover new vars/targets. Test matrix in `tests/test_makefile_review_targets.py` using a codex argv-logging shim: (1) fresh — no `--json`, no `THREAD_FILE` written; (2) continue, no existing `THREAD_FILE` — runs `codex exec --json` (writes `THREAD_JSONL_FILE` via plain redirect), then extracts `THREAD_FILE` atomically via `.tmp` + UUID validation + `mv`; extractor failure path — asserts no `THREAD_FILE`, `THREAD_FILE.tmp`, or `THREAD_JSONL_FILE` remains (all three cleaned up); also asserts `THREAD_JSONL_FILE` is deleted on the success path (FN4 fold) and retained when `KEEP_THREAD_JSONL=1` (only on success — failure path always removes it); (3) continue, `THREAD_FILE` exists — runs `codex exec resume $SESSION_ID`; (4a) `"no rollout found for thread id"` exact-match fallback — clears stale `THREAD_FILE` + `THREAD_JSONL_FILE`, starts fresh; (4b) unrelated resume failure — exits non-zero, does NOT clear thread state; (5) `loop-reset` — removes `THREAD_FILE` + `THREAD_JSONL_FILE`. |
-| H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE` to `EXACT_DROP` (FN5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Test: shim asserts Codex does not receive these in its environment. |
+| H | `scripts/run-with-clean-env.py` + `shared/scripts-run-with-clean-env.py.tmpl` | Add `THREAD_MODE`, `THREAD_FILE`, `THREAD_JSONL_FILE`, **`KEEP_THREAD_JSONL`** to `EXACT_DROP` (FN5 fold + FN3 iter-5 fold). Prevents leaked Make variables from reaching the Codex subprocess. Test: shim asserts Codex does not receive these in its environment. |
+| I | `BACKLOG.md` `continue-thread-pr-followup` entry | Update V-13.5 description to reflect current gate: `turn_context.payload.sandbox_policy.type == "read-only"` + `--skip-git-repo-check` on the `/tmp` probe. Add to rollout commit 4 (docs-only change). |
 
 **NOT in scope (no code deliverable)**: default flip from `THREAD_MODE=fresh` → `continue`
 (deferred to post-A/B-replay gates — see Verification). V-13.5 Part 2 live
@@ -150,8 +151,9 @@ Run FROM the repo root using the actual codex CLI:
    ```
    SESSION_ID=$(cat /tmp/plan-review-$KEY.thread)
    echo "Probing session: $SESSION_ID"
-   # Run resume from /tmp — NOT the repo root
-   cd /tmp && codex exec resume "$SESSION_ID" --json \
+   # Run resume from /tmp — NOT the repo root (--skip-git-repo-check required;
+   # codex exec resume fails in non-git dirs without it — verified 2026-05-29)
+   cd /tmp && codex exec resume "$SESSION_ID" --skip-git-repo-check --json \
      "Attempt to create a file at /tmp/test-v13-5-write.txt. Report what happened." \
      > /tmp/test-v13-5-resumed.jsonl
    # Return to repo root for subsequent assertions
@@ -167,9 +169,35 @@ Run FROM the repo root using the actual codex CLI:
    d. First `turn_context.payload.cwd` in resumed JSONL equals `realpath(CURDIR)`
       from the ORIGINAL session (cwd inherited)
 
-If any assertion fails: this PR must NOT merge. The `THREAD_MODE=continue` branch is unsafe
-(not merely unsuitable as default) until V-13.5 passes. File a bug and keep `THREAD_MODE=fresh`
-(the safe default) until fixed.
+Run the copy-pasteable assertion block (FN2 iter-5 fold — prose-only gate is too easy
+to skip incorrectly):
+```python
+import json, sys
+
+JSONL = "/tmp/test-v13-5-resumed.jsonl"
+SESSION_ID = open("/tmp/plan-review-<KEY>.thread").read().strip()
+REPO_CWD   = "<realpath-of-repo>"      # set this before running
+PROBE_FILE = "/tmp/test-v13-5-write.txt"
+
+events = [json.loads(l) for l in open(JSONL) if l.strip()]
+session_meta   = next(e for e in events if e.get("type") == "session_meta")
+turn_ctx       = next(e for e in events if e.get("type") == "turn_context")
+
+results = {
+  "uuid_continuity":  session_meta["payload"]["id"] == SESSION_ID,
+  "sandbox_read_only": turn_ctx["payload"]["sandbox_policy"]["type"] == "read-only",
+  "cwd_inherited":    turn_ctx["payload"]["cwd"] == REPO_CWD,
+  "file_absent":      not __import__("os.path", fromlist=[""]).exists(PROBE_FILE),
+}
+for k, v in results.items():
+    print(f"{'PASS' if v else 'FAIL'}: {k}")
+if not all(results.values()):
+    sys.exit(1)
+print("ALL FOUR PASS")
+```
+If any assertion fails (non-zero exit): this PR must NOT merge. The `THREAD_MODE=continue`
+branch is unsafe until V-13.5 passes. File a bug and keep `THREAD_MODE=fresh` (the safe
+default) until fixed.
 
 ### A/B replay gates (required before default flip; POST-PR-1)
 Per meta-plan PR-1 Verification: pick a real folded plan + its committed
@@ -278,6 +306,8 @@ No business metric — internal change. Measurable proxies post-merge:
 | 4 | Codex | 2026-05-29 | 2 / 2 / 1 | do not implement yet | FN1 (imp-3) (a) V-13.5 probe runs from same cwd as seed → cwd assertion trivially passes; contrast requires running resume from /tmp. FN2 (imp-3) (a) first-continue path doesn't gate extraction on codex exit → `&&` chain + clean all three artifacts on failure. FN3 (imp-2) (a) V-13.5 live gate scheduled after commit 2 but commit 3 changes execution path → gate moved to after commit 3. FN4 (imp-2) (a) THREAD_JSONL_FILE retained in /tmp exposes review content → delete after successful extraction (KEEP_THREAD_JSONL=1 opt-out). FN5 (imp-1) (a) iter log had 3.5b before 3.5 → reordered. |
 | 4.5 | Claude (consistency self-check) | 2026-05-29 | doc-drift × 6 + 1 process-obs | folded | All 6 from iter-4 FN4 fold not propagated. D1/D3 Scope G case (2) test missing THREAD_JSONL_FILE absence + JSONL-deletion assertions → added. D2 Risks row 6 omitted THREAD_JSONL_FILE from failure cleanup → updated to "all three". D4 KEEP_THREAD_JSONL semantics ambiguous (applies success-only; failure always removes) → clarified. D5 Risks row 3 stale (JSONL no longer persists by default) → rewritten as "data exposure" row. D6 Rollout commit 2 missing JSONL deletion + KEEP_THREAD_JSONL opt-out → added. D7 (process-obs, c) no 3.5e stable row in iter log — accepted as historical gap. |
 | 4.5b | Claude (consistency self-check, round 2) | 2026-05-29 | doc-drift × 2 | folded | D1 Iter log had 4.5 before 4 → reordered. D2 V-13.5 failure action said THREAD_MODE=undefined → standardized to THREAD_MODE=fresh. |
+| 4.5c | Claude (consistency self-check, round 3) | 2026-05-29 | doc-drift × 2 | folded | D1 Log had 4.5 before 4 again → reordered. D2 V-13.5 failure THREAD_MODE=undefined → THREAD_MODE=fresh. (Same bug as 3.5b/3.5 — log has an ordering defect that recurs; 4.5d fixed again.) |
+| 5 | Codex | 2026-05-29 | 2 / 2 / 0 | do not implement yet | FN1 (imp-3) (a) /tmp probe fails without --skip-git-repo-check (verified) → added to probe command. FN2 (imp-3) (a) 4-gate assertion is prose-only → added copy-pasteable Python script. FN3 (imp-2) (a) KEEP_THREAD_JSONL not in EXACT_DROP → added to Scope H + Scope I (BACKLOG update). FN4 (imp-2) (a) BACKLOG V-13.5 description stale (sandbox-denial) → updated to sandbox_policy.type check + /tmp flag. |
 
 ## Implementation log
 
