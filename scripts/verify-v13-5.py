@@ -15,38 +15,53 @@ exit CLASS tells you what to do:
 
   - environment unavailable (exit 2): codex auth / quota / network / a local
     codex error (e.g. an in-process app-server hitting "Operation not
-    permitted"). The gate has NOT actually tested the feature — RERUN in a
-    valid environment. Do not treat as a feature pass OR fail.
+    permitted", or a connected-MCP-server OAuth token expiring). The gate has
+    NOT actually tested the feature — RERUN in a valid environment. Do not
+    treat as a feature pass OR fail.
   - probe DID NOT RUN (exit 3): a seed/resume command failed for a feature
     reason (e.g. the seed never produced THREAD_FILE). FILE A BUG and keep
     THREAD_MODE=fresh (the safe default) until fixed.
-  - inheritance/normal-path FAILED (exit 4): an assertion failed — the
-    resumed session did not inherit the session id / read-only sandbox /
-    cwd, or the normal resume path did not materialise output. The
-    THREAD_MODE=continue branch is unsafe — FILE A BUG and keep
-    THREAD_MODE=fresh until fixed.
+  - inheritance/normal-path FAILED (exit 4): an assertion failed — the resume
+    branch did not materialise output, or read-only was NOT enforced on resume
+    (a write succeeded, or the resumed rollout's sandbox_policy.type was not
+    "read-only"), or thread-id continuity broke. The THREAD_MODE=continue
+    branch is unsafe — FILE A BUG and keep THREAD_MODE=fresh until fixed.
 
 What it does (live, ~3 real codex calls):
   0. Preflight — confirm codex is reachable + authenticated.
   1. `make loop-reset PLAN_FILE=<plan>` → assert clean preconditions.
   2. Seed: `make review-plan-by-codex PLAN_FILE=<plan> THREAD_MODE=continue
-     ITERATION=1` → assert THREAD_FILE now holds a session id.
+     ITERATION=1` → assert THREAD_FILE now holds a session id (thread_id).
   3. Normal-path resume smoke (THE gated path): `make review-plan-by-codex
      ... THREAD_MODE=continue ITERATION=2` (resume branch THROUGH
      run-with-clean-env.py, no --json). Assert exit 0 + output materialised
      + THREAD_FILE unchanged + JSONL cleaned up.
-  4. Inheritance probe (4 gates): from /tmp, `codex exec resume <id>
-     --skip-git-repo-check --json` and assert (a) session-id continuity,
-     (b) turn_context.payload.sandbox_policy.type == "read-only",
-     (c) the probe file was NOT written, (d) cwd inherited (== repo root,
-     NOT /tmp).
+  4. Read-only-ENFORCED probe (3 gates): resume the seed thread with
+     `-c sandbox_mode=read-only --json` (mirroring the recipe's resume flags)
+     and a WRITE-attempting prompt, run FROM THE REPO. Assert
+     (a) thread-id continuity — the resume stream re-emits thread.started with
+         the same thread_id;
+     (b) read-only enforced — the resumed ROLLOUT FILE's
+         turn_context.payload.sandbox_policy.type == "read-only";
+     (c) the write was BLOCKED — the probe file was NOT created.
+     The OLD 4th gate (cwd inheritance, probe from /tmp) is DROPPED: the recipe
+     runs resume from the repo, so cwd=repo by construction (correction 2026-05-30).
   5. Cleanup: on PASS, remove the probe/JSONL artifacts; on FAILURE retain
-     them for debugging; KEEP_V13_5_JSONL=1 retains regardless (the
-     deliberate inverse of KEEP_THREAD_JSONL's always-remove-on-failure).
+     them for debugging; KEEP_V13_5_JSONL=1 retains regardless (the deliberate
+     inverse of KEEP_THREAD_JSONL's always-remove-on-failure).
 
-The PURE functions below (make_command, compute_key, parse_jsonl,
-check_four_gates, normal_path_artifacts_ok, looks_like_env_failure) are
-unit-tested in tests/test_verify_v13_5.py with fixtures — no live calls in CI.
+Schema note (verified live, codex 0.130, 2026-05-30): the `codex exec --json`
+STDOUT *stream* keys continuity on `thread.started.thread_id` and has NO
+turn_context. `sandbox_policy.type` lives only in the codex ROLLOUT FILE
+(~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<thread_id>.jsonl) — so gate (b)
+reads the rollout file, not the stream. `codex exec resume` does NOT inherit
+`-C`/`--sandbox` (it defaults to workspace-write); read-only is forced via the
+general config override `-c sandbox_mode=read-only`.
+
+The PURE functions below (make_command, resume_probe_command, compute_key,
+parse_jsonl, thread_id_of, sandbox_type_of, check_gates, normal_path_artifacts_ok,
+looks_like_env_failure) are unit-tested in tests/test_verify_v13_5.py with
+fixtures — no live calls in CI.
 """
 
 from __future__ import annotations
@@ -90,9 +105,9 @@ _ENV_SIGNATURES = (
     "econnrefused",
     "authentication failed",
     # OAuth / connected-MCP-server auth failures (surfaced by the first live
-    # run: an expired Meta-ads MCP token aborted codex before it emitted
-    # session_meta). These are specific machine-error tokens, not prose, so
-    # they stay env-class without re-introducing bare-word false positives.
+    # run: an expired Meta-ads MCP token aborted codex before it seeded a
+    # thread). These are specific machine-error tokens, not prose, so they stay
+    # env-class without re-introducing bare-word false positives.
     "invalid_grant",
     "tokenrefreshfailed",
     "authrequired",
@@ -128,8 +143,39 @@ def make_command(target: str, plan_file: str, **make_vars: str) -> list[str]:
     return cmd
 
 
+def resume_probe_command(repo_root: str, session_id: str, probe_file: str) -> list[str]:
+    """Build the read-only-ENFORCED resume-probe argv (the SAFETY core of V-13.5).
+
+    Mirrors the recipe's resume invocation: `-c sandbox_mode=read-only` (resume
+    defaults to workspace-write and does NOT inherit --sandbox; F3) and NO
+    --sandbox/-C/--color (resume CLI-rejects those). `--json` captures the stream
+    for the thread-id-continuity gate. The prompt asks codex to WRITE probe_file
+    so the gate can assert read-only blocked it.
+
+    Single source of construction so the unit test can lock the `-c
+    sandbox_mode=read-only` flag — a regression dropping it would let the probe
+    resume in workspace-write and silently pass the write-blocked gate (the exact
+    failure mode the live gate exists to catch).
+    """
+    return [
+        f"{repo_root}/scripts/run-with-clean-env.py",
+        "--",
+        "codex",
+        "exec",
+        "resume",
+        session_id,
+        "-c",
+        "sandbox_mode=read-only",
+        "--json",
+        (
+            f"Use a shell command to create the file {probe_file} containing the "
+            "text v13-5-probe, then tell me whether the write succeeded."
+        ),
+    ]
+
+
 def parse_jsonl(text: str) -> list[dict]:
-    """Parse a codex `--json` stream into a list of dict events; skip blank or
+    """Parse a codex JSONL stream/file into a list of dict events; skip blank or
     non-JSON / non-object lines."""
     events: list[dict] = []
     for line in text.splitlines():
@@ -145,60 +191,75 @@ def parse_jsonl(text: str) -> list[dict]:
     return events
 
 
-def session_id_of(events: list[dict]) -> str | None:
-    """First session_meta.payload.id (a string), else None."""
+def thread_id_of(events: list[dict]) -> str | None:
+    """First thread.started.thread_id (a string) from a `codex exec --json`
+    STREAM, else None. This is the resumable id — NOT session_meta.payload.id
+    (that is the rollout-FILE field; the stream has no session_meta)."""
     for e in events:
-        if e.get("type") == "session_meta" and isinstance(e.get("payload"), dict):
-            sid = e["payload"].get("id")
-            if isinstance(sid, str) and sid:
-                return sid
+        if e.get("type") == "thread.started":
+            tid = e.get("thread_id")
+            if isinstance(tid, str) and tid:
+                return tid
     return None
 
 
-def first_turn_context_payload(events: list[dict]) -> dict | None:
-    """Payload of the first turn_context event, else None."""
-    for e in events:
+def sandbox_type_of(rollout_events: list[dict]) -> str | None:
+    """The LAST turn_context.payload.sandbox_policy.type from a codex ROLLOUT
+    FILE, else None.
+
+    Reads the rollout FILE (not the --json stream — the stream has no
+    turn_context). LAST (not first) so the RESUMED turn's sandbox is checked: if
+    a regression resumed in workspace-write, it shows up in the most recent
+    turn_context even when the seed turn was read-only.
+    """
+    result = None
+    for e in rollout_events:
         if e.get("type") == "turn_context" and isinstance(e.get("payload"), dict):
-            return e["payload"]
-    return None
+            sp = e["payload"].get("sandbox_policy")
+            if isinstance(sp, dict) and "type" in sp:
+                result = sp.get("type")
+    return result
 
 
-def check_four_gates(
-    events: list[dict],
+def check_gates(
+    stream_events: list[dict],
+    rollout_events: list[dict],
     expected_session_id: str,
-    expected_cwd: str,
     probe_file_exists: bool,
 ) -> tuple[bool, dict[str, tuple[bool, str]]]:
-    """The V-13.5 4-gate check on a RESUMED-session JSONL event list.
+    """The V-13.5 read-only-ENFORCED gate — 3 checks (correction item 4):
 
-    `probe_file_exists` is supplied by the caller so this stays pure (the
-    filesystem check lives in the orchestrator). Returns
-    (passed, {gate: (ok, detail)}).
+    a. thread-id continuity — the resume STREAM re-emits thread.started with the
+       same thread_id (resume, not restart).
+    b. read-only enforced — the resumed ROLLOUT FILE's LAST
+       turn_context.payload.sandbox_policy.type == "read-only" (deterministic
+       proof read-only was applied, not inferred from model behaviour).
+    c. write blocked — the probe file was NOT created (corroborates b: read-only
+       actually prevented the write).
+
+    The OLD cwd-inheritance gate is DROPPED: the recipe runs resume from the
+    repo, so cwd=repo by construction. `probe_file_exists` is supplied by the
+    caller so this stays pure. Returns (passed, {gate: (ok, detail)}).
     """
     results: dict[str, tuple[bool, str]] = {}
 
-    sid = session_id_of(events)
-    results["a_uuid_continuity"] = (
-        sid == expected_session_id,
-        f"session_meta.payload.id={sid!r} (expected {expected_session_id!r})",
+    tid = thread_id_of(stream_events)
+    results["a_thread_id_continuity"] = (
+        tid == expected_session_id,
+        f"thread.started.thread_id={tid!r} (expected {expected_session_id!r})",
     )
 
-    tc = first_turn_context_payload(events) or {}
-    sandbox_type = (tc.get("sandbox_policy") or {}).get("type")
+    sandbox_type = sandbox_type_of(rollout_events)
     results["b_sandbox_read_only"] = (
         sandbox_type == "read-only",
-        f"turn_context.payload.sandbox_policy.type={sandbox_type!r} (expected 'read-only')",
+        f"resumed rollout turn_context.payload.sandbox_policy.type={sandbox_type!r} "
+        "(expected 'read-only')",
     )
 
-    results["c_probe_file_absent"] = (
+    results["c_write_blocked"] = (
         not probe_file_exists,
-        f"probe file present={probe_file_exists} (expected absent)",
-    )
-
-    cwd = tc.get("cwd")
-    results["d_cwd_inheritance"] = (
-        cwd == expected_cwd,
-        f"turn_context.payload.cwd={cwd!r} (expected {expected_cwd!r}, NOT the /tmp caller cwd)",
+        f"probe file present={probe_file_exists} "
+        "(expected absent — read-only must block the write)",
     )
 
     passed = all(ok for ok, _ in results.values())
@@ -230,7 +291,8 @@ def normal_path_artifacts_ok(
 
 def looks_like_env_failure(text: str) -> bool:
     """True if the combined stdout/stderr smells like an environment problem
-    (auth/quota/network/local-codex) rather than a feature failure."""
+    (auth/quota/network/local-codex/connected-MCP-OAuth) rather than a feature
+    failure."""
     low = text.lower()
     return any(sig in low for sig in _ENV_SIGNATURES)
 
@@ -239,12 +301,29 @@ def looks_like_env_failure(text: str) -> bool:
 
 
 def _run(cmd: list[str], cwd: Path | str | None = None) -> subprocess.CompletedProcess:
+    # stdin=DEVNULL: `codex exec --json` hangs reading stdin otherwise (F2); the
+    # positional prompt is still honoured. Harmless for the non-json make calls.
     return subprocess.run(
         cmd,
         cwd=str(cwd) if cwd is not None else str(REPO_ROOT),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
     )
+
+
+def _find_resumed_rollout(session_id: str) -> Path | None:
+    """Locate the codex rollout FILE for a thread id: the most-recently-modified
+    ~/.codex/sessions/**/rollout-*-<session_id>.jsonl (a resume re-uses the same
+    thread_id, so the newest matching file holds the resumed turn)."""
+    sessions = Path.home() / ".codex" / "sessions"
+    if not sessions.is_dir():
+        return None
+    matches = sorted(
+        sessions.rglob(f"rollout-*-{session_id}.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    return matches[-1] if matches else None
 
 
 def _print_gate_results(results: dict[str, tuple[bool, str]]) -> None:
@@ -272,17 +351,20 @@ def main(argv: list[str]) -> int:
     key = compute_key(str(REPO_ROOT), str(plan_path))
     thread_file = Path(f"/tmp/plan-review-{key}.thread")
     thread_jsonl = Path(f"/tmp/plan-review-{key}.session.jsonl")
-    probe_file = Path("/tmp/v13-5-probe.txt")
+    # The probe writes INSIDE the repo workspace: under read-only the write is
+    # blocked (absent → PASS); under a workspace-write regression it succeeds
+    # (present → FAIL), which is exactly the safety hole we are gating against.
+    probe_file = REPO_ROOT / "v13-5-probe.txt"
     resumed_jsonl = Path("/tmp/v13-5-resumed.jsonl")
     out_seed = Path("/tmp/v13-5-out-seed.md")
     out_resume = Path("/tmp/v13-5-out-resume.md")
-    expected_cwd = os.path.realpath(str(REPO_ROOT))
+    preflight_out = Path("/tmp/v13-5-preflight.txt")
     keep = os.environ.get("KEEP_V13_5_JSONL", "") == "1"
 
     def cleanup_on_success() -> None:
         if keep:
             return
-        for p in (resumed_jsonl, probe_file, out_seed, out_resume):
+        for p in (resumed_jsonl, probe_file, out_seed, out_resume, preflight_out):
             p.unlink(missing_ok=True)
 
     # 0. Preflight — is the environment actually usable?
@@ -299,7 +381,7 @@ def main(argv: list[str]) -> int:
             "--color",
             "never",
             "--output-last-message",
-            "/tmp/v13-5-preflight.txt",
+            str(preflight_out),
             "Reply with the single word: ok",
         ]
     )
@@ -381,29 +463,13 @@ def main(argv: list[str]) -> int:
         sys.stderr.write("-> FILE A BUG; keep THREAD_MODE=fresh until fixed. Artifacts retained.\n")
         return EXIT_FAIL
 
-    # 4. Inheritance probe from /tmp (the cwd-contrast condition). Direct
-    #    `codex exec resume --json` through the clean-env wrapper so CODEX_*
-    #    config can't perturb the inheritance check. --skip-git-repo-check is
-    #    required because /tmp is not a git repo. resume does NOT take
-    #    -C/--sandbox (it inherits them; passing them is CLI-rejected).
+    # 4. Read-only-ENFORCED probe: resume with `-c sandbox_mode=read-only --json`
+    #    + a write-attempting prompt, FROM THE REPO. resume does NOT take
+    #    -C/--sandbox (CLI-rejected); read-only is forced via the `-c` override.
     probe_file.unlink(missing_ok=True)
-    probe_prompt = (
-        f"Use a shell command to create the file {probe_file} containing the text "
-        "v13-5-probe, then tell me whether the write succeeded."
-    )
     probe = _run(
-        [
-            "scripts/run-with-clean-env.py",
-            "--",
-            "codex",
-            "exec",
-            "resume",
-            session_id,
-            "--skip-git-repo-check",
-            "--json",
-            probe_prompt,
-        ],
-        cwd="/tmp",
+        resume_probe_command(str(REPO_ROOT), session_id, str(probe_file)),
+        cwd=REPO_ROOT,
     )
     resumed_jsonl.write_text(probe.stdout)
     if probe.returncode != 0:
@@ -411,30 +477,44 @@ def main(argv: list[str]) -> int:
         if looks_like_env_failure(combined):
             return _fail(
                 EXIT_ENV,
-                "FAIL CLASS: environment unavailable (inheritance probe failed on an env error).",
+                "FAIL CLASS: environment unavailable (read-only probe failed on an env error).",
                 "-> RERUN in a valid environment. Artifacts retained.\n" + combined[-1000:],
             )
         return _fail(
             EXIT_PROBE,
-            "probe DID NOT RUN: `codex exec resume --json` from /tmp failed.",
+            "probe DID NOT RUN: `codex exec resume -c sandbox_mode=read-only --json` failed.",
             "-> FILE A BUG. Artifacts retained.\n" + combined[-1000:],
         )
 
-    events = parse_jsonl(resumed_jsonl.read_text())
-    passed, gates = check_four_gates(events, session_id, expected_cwd, probe_file.exists())
+    stream_events = parse_jsonl(resumed_jsonl.read_text())
+    rollout_path = _find_resumed_rollout(session_id)
+    if rollout_path is None:
+        return _fail(
+            EXIT_FAIL,
+            "inheritance/normal-path FAILED: could not locate the resumed rollout file.",
+            f"-> Looked for rollout-*-{session_id}.jsonl under ~/.codex/sessions "
+            "(needed for the sandbox_policy gate). The resume itself SUCCEEDED (exit 0), "
+            "so this is more likely a harness/sessions-path mismatch (e.g. a non-default "
+            "CODEX_HOME) than a resume-branch regression — check the rollout location "
+            "before filing a bug. Artifacts retained.",
+        )
+    rollout_events = parse_jsonl(rollout_path.read_text())
+    passed, gates = check_gates(stream_events, rollout_events, session_id, probe_file.exists())
     if not passed:
-        sys.stderr.write("\n[V-13.5] inheritance/normal-path FAILED (4-gate inheritance probe):\n")
+        sys.stderr.write("\n[V-13.5] inheritance/normal-path FAILED (read-only-ENFORCED probe):\n")
         _print_gate_results(gates)
         sys.stderr.write(
-            "-> FILE A BUG; the resume branch does NOT inherit the seed's session. "
+            f"    (resumed rollout file: {rollout_path})\n"
+            "-> FILE A BUG; the resume branch is NOT read-only-enforced. "
             "Keep THREAD_MODE=fresh until fixed. Artifacts retained for debugging.\n"
         )
         return EXIT_FAIL
 
     cleanup_on_success()
     sys.stdout.write(
-        "\n[V-13.5] PASS — codex exec resume inherits the session id + read-only "
-        "sandbox + cwd, and the normal resume path materialises output.\n"
+        "\n[V-13.5] PASS — codex exec resume continues the same thread id, enforces "
+        "read-only (write blocked + resumed rollout sandbox_policy.type == 'read-only'), "
+        "and the normal resume path materialises output.\n"
     )
     return EXIT_OK
 

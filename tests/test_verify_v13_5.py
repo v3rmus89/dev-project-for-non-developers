@@ -4,11 +4,20 @@ The V-13.5 verifier is a repo-internal live pre-merge gate. Its live codex/make
 calls are exercised only by the manual `python3 scripts/verify-v13-5.py` run —
 NEVER in CI. These tests cover the pure logic with fixtures:
   - make_command (PLAN_FILE= always present — iter-8 FN1)
+  - resume_probe_command (the SAFETY core: `-c sandbox_mode=read-only` present,
+    --sandbox/-C/--color/--skip-git-repo-check absent)
   - compute_key (matches the Makefile KEY formula)
-  - parse_jsonl / session_id_of / first_turn_context_payload
-  - check_four_gates (PASS + each gate's FAIL variant)
+  - parse_jsonl / thread_id_of (stream) / sandbox_type_of (rollout file)
+  - check_gates (read-only-ENFORCED, 3 gates: PASS + each FAIL variant; the OLD
+    cwd-inheritance gate is dropped)
   - normal_path_artifacts_ok (PASS + FAIL variants)
   - looks_like_env_failure (env vs feature classification)
+
+TWO fixtures, two schemas (the live gate falsified an earlier conflation):
+  - codex-json-stream.jsonl  — the `codex exec --json` STDOUT stream
+    (thread.started.thread_id); used by thread_id_of / gate (a).
+  - codex-json-session.jsonl — the codex rollout FILE
+    (turn_context.payload.sandbox_policy.type); used by sandbox_type_of / gate (b).
 
 The script's filename is hyphenated, so it is loaded via importlib (the
 `if __name__ == "__main__"` guard keeps main() from running on import).
@@ -23,10 +32,11 @@ from pathlib import Path
 import pytest
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-COMMITTED_FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "codex-json-session.jsonl"
-# Values pinned in the committed V-13 fixture.
+STREAM_FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "codex-json-stream.jsonl"
+ROLLOUT_FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "codex-json-session.jsonl"
+# thread.started.thread_id in the stream fixture == session_meta.payload.id in the
+# rollout fixture (codex re-uses the same id on resume — that's the continuity).
 FIXTURE_SESSION_ID = "00000000-0000-7000-8000-000000000001"
-FIXTURE_CWD = "/workspace/project"
 
 
 def _load_verifier():
@@ -72,6 +82,41 @@ def test_make_command_plan_file_immediately_after_target():
     assert cmd[:3] == ["make", "review-plan-by-codex", "PLAN_FILE=p.md"]
 
 
+# ── resume_probe_command: the SAFETY core (must force read-only) ────────────
+
+
+def test_resume_probe_command_forces_read_only():
+    """The probe MUST carry `-c sandbox_mode=read-only`, adjacency-checked. Dropping
+    it would let the probe resume in workspace-write and silently pass gate (c) —
+    the exact failure the live gate exists to catch (F3)."""
+    cmd = verify.resume_probe_command("/repo", "SID-123", "/repo/v13-5-probe.txt")
+    assert "resume" in cmd
+    assert "SID-123" in cmd
+    assert "-c" in cmd and "sandbox_mode=read-only" in cmd
+    assert cmd[cmd.index("-c") + 1] == "sandbox_mode=read-only", (
+        "`-c` must be immediately followed by `sandbox_mode=read-only`"
+    )
+    assert "--json" in cmd, "probe needs --json to capture the stream for the thread-id gate"
+
+
+def test_resume_probe_command_omits_resume_rejected_flags():
+    """`codex exec resume` CLI-rejects --sandbox/-C/--color, and from the repo we do
+    NOT pass --skip-git-repo-check (that was the OLD /tmp probe)."""
+    cmd = verify.resume_probe_command("/repo", "SID-123", "/repo/v13-5-probe.txt")
+    for rejected in ("--sandbox", "-C", "--color", "--skip-git-repo-check"):
+        assert rejected not in cmd, f"resume probe must NOT pass {rejected}"
+
+
+def test_resume_probe_command_prompt_targets_the_probe_file():
+    cmd = verify.resume_probe_command("/repo", "SID-123", "/repo/v13-5-probe.txt")
+    assert any("/repo/v13-5-probe.txt" in part for part in cmd), (
+        "the write-probe prompt must reference the probe file path"
+    )
+    assert cmd[:2] == ["/repo/scripts/run-with-clean-env.py", "--"], (
+        "probe must run through the clean-env wrapper"
+    )
+
+
 # ── compute_key matches the Makefile KEY formula ────────────────────────────
 
 
@@ -94,86 +139,126 @@ def test_compute_key_matches_sha256_formula(tmp_path):
 
 def test_parse_jsonl_skips_blank_and_garbled_lines():
     events = verify.parse_jsonl(
-        '{"type":"session_meta","payload":{"id":"abc"}}\n'
+        '{"type":"thread.started","thread_id":"abc"}\n'
         "\n"
         "not json\n"
         '["not","an","object"]\n'
-        '{"type":"turn_context","payload":{"cwd":"/x"}}\n'
+        '{"type":"turn.completed","usage":{"cached_input_tokens":0}}\n'
     )
-    assert [e["type"] for e in events] == ["session_meta", "turn_context"]
+    assert [e["type"] for e in events] == ["thread.started", "turn.completed"]
 
 
-def test_session_id_of_committed_fixture():
-    events = verify.parse_jsonl(COMMITTED_FIXTURE.read_text())
-    assert verify.session_id_of(events) == FIXTURE_SESSION_ID
+# ── thread_id_of: reads the STREAM (thread.started.thread_id) ────────────────
 
 
-def test_first_turn_context_payload_committed_fixture():
-    events = verify.parse_jsonl(COMMITTED_FIXTURE.read_text())
-    tc = verify.first_turn_context_payload(events)
-    assert tc is not None
-    assert tc["cwd"] == FIXTURE_CWD
-    assert tc["sandbox_policy"]["type"] == "read-only"
+def test_thread_id_of_committed_stream_fixture():
+    events = verify.parse_jsonl(STREAM_FIXTURE.read_text())
+    assert verify.thread_id_of(events) == FIXTURE_SESSION_ID
 
 
-# ── 4-gate check: PASS + each FAIL variant ──────────────────────────────────
+def test_thread_id_of_first_wins_and_ignores_non_string():
+    events = [
+        {"type": "thread.started"},  # no thread_id → skip
+        {"type": "thread.started", "thread_id": None},  # non-string → skip
+        {"type": "thread.started", "thread_id": "real-id-1"},
+        {"type": "thread.started", "thread_id": "real-id-2"},
+    ]
+    assert verify.thread_id_of(events) == "real-id-1"
 
 
-def _fixture_events():
-    return verify.parse_jsonl(COMMITTED_FIXTURE.read_text())
+def test_thread_id_of_returns_none_when_absent():
+    events = [{"type": "turn.completed", "usage": {}}]
+    assert verify.thread_id_of(events) is None
 
 
-def test_four_gates_pass_on_committed_fixture():
-    passed, results = verify.check_four_gates(
-        _fixture_events(), FIXTURE_SESSION_ID, FIXTURE_CWD, probe_file_exists=False
+def test_thread_id_of_ignores_rollout_session_meta():
+    """session_meta is the rollout-file field; thread_id_of must NOT read it."""
+    events = [{"type": "session_meta", "payload": {"id": "rollout-id"}}]
+    assert verify.thread_id_of(events) is None
+
+
+# ── sandbox_type_of: reads the ROLLOUT FILE (turn_context.sandbox_policy) ────
+
+
+def test_sandbox_type_of_committed_rollout_fixture():
+    events = verify.parse_jsonl(ROLLOUT_FIXTURE.read_text())
+    assert verify.sandbox_type_of(events) == "read-only"
+
+
+def test_sandbox_type_of_returns_last_turn_context():
+    """LAST turn_context wins — so a resumed turn that flipped to workspace-write is
+    caught even when the seed turn was read-only."""
+    events = [
+        {"type": "turn_context", "payload": {"sandbox_policy": {"type": "read-only"}}},
+        {"type": "turn_context", "payload": {"sandbox_policy": {"type": "workspace-write"}}},
+    ]
+    assert verify.sandbox_type_of(events) == "workspace-write"
+
+
+def test_sandbox_type_of_returns_none_when_absent():
+    events = [{"type": "thread.started", "thread_id": "x"}]
+    assert verify.sandbox_type_of(events) is None
+
+
+# ── check_gates: read-only-ENFORCED, 3 gates (PASS + each FAIL variant) ──────
+
+
+def _pass_inputs():
+    stream = verify.parse_jsonl(STREAM_FIXTURE.read_text())
+    rollout = verify.parse_jsonl(ROLLOUT_FIXTURE.read_text())
+    return stream, rollout
+
+
+def test_gates_pass_on_committed_fixtures():
+    stream, rollout = _pass_inputs()
+    passed, results = verify.check_gates(
+        stream, rollout, FIXTURE_SESSION_ID, probe_file_exists=False
     )
     assert passed, results
-    assert all(ok for ok, _ in results.values())
+    assert set(results) == {"a_thread_id_continuity", "b_sandbox_read_only", "c_write_blocked"}, (
+        "exactly 3 gates — the OLD cwd-inheritance gate must be dropped"
+    )
 
 
-def test_four_gates_fail_on_session_id_mismatch():
-    passed, results = verify.check_four_gates(
-        _fixture_events(), "11111111-1111-7111-8111-111111111111", FIXTURE_CWD, False
+def test_gates_fail_on_thread_id_mismatch():
+    stream, rollout = _pass_inputs()
+    passed, results = verify.check_gates(
+        stream, rollout, "11111111-1111-7111-8111-111111111111", probe_file_exists=False
     )
     assert not passed
-    assert not results["a_uuid_continuity"][0]
-    # The other three gates still pass — only (a) trips.
+    assert not results["a_thread_id_continuity"][0]
     assert results["b_sandbox_read_only"][0]
-    assert results["c_probe_file_absent"][0]
-    assert results["d_cwd_inheritance"][0]
+    assert results["c_write_blocked"][0]
 
 
-def test_four_gates_fail_on_non_read_only_sandbox():
-    # Build events directly (no JSONL round-trip needed): a resumed session that
-    # did NOT inherit the read-only sandbox.
-    events = [
-        {"type": "session_meta", "payload": {"id": FIXTURE_SESSION_ID}},
-        {
-            "type": "turn_context",
-            "payload": {"cwd": FIXTURE_CWD, "sandbox_policy": {"type": "danger-full-access"}},
-        },
+def test_gates_fail_on_non_read_only_sandbox():
+    """A resumed session that ran workspace-write (the F3 hole) must trip gate (b)."""
+    stream, _ = _pass_inputs()
+    rollout = [
+        {"type": "turn_context", "payload": {"sandbox_policy": {"type": "workspace-write"}}},
     ]
-    passed, results = verify.check_four_gates(events, FIXTURE_SESSION_ID, FIXTURE_CWD, False)
+    passed, results = verify.check_gates(
+        stream, rollout, FIXTURE_SESSION_ID, probe_file_exists=False
+    )
     assert not passed
     assert not results["b_sandbox_read_only"][0]
 
 
-def test_four_gates_fail_when_probe_file_written():
-    passed, results = verify.check_four_gates(
-        _fixture_events(), FIXTURE_SESSION_ID, FIXTURE_CWD, probe_file_exists=True
+def test_gates_fail_when_probe_file_written():
+    """If the probe write succeeded, read-only was NOT enforced — gate (c) trips."""
+    stream, rollout = _pass_inputs()
+    passed, results = verify.check_gates(
+        stream, rollout, FIXTURE_SESSION_ID, probe_file_exists=True
     )
     assert not passed
-    assert not results["c_probe_file_absent"][0]
+    assert not results["c_write_blocked"][0]
 
 
-def test_four_gates_fail_on_cwd_mismatch():
-    """The /tmp-contrast condition: a resumed session whose cwd is the caller's
-    /tmp (not the inherited repo root) must fail gate (d)."""
-    passed, results = verify.check_four_gates(
-        _fixture_events(), FIXTURE_SESSION_ID, "/some/other/repo", probe_file_exists=False
-    )
-    assert not passed
-    assert not results["d_cwd_inheritance"][0]
+def test_gates_no_cwd_gate_present():
+    """Regression-lock: the dropped cwd-inheritance gate must not reappear."""
+    stream, rollout = _pass_inputs()
+    _, results = verify.check_gates(stream, rollout, FIXTURE_SESSION_ID, probe_file_exists=False)
+    assert not any("cwd" in name for name in results), "cwd gate was dropped (correction item 4)"
 
 
 # ── normal-path resume smoke check ──────────────────────────────────────────
