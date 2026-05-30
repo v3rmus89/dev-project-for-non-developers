@@ -35,8 +35,6 @@ _SKILL_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SECTION = "## Triaging review findings"
 DEFAULT_SOURCE = _SKILL_ROOT / "CLAUDE.md"
 
-_NEXT_SECTION = "\n## "
-
 
 def extract_heading_section(text: str, heading: str) -> str:
     """Return the body of a `## `-level Markdown section, stripped.
@@ -45,18 +43,23 @@ def extract_heading_section(text: str, heading: str) -> str:
     imports that module; tests/test_propagate_shared_rules.py exercises this copy.
     Both must produce identical output for the same input (enforced by cross-check test).
 
+    Matches only real Markdown heading LINES (a line whose stripped content equals
+    `heading`), NOT prose that mentions the heading text inline; a substring match
+    would over-count such a mention and spuriously raise.
     Raises ValueError if heading is not found or found more than once.
     """
-    count = text.count(heading)
-    if count == 0:
+    lines = text.split("\n")
+    matches = [i for i, ln in enumerate(lines) if ln.strip() == heading]
+    if not matches:
         raise ValueError(f"Heading not found: {heading!r}")
-    if count > 1:
-        raise ValueError(f"Heading found {count} times (expected 1): {heading!r}")
-    start = text.index(heading) + len(heading)
-    rest = text[start:]
-    end_idx = rest.find(_NEXT_SECTION)
-    block = rest if end_idx == -1 else rest[:end_idx]
-    return block.strip()
+    if len(matches) > 1:
+        raise ValueError(f"Heading found {len(matches)} times (expected 1): {heading!r}")
+    body = []
+    for line in lines[matches[0] + 1 :]:
+        if line.startswith("## "):  # next level-2 heading line ends the section
+            break
+        body.append(line)
+    return "\n".join(body).strip()
 
 
 def _replace_section(text: str, heading: str, new_body: str) -> str:
@@ -65,23 +68,21 @@ def _replace_section(text: str, heading: str, new_body: str) -> str:
     The heading line itself is preserved. new_body should be stripped;
     a surrounding blank line is added on each side.
     """
-    count = text.count(heading)
-    if count == 0:
+    lines = text.split("\n")
+    matches = [i for i, ln in enumerate(lines) if ln.strip() == heading]
+    if not matches:
         raise ValueError(f"Heading not found in target: {heading!r}")
-    if count > 1:
-        raise ValueError(f"Heading found {count} times in target (expected 1): {heading!r}")
+    if len(matches) > 1:
+        raise ValueError(f"Heading found {len(matches)} times in target (expected 1): {heading!r}")
 
-    start_idx = text.index(heading)
-    after_heading = text[start_idx + len(heading) :]
-
-    next_section = "\n## "
-    end_in_after = after_heading.find(next_section)
-    if end_in_after == -1:
+    start = matches[0]
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), None)
+    prefix = "\n".join(lines[: start + 1])
+    if end is None:
         # Section runs to end of file
-        return text[: start_idx + len(heading)] + "\n\n" + new_body + "\n"
-    else:
-        suffix = after_heading[end_in_after:]
-        return text[: start_idx + len(heading)] + "\n\n" + new_body + "\n" + suffix
+        return prefix + "\n\n" + new_body + "\n"
+    suffix = "\n" + "\n".join(lines[end:])
+    return prefix + "\n\n" + new_body + "\n" + suffix
 
 
 def _propagate(source_body: str, target_path: Path, heading: str, apply: bool) -> bool:

@@ -8,8 +8,6 @@ Having a single copy prevents the two callers from drifting.
 
 from __future__ import annotations
 
-_NEXT_SECTION = "\n## "
-
 
 def extract_heading_section(text: str, heading: str) -> str:
     """Return the body of a `## `-level Markdown section, stripped.
@@ -19,20 +17,27 @@ def extract_heading_section(text: str, heading: str) -> str:
         heading: Exact heading text, e.g. "## Triaging review findings".
 
     Returns:
-        The text between `heading` and the next `## ` heading, stripped
-        of leading/trailing whitespace.
+        The text between the `heading` LINE and the next `## ` heading line,
+        stripped of leading/trailing whitespace.
 
     Raises:
         ValueError: heading not found, or found more than once.
-    """
-    count = text.count(heading)
-    if count == 0:
-        raise ValueError(f"Heading not found: {heading!r}")
-    if count > 1:
-        raise ValueError(f"Heading found {count} times (expected 1): {heading!r}")
 
-    start = text.index(heading) + len(heading)
-    rest = text[start:]
-    end_idx = rest.find(_NEXT_SECTION)
-    block = rest if end_idx == -1 else rest[:end_idx]
-    return block.strip()
+    Matches only real Markdown heading LINES (a line whose stripped content
+    equals `heading`), NOT prose that merely mentions the heading text inline
+    (e.g. "see ## Triaging review findings below"). A substring match
+    (`text.count`) would over-count such a mention and spuriously raise.
+    """
+    lines = text.split("\n")
+    matches = [i for i, ln in enumerate(lines) if ln.strip() == heading]
+    if not matches:
+        raise ValueError(f"Heading not found: {heading!r}")
+    if len(matches) > 1:
+        raise ValueError(f"Heading found {len(matches)} times (expected 1): {heading!r}")
+
+    body = []
+    for line in lines[matches[0] + 1 :]:
+        if line.startswith("## "):  # next level-2 heading line ends the section
+            break
+        body.append(line)
+    return "\n".join(body).strip()

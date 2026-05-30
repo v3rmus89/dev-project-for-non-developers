@@ -87,6 +87,46 @@ def test_script_inline_error_on_duplicate_matches_module():
         extract_heading_section(text, HEADING)
 
 
+# ── regression: inline prose mention of the heading text (Tier-2 codex P2) ────
+
+
+def _doc_with_inline_mention(heading: str, body: str, suffix: str = "") -> str:
+    """A doc where `heading`'s text appears BOTH in prose (inline, not a real
+    heading line) AND as the actual `## ` heading line. The old substring
+    `text.count()` saw 2 and raised "found 2 times"; line-anchored sees 1."""
+    parts = [
+        "# Preamble\n\n",
+        f"See the {heading} section below for the rules.\n\n",  # inline mention
+        f"{heading}\n\n{body}\n",  # the real heading line
+    ]
+    if suffix:
+        parts.append(f"\n{OTHER_HEADING}\n\n{suffix}\n")
+    return "".join(parts)
+
+
+def test_inline_mention_not_counted_as_duplicate_both_copies():
+    """The inline mention must NOT trip the duplicate guard; both copies extract
+    the real section's body."""
+    script_mod = _load_script_module()
+    text = _doc_with_inline_mention(HEADING, SECTION_BODY)
+    assert extract_heading_section(text, HEADING) == SECTION_BODY
+    assert script_mod.extract_heading_section(text, HEADING) == SECTION_BODY
+
+
+def test_replace_section_ignores_inline_mention():
+    """_replace_section must also line-anchor: an inline mention is preserved
+    verbatim, and only the REAL section's body is replaced."""
+    script_mod = _load_script_module()
+    text = _doc_with_inline_mention(HEADING, "old body", suffix="tail")
+    out = script_mod._replace_section(text, HEADING, "new body")
+    assert f"See the {HEADING} section below for the rules." in out, (
+        "the inline prose mention must be preserved, not rewritten"
+    )
+    assert script_mod.extract_heading_section(out, HEADING) == "new body"
+    assert script_mod.extract_heading_section(out, OTHER_HEADING) == "tail"
+    assert "old body" not in out
+
+
 # ── extract_heading_section unit tests ────────────────────────────────────────
 
 
