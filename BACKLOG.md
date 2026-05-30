@@ -98,11 +98,13 @@ still useful.
 
 **Status**: parked — Bucket F was scoped out of PR #10. Two blocking verification gates must pass before flipping the Codex thread-continuation default from `fresh` to `continue` (iter-7 F2 fold).
 
-**V-13 COMPLETE (2026-05-29, commit da776ee)**: fixture captured at
+**V-13 COMPLETE (2026-05-29, commit da776ee)** — ⚠️ **schema CORRECTED by the first live gate (2026-05-30)**: fixture captured at
 `tests/fixtures/codex-json-session.jsonl`; 7 validation tests pass. Key findings:
-- **Session ID field confirmed**: `session_meta.payload.id` (ULIDv7 UUID) — NOT a
-  top-level `session_id`. Bucket F must extract `payload["id"]` from `session_meta`
-  events, not a top-level field.
+- **Session ID field**: the resumable id is `thread.started.thread_id` in the `codex exec --json`
+  **STDOUT stream** (8-4-4-4-12 UUIDv7). The `session_meta.payload.id` that V-13 pinned is the codex
+  **rollout-FILE** schema (`~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<thread_id>.jsonl`), where
+  `session_meta.payload.id == thread_id`. V-13 captured the file, not the stream; the extractor reads
+  `thread.started.thread_id` (a real stream sample lives at `tests/fixtures/codex-json-stream.jsonl`).
 - **Cache token field confirmed**: `event_msg.payload.info.total_token_usage.cached_input_tokens`
   (field name matches plan assumption).
 - **Guard required**: `info` can be `null` on the first `token_count` event (before
@@ -113,19 +115,19 @@ still useful.
 Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 - Stale-session fallback matcher: `"no rollout found for thread id"` (verified live 2026-05-29).
 - Atomic THREAD_FILE write pattern (`.tmp` + UUID validate + `mv`).
-- V-13.5 now 4-gate: UUID continuity + `turn_context.payload.sandbox_policy.type == "read-only"` (NOT sandbox-denial event) + file absence + cwd. Probe runs from `/tmp` with `--skip-git-repo-check`.
+- V-13.5 (CORRECTED 2026-05-30) is a 3-gate read-only-ENFORCED check: (a) thread-id continuity — the resume `--json` stream re-emits `thread.started` with the same `thread_id`; (b) read-only enforced — a write is BLOCKED (probe file absent) AND the resumed rollout file's `turn_context.payload.sandbox_policy.type == "read-only"`. The old cwd-inheritance gate is DROPPED (the recipe runs resume from the repo, not `/tmp`).
 - A/B replay uses direct `codex exec/resume --json` (bypasses Make target).
 - `THREAD_MODE`/`THREAD_FILE`/`THREAD_JSONL_FILE` added to `run-with-clean-env.py` EXACT_DROP.
 
 **Trigger to pick up**:
 - ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
-- ~~V-13.5 protocol: 3-assertion gate~~ — **UPDATED to 4-assertion gate** (UUID continuity + `turn_context.payload.sandbox_policy.type == "read-only"` inheritance + file absence + cwd). Run the V-13.5 verifier (`scripts/verify-v13-5.py`) before merge.
+- ~~V-13.5 protocol: 3-assertion gate~~ ~~UPDATED to 4-assertion gate~~ — **CORRECTED (2026-05-30) to a 3-gate read-only-ENFORCED check** (thread-id continuity + write-BLOCKED + resumed-rollout `sandbox_policy.type == "read-only"`; cwd gate dropped). Run the V-13.5 verifier (`scripts/verify-v13-5.py`) before merge.
 - A long plan loop (>8 iters) makes Codex token cost a real operational concern.
 
 **Starting requirements (iter-1..5 F-series findings)**:
-- ~~iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested~~ — **RESOLVED by V-13**. Field is `session_meta.payload.id`.
-- iter-3 F2 / iter-4 F2: `codex exec resume` + `-C/--sandbox` flag controversy — defensive re-passing is CLI-rejected; rely on session inheritance; V-13.5 Part 2 is the verification gate.
-- ~~iter-5 F4: V-13.5 file-absence-only check~~ — **UPGRADED to 4-gate** per PR-1 plan iter 1/2 review.
+- ~~iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested~~ — **RESOLVED**. Resumable id is `thread.started.thread_id` (stream); `session_meta.payload.id` is the rollout-file equivalent (corrected 2026-05-30).
+- iter-3 F2 / iter-4 F2 → **CORRECTED 2026-05-30**: `codex exec resume` does NOT inherit `-C`/`--sandbox` (it defaults to `workspace-write`). `--sandbox`/`-C` stay CLI-rejected on resume, so the recipe forces read-only via `-c sandbox_mode=read-only`; V-13.5 verifies read-only is ENFORCED.
+- ~~iter-5 F4: V-13.5 file-absence-only check~~ — **CORRECTED to the 3-gate read-only-ENFORCED check** (2026-05-30; see above).
 
 **Parked items from V-13 Tier-1 review (2026-05-29)**:
 - (F1) Add null-info `token_count` fixture line + `test_token_count_info_can_be_null`
