@@ -11,6 +11,55 @@ prior context, potentially lowering token cost via cache hits.
 This is a **hypothesis** — the default stays `THREAD_MODE=fresh` until the
 A/B replay gates in the Verification section pass (meta-plan PR-1).
 
+## ⚠️ Implementation-findings plan correction (2026-05-30) — AUTHORITATIVE; supersedes the V-13 schema + resume-inheritance assumptions below
+
+The first live `scripts/verify-v13-5.py` run (real codex-cli 0.130.0) **falsified two
+foundational assumptions** this plan converged on. The 6 commits already on
+`feat/skill-pr1-bucket-f-continue-thread` are built on the wrong schema/assumption and
+must be re-implemented per the corrected spec here. Empirical facts (also in memory
+`codex-json-resume-behavior`):
+
+- **F1 — `--json` schema.** `codex exec --json` STDOUT emits `thread.started`{`thread_id`},
+  `turn.started`, `item.completed`{`item`}, `turn.completed`{`usage.cached_input_tokens`}.
+  There is **no `session_meta`/`turn_context` in the stream**. The resumable id is
+  `thread.started.thread_id` (8-4-4-4-12 UUIDv7). The `session_meta`/`turn_context` schema
+  this plan assumed — and the V-13 fixture `tests/fixtures/codex-json-session.jsonl` — is
+  the codex **rollout-file** schema (`~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<thread_id>.jsonl`),
+  where `session_meta.payload.id == thread_id` and `turn_context.payload.{sandbox_policy.type,cwd}`
+  live. **V-13 confirmed the wrong artifact (the file, not the stream).**
+- **F2 — `--json` hangs on stdin** unless invoked with `< /dev/null` ("Reading additional
+  input from stdin…"); the positional PROMPT is still honoured with `< /dev/null`.
+- **F3 (SAFETY) — `codex exec resume` does NOT inherit `-C`/`--sandbox`.** PR #10 iter-4 F2's
+  "resume inherits them, don't re-pass" is **FALSE** for 0.130. Resume uses the caller's cwd and
+  defaults to `sandbox_mode=workspace-write` — a resumed *review can write to the repo*, breaking
+  the read-only contract the `fresh` path guarantees. Resume rejects `--sandbox`/`-C`, but
+  `-c sandbox_mode=read-only` (config key `sandbox_mode`) **does** force read-only (verified: write blocked).
+- **F4 — cache metric** is `turn.completed.usage.cached_input_tokens` (stream), not `event_msg…info…`.
+  Cache hits confirmed real (3456 → 40064 on resume), so the token-saving premise holds.
+
+### Corrected re-implementation spec (supersedes Scope A, Architecture "Session ID extraction" + "`-C`/`--sandbox` on resume", and Verification V-13.5)
+
+1. **Extractor** (`scripts/extract-codex-session-id.py` + template): read `thread_id` from the
+   first `thread.started` event (not `session_meta.payload.id`); keep the strict 8-4-4-4-12 UUID
+   validation; replace the unit-test fixture with a real `--json` STREAM sample.
+2. **Seed recipe** (continue, no THREAD_FILE): `codex exec --json … "PROMPT" < /dev/null` (add the
+   stdin redirect). Atomic `.tmp`+`mv`, UUID-validate, JSONL delete / `KEEP_THREAD_JSONL`, failure
+   cleanup all unchanged.
+3. **Resume recipe** (THREAD_FILE exists): `codex exec resume $SESSION_ID -c sandbox_mode=read-only
+   --output-last-message … "PROMPT" < /dev/null`. The `-c sandbox_mode=read-only` is **SAFETY-CRITICAL**
+   (resume is workspace-write otherwise). Do NOT pass `--sandbox`/`-C`/`--color` (rejected). Add
+   `< /dev/null` to the fresh + fallback `codex exec` calls too (defensive). Stale-session fallback unchanged.
+4. **V-13.5 gate** (`scripts/verify-v13-5.py`): seed → extract `thread_id` from the stream →
+   normal-path resume smoke. The critical gate is now **read-only ENFORCED on resume**: run the recipe's
+   resume and assert a write is BLOCKED (probe file absent) AND the resumed rollout file's
+   `turn_context.payload.sandbox_policy.type == "read-only"`. thread-id continuity = the resume stream
+   re-emits `thread.started` with the same id. **DROP the "/tmp cwd-inheritance" gate** (no cwd inheritance;
+   the recipe runs resume from the repo, so cwd=repo by construction). Keep preflight + 3 error classes;
+   the `looks_like_env_failure` widening (OAuth/MCP) already landed (commit cc37d1c).
+5. **A/B section**: cache metric at `turn.completed.usage.cached_input_tokens`; drop the `info: null` guard note.
+6. **Risks**: add "resumed review runs workspace-write unless forced read-only" → mitigated by
+   `-c sandbox_mode=read-only` + the V-13.5 read-only-enforced gate (merge blocker).
+
 ## Scope
 
 | Row | What changes | How |
@@ -315,6 +364,7 @@ No business metric — internal change. Measurable proxies post-merge:
 | 7.5 | Claude (consistency self-check; rounds a–c) | 2026-05-29 | doc-drift × 3→2→0 | folded + driver-exit | Round a: caught a regression *I* introduced in the iter-7 fold — the Lessons rewrite re-added the iter-enumeration ("iters 1,4,5,6,7" + "5 iters") that iter-6.5f had stripped as the drift-magnet (and it undercounted vs the Evidence table) → re-applied 6.5f's strip (the iter-7 "folds introduce defects" Lessons bullet, lived in real time). Round b: (a) "ULIDv7 UUID" (line 41) was self-contradictory — the FN3 strict-UUID regex surfaced the latent error → "UUIDv7"; (a) the verifier's `KEEP_V13_5_JSONL` cleanup semantics were unspecified → pinned (success-only cleanup; retain on failure for debugging; deliberate inverse of `KEEP_THREAD_JSONL`). Driver-exit: V-13.5 header "inheritance" gradient (already accepted iter-6.5d), and the 6.5f-log-quote-vs-current-Lessons mismatch (frozen historical narrative). Substantive invariants PASSED every round. Round c = final stamp on this row. Loop-ack stamped; ready for iter 8. |
 | 8 | Codex | 2026-05-29 | 1 / 2 / 0 | do not implement yet → **LOOP COMPLETE (driver-exit)** | **Stop-and-implement point** (handoff's `~7-8` upper bound; user pre-approved implementation in the next session). imp-3 stuck at 1 for a 3rd iter, again V-13.5 — and like iters 6/7 it was a defect the PRIOR iter's V-13.5 rewrite introduced, confirming prose specs of runtime behaviour won't converge (this vindicates the iter-7 decision to script + unit-test it). All 3 folded (a) to correct the spec, then the review loop is EXITED by driver decision (not re-reviewed): FN1 (imp-3) the verifier's `make loop-reset` / `review-plan-by-codex` calls dropped `PLAN_FILE` (both targets require it; the iter-7 rewrite omitted it) → script derives the plan path + passes `PLAN_FILE=` to every make call + unit-tests command construction. FN2 (imp-2) no generated-project adoption doc for `THREAD_MODE=continue` → deferred to the default-flip PR. FN3 (imp-2) verifier conflated env failure with feature failure → preflight + 3 error classes (`environment unavailable` / `probe DID NOT RUN` / `inheritance/normal-path FAILED`), all merge-blocking with rerun-vs-file-bug guidance. imp-3 trajectory 2→3→3→2→2→1→1→1. Remaining V-13.5 spec-gaps are now caught by the script's unit tests at implementation, not more prose iters. |
 | 8.5 | Claude (consistency self-check; rounds a–c) | 2026-05-29 | doc-drift × 5 | folded | Round a: 3 propagation gaps from the iter-8 folds in SUMMARIES — (a) Scope J + Critical files unit-test enum missed "command construction" → added; (a) rollout commit 5 missing iter-8 FN1 test + FN3 preflight/3-error-classes → updated; line-ref `:282`/`284` initially driver-exited. Round b: my round-a fix was incomplete AND backwards — the AUTHORITATIVE Verification unit-test paragraph still omitted "command construction" while the 3 summaries now had it (fold-introduced gap in the wrong direction) → added it to Verification; also de-brittled the loop-reset ref (dropped the line numbers, ending the `:282`/`284` disagreement). Round c = final stamp. Substantive invariants all PASSED (V-13.5 4-gate, KEEP_THREAD_JSONL/KEEP_V13_5_JSONL semantics, stale-fallback, EXACT_DROP, strict UUID regex, BACKLOG grep form, trajectory 2→3→3→2→2→1→1→1). Loop-ack stamped; **PLAN COMPLETE — ready for implementation**. |
+| impl-findings | Live V-13.5 gate (real codex 0.130) | 2026-05-30 | — | **PLAN CORRECTED — re-implement** | The first live gate run FALSIFIED the V-13 schema + the PR #10 iter-4 "resume inherits `-C`/`--sandbox`" assumption. Real codex `--json` = `thread.started`/`thread_id` (the `session_meta` schema is the rollout FILE, which V-13 captured by mistake); `--json` hangs on stdin without `< /dev/null`; and **`codex exec resume` does NOT inherit the sandbox — it defaults to workspace-write (a resumed review could WRITE the repo)**, fixable only via `-c sandbox_mode=read-only`. The 6 commits on `feat/skill-pr1-bucket-f-continue-thread` are built on the wrong assumptions → re-implement per the "⚠️ Implementation-findings plan correction (2026-05-30)" section at the top. This vindicates scripting + live-running V-13.5 (iter-7/8): 8 prose review iters + 855 offline tests all inherited the wrong V-13 fixture; only the live gate caught it. |
 
 ## Evidence table — what was folded and where
 
