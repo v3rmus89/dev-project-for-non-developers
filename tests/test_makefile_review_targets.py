@@ -1226,9 +1226,11 @@ def test_thread_mode_continue_keep_jsonl_retains_it_on_success(tmp_path):
 
 def test_thread_mode_continue_resume_uses_resume_subcommand(tmp_path):
     """Case 3: continue + existing THREAD_FILE — runs codex exec resume
-    $SESSION_ID, NOT a fresh exec. The resume argv must carry neither --json
-    NOR -C/--sandbox/--color (the resume subcommand rejects those — commit-2
-    Tier-1 regression guard; LESSONS.md 2026-05-27 / PR #10 iter-4)."""
+    $SESSION_ID, NOT a fresh exec. The resume argv MUST carry `-c
+    sandbox_mode=read-only` (SAFETY/F3 — resume defaults to workspace-write and
+    does NOT inherit the seed's sandbox; live gate 2026-05-30) and MUST NOT carry
+    --json or -C/--sandbox/--color (the resume subcommand rejects those —
+    LESSONS.md 2026-05-27 / 2026-05-30 / PR #10 iter-4)."""
     target = _bootstrap_fixture(tmp_path)
     plan = _make_plan_file(target, slug="thread_resume")
     shim_dir = _thread_shim_dir(tmp_path)
@@ -1253,10 +1255,22 @@ def test_thread_mode_continue_resume_uses_resume_subcommand(tmp_path):
     ra = resume_calls[-1]
     assert "11111111-2222-7333-8444-555555555555" in ra, "resume must pass the session id"
     assert "--json" not in ra, "resume must not pass --json"
+    # SAFETY (F3): resume does NOT inherit the seed's sandbox — it defaults to
+    # workspace-write — so the recipe MUST force read-only via the general config
+    # override `-c sandbox_mode=read-only`. Assert it's present AND that `-c` is
+    # immediately followed by the value (so a split/reordered pair can't slip by).
+    assert "-c" in ra and "sandbox_mode=read-only" in ra, (
+        "resume MUST pass `-c sandbox_mode=read-only` — without it a resumed review "
+        "runs workspace-write and could write the repo (F3, live gate 2026-05-30)"
+    )
+    assert ra[ra.index("-c") + 1] == "sandbox_mode=read-only", (
+        "`-c` must be immediately followed by `sandbox_mode=read-only`"
+    )
     for rejected in ("-C", "--sandbox", "--color"):
         assert rejected not in ra, (
             f"resume must NOT pass {rejected} — codex exec resume rejects it "
-            "(unexpected argument); resume inherits it from the seed"
+            "(unexpected argument). The seed's sandbox is NOT inherited; read-only "
+            "is forced via `-c sandbox_mode=read-only` instead."
         )
     assert tf.read_text().strip() == "11111111-2222-7333-8444-555555555555", (
         "THREAD_FILE must be unchanged on a successful resume"

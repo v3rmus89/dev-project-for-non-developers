@@ -86,7 +86,7 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	  if [ -f "$(THREAD_FILE)" ]; then \
 	    SESSION_ID=$$(cat "$(THREAD_FILE)"); \
 	    echo "THREAD_MODE=continue: resuming Codex session $$SESSION_ID"; \
-	    if OUT=$$($(CURDIR)/scripts/run-with-clean-env.py -- codex exec resume "$$SESSION_ID" --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" 2>&1); then \
+	    if OUT=$$($(CURDIR)/scripts/run-with-clean-env.py -- codex exec resume "$$SESSION_ID" -c sandbox_mode=read-only --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null 2>&1); then \
 	      echo "$$OUT"; \
 	    else \
 	      rc=$$?; \
@@ -94,14 +94,14 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	      if printf '%s' "$$OUT" | grep -q 'no rollout found for thread id'; then \
 	        echo "WARN: stale Codex session — clearing thread state, falling back to a one-shot fresh exec for this call" >&2; \
 	        rm -f "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"; \
-	        $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT"; \
+	        $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null; \
 	      else \
 	        exit $$rc; \
 	      fi; \
 	    fi; \
 	  else \
 	    echo "THREAD_MODE=continue: seeding a new Codex session (no THREAD_FILE yet)"; \
-	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec --json -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" > "$(THREAD_JSONL_FILE)" \
+	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec --json -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null > "$(THREAD_JSONL_FILE)" \
 	      && $(CURDIR)/scripts/extract-codex-session-id.py "$(THREAD_JSONL_FILE)" > "$(THREAD_FILE).tmp" \
 	      && grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$$' "$(THREAD_FILE).tmp" \
 	      && mv "$(THREAD_FILE).tmp" "$(THREAD_FILE)" \
@@ -109,7 +109,7 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	    [ "$${KEEP_THREAD_JSONL:-}" = "1" ] || rm -f "$(THREAD_JSONL_FILE)"; \
 	  fi; \
 	else \
-	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT"; \
+	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null; \
 	fi
 	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(HASH_FILE)"
 	@echo "──────────────────────────────────────────"
