@@ -123,6 +123,36 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-30: Shim/fake-CLI tests prove recipe branching, not that the REAL CLI accepts the flags
+
+**Trigger**: PR-1 (Bucket F) commit 2 — I copy-pasted the fresh-path `-C`/`--sandbox`/`--color` flags onto the `codex exec resume` invocation. My shim-based smoke test passed (a fake `codex` accepts any argv), but the real `codex exec resume` rejects those flags (`unexpected argument`) because the subcommand's flag set is a strict subset of `codex exec`'s. Tier-1 caught it by running the real CLI. Re-introduced the same class as the 2026-05-27 over-defensive-folds entry.
+
+**Rule**: A fake-CLI shim validates a Makefile recipe's branching and argv *construction*, NOT that the real subcommand *accepts* those flags — subcommands often take a narrower flag set than their parent (`codex exec resume` ⊂ `codex exec`). Before copy-pasting flags from one invocation onto a sibling subcommand, check that subcommand's `--help`, and rely on a live gate (here: the V-13.5 verifier) or a real-CLI smoke to catch rejections. When a shim test covers the branch, also assert the argv *excludes* flags the real subcommand rejects, so the regression cannot silently reappear.
+
+**Status**: Active
+
+---
+
+### 2026-05-30: Env-vs-feature failure classifiers must be calibrated against REAL failure strings
+
+**Trigger**: PR-1 (Bucket F) — the V-13.5 verifier's `looks_like_env_failure` heuristic was written from *imagined* env-error strings (auth / quota / network). The FIRST live run hit a real one it didn't cover: a connected MCP server's expired OAuth token (`TokenRefreshFailed` / `invalid_grant` from a Meta-ads MCP, `mcp.facebook.com`) aborted codex before it emitted `session_meta`. The gate correctly blocked (non-zero, merge-blocking) but mislabelled the environment failure as "probe DID NOT RUN — file a bug" instead of "environment unavailable — rerun".
+
+**Rule**: A heuristic that classifies external-tool failures (env-vs-feature, transient-vs-permanent) can only be calibrated against REAL failure output, not imagined strings. Treat the first live run of such a classifier as calibration data: capture the actual failure text and fold the unmatched env signatures back in. Prefer SPECIFIC machine-error tokens (`invalid_grant`, `TokenRefreshFailed`) over bare words (`connection`, `network`) that false-positive on prose. And note: a connected MCP server is part of the environment — its auth/transport failures are env-unavailable, NOT a bug in the code under test.
+
+**Status**: Active
+
+---
+
+### 2026-05-30: This clone has no pre-commit hook — run `make format` before every commit, not just targeted pytest
+
+**Trigger**: PR-1 re-impl commit `408baad` shipped two rewritten test files that failed `ruff format --check` (caught only later by `make check`, which then halts at `lint` before running tests). I had run targeted `pytest` after the commit, not `make lint`. Investigation: this clone has NO `.git/hooks/pre-commit` and no `core.hooksPath` override (`make install-hooks` was never run here), so the "ruff on commit" hook CLAUDE.md describes does NOT fire — nothing checks lint/format at commit time.
+
+**Rule**: Do not assume the pre-commit hook exists — in this clone it doesn't. Before EACH `git commit`, run `make format` (auto-applies) or at minimum `./venv/bin/ruff format --check . && ./venv/bin/ruff check .`, in addition to the targeted tests. Relying on a final `make check` catches format drift LATE — after intermediate commits have already shipped it, and (no rebase here) you then need an extra style commit to fix forward. Optionally run `make install-hooks` once to close the gap structurally.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

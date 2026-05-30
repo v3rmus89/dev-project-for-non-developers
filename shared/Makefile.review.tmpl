@@ -36,6 +36,12 @@ KEY = $(shell python3 -c "import hashlib,os; k = os.path.realpath('$(CURDIR)') +
 HASH_FILE = /tmp/plan-review-$(KEY).hash
 CONS_FILE = /tmp/plan-review-$(KEY).consistency
 SNAP_DIR  = /tmp/plan-snapshots/$(KEY)
+# Bucket F (opt-in; default fresh): Codex thread-continuation state. THREAD_FILE
+# holds the resumable session ID; THREAD_JSONL_FILE is the seed call's --json
+# capture, deleted after extraction unless KEEP_THREAD_JSONL=1.
+THREAD_MODE       ?= fresh
+THREAD_FILE       = /tmp/plan-review-$(KEY).thread
+THREAD_JSONL_FILE = /tmp/plan-review-$(KEY).session.jsonl
 FACT_CHECK_FACTS_OUT  ?= /tmp/plan-fact-check-$(KEY).facts.json
 FACT_CHECK_VERIFY_OUT ?= /tmp/plan-fact-check-$(KEY).verify.json
 PLAN_FACT_CHECK_OUT_CODEX  ?= /tmp/plan-fact-check-$(notdir $(basename $(PLAN_FILE)))-by-codex.md
@@ -75,13 +81,36 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	@mkdir -p "$(SNAP_DIR)"; \
 	  cp "$(PLAN_FILE)" "$(SNAP_DIR)/iter$(ITERATION).bak"; \
 	  echo "Snapshot: $(SNAP_DIR)/iter$(ITERATION).bak"
-	$(CURDIR)/scripts/run-with-clean-env.py -- \
-	  codex exec \
-	    -C "$(CURDIR)" \
-	    --sandbox read-only \
-	    --color never \
-	    --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" \
-	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly. Also tag every prose finding with **FN (importance N):** at the start matching its footer id. After all prose, append a json code fence containing: {verdict: one of needs-iter/converged/do-not-implement (map: ready after minor edits->converged, needs another iteration->needs-iter, do not implement yet->do-not-implement), severity_counts: {3: N, 2: N, 1: N}, key: '$(KEY)', findings: [{id: FN label matching prose, importance: N, section_or_line: stable anchor, title: one line, fingerprint: slug(section_or_line)+':'+slug(title) where slug=lowercase-alpha-hyphens}]}."
+	@PROMPT="Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly. Also tag every prose finding with **FN (importance N):** at the start matching its footer id. After all prose, append a json code fence containing: {verdict: one of needs-iter/converged/do-not-implement (map: ready after minor edits->converged, needs another iteration->needs-iter, do not implement yet->do-not-implement), severity_counts: {3: N, 2: N, 1: N}, key: '$(KEY)', findings: [{id: FN label matching prose, importance: N, section_or_line: stable anchor, title: one line, fingerprint: slug(section_or_line)+':'+slug(title) where slug=lowercase-alpha-hyphens}]}."; \
+	if [ "$(THREAD_MODE)" = "continue" ]; then \
+	  if [ -f "$(THREAD_FILE)" ]; then \
+	    SESSION_ID=$$(cat "$(THREAD_FILE)"); \
+	    echo "THREAD_MODE=continue: resuming Codex session $$SESSION_ID"; \
+	    if OUT=$$($(CURDIR)/scripts/run-with-clean-env.py -- codex exec resume "$$SESSION_ID" -c sandbox_mode=read-only --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null 2>&1); then \
+	      echo "$$OUT"; \
+	    else \
+	      rc=$$?; \
+	      echo "$$OUT" >&2; \
+	      if printf '%s' "$$OUT" | grep -q 'no rollout found for thread id'; then \
+	        echo "WARN: stale Codex session — clearing thread state, falling back to a one-shot fresh exec for this call" >&2; \
+	        rm -f "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"; \
+	        $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null; \
+	      else \
+	        exit $$rc; \
+	      fi; \
+	    fi; \
+	  else \
+	    echo "THREAD_MODE=continue: seeding a new Codex session (no THREAD_FILE yet)"; \
+	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec --json -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null > "$(THREAD_JSONL_FILE)" \
+	      && $(CURDIR)/scripts/extract-codex-session-id.py "$(THREAD_JSONL_FILE)" > "$(THREAD_FILE).tmp" \
+	      && grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$$' "$(THREAD_FILE).tmp" \
+	      && mv "$(THREAD_FILE).tmp" "$(THREAD_FILE)" \
+	      || { rm -f "$(THREAD_FILE).tmp" "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"; echo "ERROR: codex exec or session ID extraction failed" >&2; exit 1; }; \
+	    [ "$${KEEP_THREAD_JSONL:-}" = "1" ] || rm -f "$(THREAD_JSONL_FILE)"; \
+	  fi; \
+	else \
+	    $(CURDIR)/scripts/run-with-clean-env.py -- codex exec -C "$(CURDIR)" --sandbox read-only --color never --output-last-message "$(PLAN_REVIEW_OUT_CODEX)" "$$PROMPT" < /dev/null; \
+	fi
 	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(HASH_FILE)"
 	@echo "──────────────────────────────────────────"
 	@echo "Codex review written to: $(PLAN_REVIEW_OUT_CODEX)"
@@ -229,7 +258,7 @@ loop-ack:	## Acknowledge a legitimate fold: re-stamp the integrity hash (require
 
 loop-reset:	## Reset loop state: remove hash/consistency/snapshot artifacts for this plan
 	@test -n "$(PLAN_FILE)" || { echo "Usage: make loop-reset PLAN_FILE=docs/plans/<file>.md"; exit 1; }
-	@rm -f "$(HASH_FILE)" "$(CONS_FILE)"
+	@rm -f "$(HASH_FILE)" "$(CONS_FILE)" "$(THREAD_FILE)" "$(THREAD_JSONL_FILE)"
 	@rm -rf "$(SNAP_DIR)"
 	@echo "Loop state reset. Hash/consistency/snapshot artifacts removed for this plan."
 	@echo "Next plan-review will start at iter 1 with no baseline."

@@ -1,0 +1,12 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","type":"session_meta","payload":{"id":"00000000-0000-7000-8000-000000000001","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/project","originator":"codex_exec","cli_version":"0.130.0","source":"exec","model_provider":"openai"}}
+{"timestamp":"2026-01-01T00:00:00.001Z","type":"turn_context","payload":{"turn_id":"00000000-0000-7000-8000-000000000002","cwd":"/workspace/project","current_date":"2026-01-01","timezone":"UTC","approval_policy":"never","sandbox_policy":{"type":"read-only"},"model":"gpt-5.5"}}
+{"timestamp":"2026-01-01T00:00:00.002Z","type":"event_msg","payload":{"type":"task_started","turn_id":"00000000-0000-7000-8000-000000000002"}}
+{"timestamp":"2026-01-01T00:00:00.003Z","type":"event_msg","payload":{"type":"user_message","message":"Print the word DONE."}}
+{"timestamp":"2026-01-01T00:00:00.004Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>Filesystem sandboxing: read-only.</permissions instructions>"}]}}
+{"timestamp":"2026-01-01T00:00:00.005Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":[{"type":"reasoning","text":"Printing DONE."}]}}
+{"timestamp":"2026-01-01T00:00:00.006Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":10,"reasoning_output_tokens":5,"total_tokens":1010},"last_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":10,"reasoning_output_tokens":5,"total_tokens":1010},"model_context_window":128000},"rate_limits":{"limit_id":"codex","plan_type":"prolite","rate_limit_reached_type":null}}}
+{"timestamp":"2026-01-01T00:00:00.007Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"DONE"}]}}
+{"timestamp":"2026-01-01T00:00:00.008Z","type":"response_item","payload":{"type":"function_call","call_id":"call_001","name":"exec_command","arguments":"{\"command\":\"echo DONE\"}"}}
+{"timestamp":"2026-01-01T00:00:00.009Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_001","output":"DONE\n"}}
+{"timestamp":"2026-01-01T00:00:00.010Z","type":"event_msg","payload":{"type":"agent_message","message":"DONE"}}
+{"timestamp":"2026-01-01T00:00:00.011Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"00000000-0000-7000-8000-000000000002","exit_code":0}}

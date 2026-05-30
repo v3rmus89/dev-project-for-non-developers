@@ -21,19 +21,15 @@ from pathlib import Path
 import pytest
 
 from bootstrap_lib import render
+from bootstrap_lib.section_extract import extract_heading_section
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 TRIAGE_HEADING = "## Triaging review findings"
-# Block ends at the next `##` heading
-NEXT_SECTION_PATTERN = "\n## "
 
 
 def _extract_triage_block(text: str) -> str:
-    start = text.index(TRIAGE_HEADING)
-    rest = text[start + len(TRIAGE_HEADING) :]
-    end = rest.index(NEXT_SECTION_PATTERN)
-    return rest[:end].strip()
+    return extract_heading_section(text, TRIAGE_HEADING)
 
 
 SKILL_REPO_CONTEXT = {

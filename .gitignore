@@ -42,5 +42,9 @@ yarn-error.log*
 # Plan-review tmp output (lives in /tmp/ but in case anything leaks)
 plan-review-*.md
 
+# V-13.5 verifier write-probe (repo-internal; a FAILED read-only gate retains it
+# for debugging — keep it out of the tree so it can't be accidentally committed)
+/v13-5-probe.txt
+
 # Claude Code session state (lock files etc.)
 .claude/
