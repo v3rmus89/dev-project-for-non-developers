@@ -68,6 +68,7 @@ SHARED_TEMPLATES_TO_SCAN = [
     "scripts-extract-plan-facts.py.tmpl",
     "scripts-extract-codex-session-id.py.tmpl",
     "scripts-verify-plan-facts.py.tmpl",
+    "scripts-propagate-shared-rules.py.tmpl",
 ]
 
 

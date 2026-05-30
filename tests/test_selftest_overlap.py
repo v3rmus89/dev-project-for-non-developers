@@ -33,6 +33,7 @@ _SCRIPT_TEMPLATE_PAIRS = [
     ("scripts/extract-plan-facts.py", "scripts-extract-plan-facts.py.tmpl"),
     ("scripts/extract-codex-session-id.py", "scripts-extract-codex-session-id.py.tmpl"),
     ("scripts/verify-plan-facts.py", "scripts-verify-plan-facts.py.tmpl"),
+    ("scripts/propagate-shared-rules.py", "scripts-propagate-shared-rules.py.tmpl"),
 ]
 
 # scripts/*.py that the review recipes exec directly and that must carry the
