@@ -71,6 +71,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -141,6 +142,24 @@ def make_command(target: str, plan_file: str, **make_vars: str) -> list[str]:
     for key, value in make_vars.items():
         cmd.append(f"{key}={value}")
     return cmd
+
+
+def subprocess_env(base_env: Mapping[str, str]) -> dict[str, str]:
+    """Environment for the verifier's make/codex subprocesses — a copy of the
+    operator's env with KEEP_THREAD_JSONL stripped.
+
+    If KEEP_THREAD_JSONL=1 is exported in the operator's shell, the seed
+    `make review-plan-by-codex` recipe inherits it and RETAINS THREAD_JSONL_FILE:
+    its `[ "$KEEP_THREAD_JSONL" = 1 ] || rm` test reads the shell env directly, and
+    run-with-clean-env.py's EXACT_DROP only scrubs the codex subprocess, not this
+    recipe-level shell test. The retained JSONL then trips the step-3 `jsonl_absent`
+    gate and SPURIOUSLY fails V-13.5. The verifier always wants the recipe's default
+    (delete-after-extract) behaviour; its own artifact retention is the separate
+    KEEP_V13_5_JSONL knob (read by this script, not by the recipe). (Tier-2 codex P2.)
+    """
+    env = dict(base_env)
+    env.pop("KEEP_THREAD_JSONL", None)
+    return env
 
 
 def resume_probe_command(repo_root: str, session_id: str, probe_file: str) -> list[str]:
@@ -303,9 +322,12 @@ def looks_like_env_failure(text: str) -> bool:
 def _run(cmd: list[str], cwd: Path | str | None = None) -> subprocess.CompletedProcess:
     # stdin=DEVNULL: `codex exec --json` hangs reading stdin otherwise (F2); the
     # positional prompt is still honoured. Harmless for the non-json make calls.
+    # env: strip KEEP_THREAD_JSONL so an exported value can't leak into the seed
+    # recipe and spuriously fail the step-3 jsonl_absent gate (Tier-2 codex P2).
     return subprocess.run(
         cmd,
         cwd=str(cwd) if cwd is not None else str(REPO_ROOT),
+        env=subprocess_env(os.environ),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,

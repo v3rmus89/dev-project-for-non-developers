@@ -117,6 +117,33 @@ def test_resume_probe_command_prompt_targets_the_probe_file():
     )
 
 
+# ── subprocess_env: KEEP_THREAD_JSONL must not leak into verifier subprocesses ─
+
+
+def test_subprocess_env_strips_keep_thread_jsonl():
+    """An exported KEEP_THREAD_JSONL would make the seed recipe RETAIN
+    THREAD_JSONL_FILE → spurious step-3 jsonl_absent failure on the merge-blocker.
+    It must be stripped from the verifier's subprocess env (Tier-2 codex P2)."""
+    env = verify.subprocess_env(
+        {"KEEP_THREAD_JSONL": "1", "PATH": "/usr/bin", "KEEP_V13_5_JSONL": "1"}
+    )
+    assert "KEEP_THREAD_JSONL" not in env
+    assert env["PATH"] == "/usr/bin", "unrelated env vars must pass through"
+    assert env.get("KEEP_V13_5_JSONL") == "1", (
+        "the verifier's OWN retention knob (KEEP_V13_5_JSONL) is separate — must NOT be stripped"
+    )
+
+
+def test_subprocess_env_returns_a_copy_and_noops_when_absent():
+    """Must copy (not mutate) the caller's env — _run passes os.environ, so an
+    in-place pop would corrupt the verifier's own environment."""
+    base = {"PATH": "/x"}
+    env = verify.subprocess_env(base)
+    assert env == {"PATH": "/x"}
+    env["PATH"] = "/mutated"
+    assert base["PATH"] == "/x", "subprocess_env must return a copy, not mutate its argument"
+
+
 # ── compute_key matches the Makefile KEY formula ────────────────────────────
 
 
