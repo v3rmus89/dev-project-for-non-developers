@@ -978,7 +978,7 @@ def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
 # fallback on the pinned string, (4b) unrelated-failure preserves state,
 # (5) loop-reset. Driven by a controllable codex shim (env-configured).
 
-# session_meta.payload.id the seed shim emits — a valid 8-4-4-4-12 UUID.
+# thread.started.thread_id the seed shim emits — a valid 8-4-4-4-12 UUID.
 _SEED_SESSION_ID = "00000000-0000-7000-8000-000000000abc"
 
 # A controllable codex shim. Behaviour is entirely env-driven so one static
@@ -988,7 +988,7 @@ _THREAD_CODEX_SHIM = '''#!/usr/bin/env python3
 
 SHIM_ARGV_LOG          JSON file; each call appends its argv list
 SHIM_RESUME_BEHAVIOR   success | fail-pinned | fail-other  (resume calls)
-SHIM_EMIT_SESSION_META 1 | 0  (seed --json calls: emit a session_meta line)
+SHIM_EMIT_THREAD_STARTED 1 | 0  (seed --json calls: emit a thread.started line)
 """
 import json
 import os
@@ -1049,10 +1049,10 @@ if "--json" in argv:
     if out:
         with open(out, "w") as fh:
             print("CANNED SEED REVIEW", file=fh)
-    if os.environ.get("SHIM_EMIT_SESSION_META", "1") == "1":
-        print('{"type":"session_meta","payload":{"id":"00000000-0000-7000-8000-000000000abc"}}')
+    if os.environ.get("SHIM_EMIT_THREAD_STARTED", "1") == "1":
+        print('{"type":"thread.started","thread_id":"00000000-0000-7000-8000-000000000abc"}')
     else:
-        print('{"type":"token_count","payload":{"info":null}}')
+        print('{"type":"turn.started"}')
     sys.exit(0)
 
 if out:
@@ -1173,7 +1173,7 @@ def test_thread_mode_continue_seeds_thread_file_and_deletes_jsonl(tmp_path):
 
 
 def test_thread_mode_continue_extraction_failure_cleans_all_artifacts(tmp_path):
-    """Case 2 (extractor-failure sub-case): seed JSONL has no session_meta →
+    """Case 2 (extractor-failure sub-case): seed JSONL has no thread.started →
     extraction fails → recipe exits non-zero and removes THREAD_FILE,
     THREAD_FILE.tmp, AND THREAD_JSONL_FILE (no corrupt state left behind)."""
     target = _bootstrap_fixture(tmp_path)
@@ -1191,7 +1191,7 @@ def test_thread_mode_continue_extraction_failure_cleans_all_artifacts(tmp_path):
         out_file=out,
         thread_file=tf,
         jsonl_file=tj,
-        extra_env={"SHIM_EMIT_SESSION_META": "0"},
+        extra_env={"SHIM_EMIT_THREAD_STARTED": "0"},
     )
     assert r.returncode != 0, "extraction failure must propagate non-zero"
     assert not tf.exists(), "THREAD_FILE must not exist after extraction failure"

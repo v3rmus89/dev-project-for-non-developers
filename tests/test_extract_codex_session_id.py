@@ -1,10 +1,16 @@
 """Unit tests for scripts/extract-codex-session-id.py.
 
-The extractor reads a `codex exec --json` JSONL stream and prints the session
-ID at `session_meta.payload.id` (V-13 confirmed field path) from the first
-`session_meta` event. Contract (per the PR-1 Bucket F plan, Scope A):
-  - JSONL WITH a session_meta event → prints the ID to stdout, exit 0
-  - JSONL WITHOUT a session_meta event → non-zero exit, nothing on stdout
+The extractor reads a `codex exec --json` JSONL STREAM and prints the resumable
+id at `thread.started.thread_id` (verified live 2026-05-30) from the first
+`thread.started` event. Contract (per the PR-1 Bucket F plan, Scope A, as
+corrected 2026-05-30):
+  - JSONL WITH a thread.started event → prints the thread_id to stdout, exit 0
+  - JSONL WITHOUT a thread.started event → non-zero exit, nothing on stdout
+
+NOTE: the fixture is `codex-json-stream.jsonl` (the --json STDOUT *stream*), NOT
+`codex-json-session.jsonl` (the rollout FILE — session_meta/turn_context schema).
+The earlier extractor keyed on session_meta.payload.id, which is the rollout
+file's field, not the stream's — the live gate falsified that.
 
 Subprocess-based (like test_env_scrubber.py): the script has a hyphenated
 filename and ships as an executable CLI, so we exercise the real exit-code /
@@ -19,8 +25,8 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 EXTRACTOR = SKILL_ROOT / "scripts" / "extract-codex-session-id.py"
-COMMITTED_FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "codex-json-session.jsonl"
-# The session_meta.payload.id pinned in the committed V-13 fixture.
+COMMITTED_FIXTURE = SKILL_ROOT / "tests" / "fixtures" / "codex-json-stream.jsonl"
+# The thread.started.thread_id pinned in the committed --json stream fixture.
 FIXTURE_SESSION_ID = "00000000-0000-7000-8000-000000000001"
 
 
@@ -32,21 +38,35 @@ def _run(*args):
     )
 
 
-def test_extracts_session_id_from_committed_fixture():
+def test_extracts_thread_id_from_committed_stream_fixture():
     result = _run(str(COMMITTED_FIXTURE))
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == FIXTURE_SESSION_ID
 
 
-def test_jsonl_without_session_meta_exits_nonzero_and_prints_nothing(tmp_path):
-    jsonl = tmp_path / "no-session-meta.jsonl"
+def test_jsonl_without_thread_started_exits_nonzero_and_prints_nothing(tmp_path):
+    jsonl = tmp_path / "no-thread-started.jsonl"
     jsonl.write_text(
-        '{"type":"turn_context","payload":{"cwd":"/x"}}\n'
-        '{"type":"token_count","payload":{"info":null}}\n'
+        '{"type":"turn.started"}\n'
+        '{"type":"turn.completed","usage":{"cached_input_tokens":0}}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode != 0
     assert result.stdout == "", f"expected no stdout, got {result.stdout!r}"
+
+
+def test_rollout_session_meta_is_not_accepted(tmp_path):
+    """A rollout-FILE line (session_meta.payload.id) must NOT be mistaken for the
+    stream's thread.started.thread_id — locks the schema fix that the live gate
+    forced (the old extractor would have returned this id)."""
+    jsonl = tmp_path / "rollout-shaped.jsonl"
+    jsonl.write_text(
+        '{"type":"session_meta","payload":{"id":"00000000-0000-7000-8000-000000000abc"}}\n'
+        '{"type":"turn_context","payload":{"cwd":"/x","sandbox_policy":{"type":"read-only"}}}\n'
+    )
+    result = _run(str(jsonl))
+    assert result.returncode != 0
+    assert result.stdout == ""
 
 
 def test_missing_file_exits_nonzero(tmp_path):
@@ -61,40 +81,40 @@ def test_no_args_exits_nonzero():
     assert result.stdout == ""
 
 
-def test_skips_malformed_lines_before_session_meta(tmp_path):
-    """A garbled line ahead of a well-formed session_meta must not abort the
-    scan — the valid ID is still extracted."""
+def test_skips_malformed_lines_before_thread_started(tmp_path):
+    """A garbled line ahead of a well-formed thread.started must not abort the
+    scan — the valid thread_id is still extracted."""
     jsonl = tmp_path / "mixed.jsonl"
     jsonl.write_text(
         "this is not json\n"
         "\n"
-        '{"type":"session_meta","payload":{"id":"11111111-2222-7333-8444-555555555555"}}\n'
+        '{"type":"thread.started","thread_id":"11111111-2222-7333-8444-555555555555"}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "11111111-2222-7333-8444-555555555555"
 
 
-def test_first_session_meta_wins(tmp_path):
-    """If two session_meta events appear, the FIRST id is returned (the seed
-    session), not a later one."""
-    jsonl = tmp_path / "two-meta.jsonl"
+def test_first_thread_started_wins(tmp_path):
+    """If two thread.started events appear, the FIRST thread_id is returned (the
+    seed thread), not a later one."""
+    jsonl = tmp_path / "two-started.jsonl"
     jsonl.write_text(
-        '{"type":"session_meta","payload":{"id":"aaaaaaaa-0000-7000-8000-000000000001"}}\n'
-        '{"type":"session_meta","payload":{"id":"bbbbbbbb-0000-7000-8000-000000000002"}}\n'
+        '{"type":"thread.started","thread_id":"aaaaaaaa-0000-7000-8000-000000000001"}\n'
+        '{"type":"thread.started","thread_id":"bbbbbbbb-0000-7000-8000-000000000002"}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "aaaaaaaa-0000-7000-8000-000000000001"
 
 
-def test_session_meta_without_id_is_treated_as_missing(tmp_path):
-    """A session_meta event whose payload lacks a string id is not a valid
+def test_thread_started_without_thread_id_is_treated_as_missing(tmp_path):
+    """A thread.started event whose body lacks a string thread_id is not a valid
     seed — fall through to non-zero exit, nothing on stdout."""
-    jsonl = tmp_path / "meta-no-id.jsonl"
+    jsonl = tmp_path / "started-no-id.jsonl"
     jsonl.write_text(
-        '{"type":"session_meta","payload":{"originator":"codex_exec"}}\n'
-        '{"type":"session_meta","payload":{"id":null}}\n'
+        '{"type":"thread.started"}\n'
+        '{"type":"thread.started","thread_id":null}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode != 0
@@ -107,8 +127,8 @@ def test_non_dict_json_line_is_skipped(tmp_path):
     so a future refactor that drops it fails loudly."""
     jsonl = tmp_path / "non-dict-line.jsonl"
     jsonl.write_text(
-        '["session_meta"]\n'
-        '{"type":"session_meta","payload":{"id":"22222222-0000-7000-8000-000000000003"}}\n'
+        '["thread.started"]\n'
+        '{"type":"thread.started","thread_id":"22222222-0000-7000-8000-000000000003"}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode == 0, result.stderr
