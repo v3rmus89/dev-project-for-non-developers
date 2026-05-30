@@ -143,6 +143,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-05-30: This clone has no pre-commit hook — run `make format` before every commit, not just targeted pytest
+
+**Trigger**: PR-1 re-impl commit `408baad` shipped two rewritten test files that failed `ruff format --check` (caught only later by `make check`, which then halts at `lint` before running tests). I had run targeted `pytest` after the commit, not `make lint`. Investigation: this clone has NO `.git/hooks/pre-commit` and no `core.hooksPath` override (`make install-hooks` was never run here), so the "ruff on commit" hook CLAUDE.md describes does NOT fire — nothing checks lint/format at commit time.
+
+**Rule**: Do not assume the pre-commit hook exists — in this clone it doesn't. Before EACH `git commit`, run `make format` (auto-applies) or at minimum `./venv/bin/ruff format --check . && ./venv/bin/ruff check .`, in addition to the targeted tests. Relying on a final `make check` catches format drift LATE — after intermediate commits have already shipped it, and (no rebase here) you then need an extra style commit to fix forward. Optionally run `make install-hooks` once to close the gap structurally.
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

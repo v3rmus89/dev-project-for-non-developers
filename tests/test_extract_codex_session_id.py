@@ -47,8 +47,7 @@ def test_extracts_thread_id_from_committed_stream_fixture():
 def test_jsonl_without_thread_started_exits_nonzero_and_prints_nothing(tmp_path):
     jsonl = tmp_path / "no-thread-started.jsonl"
     jsonl.write_text(
-        '{"type":"turn.started"}\n'
-        '{"type":"turn.completed","usage":{"cached_input_tokens":0}}\n'
+        '{"type":"turn.started"}\n{"type":"turn.completed","usage":{"cached_input_tokens":0}}\n'
     )
     result = _run(str(jsonl))
     assert result.returncode != 0
@@ -112,10 +111,7 @@ def test_thread_started_without_thread_id_is_treated_as_missing(tmp_path):
     """A thread.started event whose body lacks a string thread_id is not a valid
     seed — fall through to non-zero exit, nothing on stdout."""
     jsonl = tmp_path / "started-no-id.jsonl"
-    jsonl.write_text(
-        '{"type":"thread.started"}\n'
-        '{"type":"thread.started","thread_id":null}\n'
-    )
+    jsonl.write_text('{"type":"thread.started"}\n{"type":"thread.started","thread_id":null}\n')
     result = _run(str(jsonl))
     assert result.returncode != 0
     assert result.stdout == ""

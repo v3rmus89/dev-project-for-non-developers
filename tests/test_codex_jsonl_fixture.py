@@ -126,11 +126,7 @@ def test_no_long_prompt_bodies():
 
 
 def _load_stream_events():
-    return [
-        json.loads(line)
-        for line in STREAM_FIXTURE.read_text().splitlines()
-        if line.strip()
-    ]
+    return [json.loads(line) for line in STREAM_FIXTURE.read_text().splitlines() if line.strip()]
 
 
 def test_stream_fixture_parses_as_valid_jsonl():
