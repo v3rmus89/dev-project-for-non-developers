@@ -203,8 +203,8 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
     except (FileNotFoundError, OSError):
         # git not installed, target_root not a directory, etc.
         return None, False
-    # Exit 0 = ignored; output is "<source>:<line>:<pattern>\t<path>".
-    # Exit 1 = not ignored. Exit 128 = not a git repo.
+    # Exit 0 = a pattern MATCHED; output is "<source>:<line>:<pattern>\t<path>".
+    # Exit 1 = no match. Exit 128 = not a git repo.
     if result.returncode == 0 and result.stdout:
         first_line = result.stdout.splitlines()[0]
         # Drop the tab-suffixed path, then split off the pattern field (after the
@@ -212,7 +212,18 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
         # used only to derive the `.claude/`-class boolean, then discarded.
         ref = first_line.split("\t", 1)[0] if "\t" in first_line else first_line
         parts = ref.split(":", 2)
-        is_dotclaude = len(parts) >= 3 and _is_dotclaude_class_pattern(parts[2])
+        pattern = parts[2] if len(parts) >= 3 else ""
+        # `git check-ignore -v` reports rc 0 AND the WINNING pattern even when
+        # that pattern is a NEGATION (`!…`) that RE-INCLUDES the path — i.e. the
+        # path is NOT actually ignored (`git check-ignore -q` exits 1 for it).
+        # Treat a negated winning match as not-ignored; otherwise a target that
+        # has already un-ignored the command (manual setup, or an interrupted
+        # prior adopt that appended the block but never wrote the file) would be
+        # mis-classified NEUTRALIZE instead of a plain rule-(a) WRITE — and
+        # `--non-interactive` would abort on it (Tier-2 codex P2 on PR #35).
+        if pattern.lstrip().startswith("!"):
+            return None, False
+        is_dotclaude = bool(pattern) and _is_dotclaude_class_pattern(pattern)
         if len(parts) >= 2:
             return f"{parts[0]}:{parts[1]}", is_dotclaude
         return ref, is_dotclaude

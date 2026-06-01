@@ -1336,3 +1336,29 @@ def test_rule_a0_end_to_end_dotclaude_class_vs_broad(tmp_path, ignore_line, expe
     rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
     assert rec.manual_review_needed is True
     assert rec.policy == ("NEUTRALIZE" if expect_neutralize else "SKIP")
+
+
+def test_rule_a0_negated_reinclude_is_write_not_neutralize(tmp_path):
+    """Tier-2 codex P2 (PR #35): a target whose `.gitignore` already re-includes
+    the command file via a `!`-negation (manual setup, OR an interrupted prior
+    adopt that appended the un-ignore block but never wrote the file) is NOT
+    ignored — `git check-ignore -v` reports rc 0 + the `!` pattern, but `-q`
+    exits 1. The planned command must get a plain rule-(a) WRITE, never
+    NEUTRALIZE (which would re-append the block / abort under --non-interactive)."""
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(
+        ".claude/\n"
+        "!.claude/\n"
+        ".claude/*\n"
+        "!.claude/commands/\n"
+        ".claude/commands/*\n"
+        "!.claude/commands/dev-review.md\n"
+    )
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.exists is False
+    assert meta.ignored_by_git is None, "a `!`-re-included path must read as not-ignored"
+    assert meta.ignored_by_dotclaude_pattern is False
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.policy == "WRITE"
+    assert rec.manual_review_needed is False
