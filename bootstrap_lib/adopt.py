@@ -76,13 +76,18 @@ class TargetMeta(NamedTuple):
     # into the user-facing report. Source+line is enough for the user to look
     # up the rule manually (`sed -n '48p' .gitignore`) without exposure here.
     ignored_by_git: str | None
-    # Derived (privacy-safe) boolean: True when `ignored_by_git` is set AND the
-    # matching pattern is `.claude/`-class — i.e. the managed un-ignore block can
-    # actually restore git-visibility. Computed from the raw pattern inside
-    # `_check_ignored_by_git`, which then discards the pattern (never stored).
-    # Rule (a0) keys NEUTRALIZE off this; a broad-pattern ignore (e.g. `*.md`)
-    # leaves it False and stays a conservative SKIP (design-note AC4 / iter-1 FN5).
-    ignored_by_dotclaude_pattern: bool = False
+    # Derived (privacy-safe) boolean: True when a planned-CREATE's ignore is
+    # cleanly NEUTRALIZE-able — i.e. the managed un-ignore block can both apply
+    # and restore without surprises. Computed in `_check_ignored_by_git` (which
+    # discards the raw pattern). Requires ALL of: (a) the matched winning pattern
+    # is `.claude/`-class, (b) the ignore is sourced from the target's ROOT
+    # `.gitignore` (NOT `.git/info/exclude` / a global excludesfile — else apply
+    # would create a `.gitignore` and restore would leave a stray empty one), and
+    # (c) that `.gitignore` does NOT already contain the NEUTRALIZE sentinel (a
+    # prior/partial block — else apply no-ops and restore over-reaches). Anything
+    # else (broad `*.md` ignore, exclude-sourced, sentinel already present) leaves
+    # it False → rule (a0) falls back to a conservative SKIP+manual.
+    neutralize_eligible: bool = False
 
 
 class PolicyRecommendation(NamedTuple):
@@ -170,25 +175,44 @@ def _is_dotclaude_class_pattern(pattern: str) -> bool:
     return p in (".claude", ".claude/", ".claude/**") or p.startswith(".claude/")
 
 
+def _gitignore_has_neutralize_sentinel(target_root: Path) -> bool:
+    """True if the target's ROOT `.gitignore` already contains the NEUTRALIZE
+    sentinel line (a prior or partial un-ignore block).
+
+    When present, NEUTRALIZE is NOT cleanly applicable: apply would no-op on the
+    sentinel (so a partial/broken block leaves the command git-hidden — silent
+    failure), and restore would remove lines apply did not add (clobbering
+    pre-existing user content). The trigger falls back to SKIP+manual instead
+    (Tier-2 codex P2 on PR #35 — findings B + D)."""
+    from bootstrap_lib.manifest import NEUTRALIZE_SENTINEL
+
+    try:
+        text = (target_root / ".gitignore").read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, OSError):
+        return False
+    return NEUTRALIZE_SENTINEL in text
+
+
 def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None, bool]:
     """Run `git check-ignore -v -- <rel_path>` in target_root.
 
-    Returns `(ref, is_dotclaude_class)`:
+    Returns `(ref, neutralize_eligible)`:
 
       - `ref`: the `<source>:<line>` reference (e.g. `.gitignore:48`) if the path
         is ignored, else None. NOT the matching pattern itself — patterns can be
         path-revealing (`secrets/client-acme/`, `*-customer-token-*`) and would
         leak verbatim into the user-facing report via rule (a0)'s reason. Source+
         line is enough to look the rule up manually (`sed -n '48p' .gitignore`).
-      - `is_dotclaude_class`: True when the matched pattern is `.claude/`-class
-        (`_is_dotclaude_class_pattern`). Derived from the raw pattern, which is
-        then discarded — never stored. Rule (a0) keys NEUTRALIZE off this.
+      - `neutralize_eligible`: True only when NEUTRALIZE can cleanly apply AND
+        restore — see the `TargetMeta.neutralize_eligible` field doc for the
+        three required conditions. Derived from the raw pattern + source, which
+        are then discarded — never stored.
 
     Returns `(None, False)` for non-git directories or any subprocess failure
     (defensive: missing git, permissions, etc.).
 
     Per plan rule (a0): a planned CREATE that is ignored by git → NEUTRALIZE when
-    `.claude/`-class (manual_review), else a conservative SKIP (manual_review) —
+    cleanly eligible (manual_review), else a conservative SKIP (manual_review) —
     silent SKIP loses the planned file, silent WRITE writes an invisible-to-git
     file, so the owner MUST decide either way.
     """
@@ -208,10 +232,11 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
     if result.returncode == 0 and result.stdout:
         first_line = result.stdout.splitlines()[0]
         # Drop the tab-suffixed path, then split off the pattern field (after the
-        # second colon). `<source>:<line>` is kept (privacy-safe); the pattern is
-        # used only to derive the `.claude/`-class boolean, then discarded.
+        # second colon). `<source>:<line>` is kept (privacy-safe); the pattern +
+        # source are used only to derive `neutralize_eligible`, then discarded.
         ref = first_line.split("\t", 1)[0] if "\t" in first_line else first_line
         parts = ref.split(":", 2)
+        source = parts[0]
         pattern = parts[2] if len(parts) >= 3 else ""
         # `git check-ignore -v` reports rc 0 AND the WINNING pattern even when
         # that pattern is a NEGATION (`!…`) that RE-INCLUDES the path — i.e. the
@@ -223,10 +248,20 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
         # `--non-interactive` would abort on it (Tier-2 codex P2 on PR #35).
         if pattern.lstrip().startswith("!"):
             return None, False
-        is_dotclaude = bool(pattern) and _is_dotclaude_class_pattern(pattern)
-        if len(parts) >= 2:
-            return f"{parts[0]}:{parts[1]}", is_dotclaude
-        return ref, is_dotclaude
+        ref_short = f"{parts[0]}:{parts[1]}" if len(parts) >= 2 else ref
+        # NEUTRALIZE is cleanly applicable ONLY when the winning pattern is
+        # `.claude/`-class AND the ignore is sourced from the target's ROOT
+        # `.gitignore` (so the un-ignore block edits the SAME file, which must
+        # exist — no created-then-stray-on-restore artifact) AND that `.gitignore`
+        # has no pre-existing sentinel. Else → conservative SKIP (PR #35 codex
+        # findings A/B/D + design-note AC4 / iter-1 FN5 broad-pattern SKIP).
+        neutralize_eligible = (
+            bool(pattern)
+            and _is_dotclaude_class_pattern(pattern)
+            and source == ".gitignore"
+            and not _gitignore_has_neutralize_sentinel(target_root)
+        )
+        return ref_short, neutralize_eligible
     return None, False
 
 
@@ -270,7 +305,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
     exists = full_path.is_file()
 
     if not exists:
-        ignored_ref, ignored_by_dotclaude = _check_ignored_by_git(target_root, rel_path)
+        ignored_ref, neutralize_eligible = _check_ignored_by_git(target_root, rel_path)
         return TargetMeta(
             exists=False,
             size=0,
@@ -280,7 +315,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
             has_dependency_groups=False,
             python_version_pin=None,
             ignored_by_git=ignored_ref,
-            ignored_by_dotclaude_pattern=ignored_by_dotclaude,
+            neutralize_eligible=neutralize_eligible,
         )
 
     content = full_path.read_bytes()
@@ -314,7 +349,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
         has_dependency_groups=has_dependency_groups,
         python_version_pin=python_version_pin,
         ignored_by_git=None,  # only populated for missing files; existing files don't apply rule (a0)
-        ignored_by_dotclaude_pattern=False,  # only meaningful for ignored missing files
+        neutralize_eligible=False,  # only meaningful for ignored missing files
     )
 
 
@@ -467,11 +502,12 @@ def recommend_policy(
     # output. Both unacceptable. ALWAYS manual_review_needed=True so the
     # interactive prompt asks the owner.
     if not target_meta.exists and target_meta.ignored_by_git is not None:
-        if target_meta.ignored_by_dotclaude_pattern:
-            # `.claude/`-class ignore → the managed un-ignore block can restore
-            # git-visibility. NEUTRALIZE mutates the owner's `.gitignore` AND
-            # overrides a `.claude/` ignore they set deliberately, so it ALWAYS
-            # needs explicit consent (manual_review_needed=True).
+        if target_meta.neutralize_eligible:
+            # Cleanly NEUTRALIZE-able (`.claude/`-class + root-`.gitignore`-sourced
+            # + no pre-existing sentinel). The managed un-ignore block restores
+            # git-visibility; it mutates the owner's `.gitignore` AND overrides a
+            # `.claude/` ignore they set deliberately, so it ALWAYS needs explicit
+            # consent (manual_review_needed=True).
             return PolicyRecommendation(
                 policy="NEUTRALIZE",
                 reason=(
@@ -482,9 +518,11 @@ def recommend_policy(
                 confidence="high",
                 manual_review_needed=True,
             )
-        # Broad-pattern ignore the block can't fix (e.g. `*.md`) → stay
-        # conservative SKIP (design-note AC4 / iter-1 FN5); owner decides
-        # SKIP-confirm vs WRITE_NEW.
+        # Ignored, but NOT cleanly NEUTRALIZE-able — a broad pattern the block
+        # can't fix (e.g. `*.md`), an ignore sourced from `.git/info/exclude` / a
+        # global excludesfile, or a `.gitignore` that already carries the sentinel
+        # block. Stay a conservative SKIP (design-note AC4 / iter-1 FN5 + PR #35
+        # codex A/B/D); owner decides SKIP-confirm vs WRITE_NEW.
         return PolicyRecommendation(
             policy="SKIP",
             reason=(

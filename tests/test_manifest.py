@@ -1341,7 +1341,7 @@ class TestNeutralize:
                 has_dependency_groups=False,
                 python_version_pin=None,
                 ignored_by_git=".gitignore:1",
-                ignored_by_dotclaude_pattern=True,
+                neutralize_eligible=True,
             )
             rec = PolicyRecommendation(
                 policy="NEUTRALIZE", reason="x", confidence="high", manual_review_needed=False
