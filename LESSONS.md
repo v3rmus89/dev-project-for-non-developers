@@ -153,6 +153,16 @@ solved structurally.
 
 **Status**: Active
 
+---
+
+### 2026-06-01: ruff RUF002/RUF003 reject ambiguous unicode (`×`, `…`) in Python comments/docstrings
+
+**Trigger**: PR-2 implementation — `make format` failed three separate times (commits 1, 3, 6's test edits) because I wrote `ACTOR×MODE` (U+00D7 MULTIPLICATION SIGN) and `Other × plan` in test docstrings/comments. ruff's RUF002 (docstring) / RUF003 (comment) flag these as ambiguous vs the ASCII `x`, and they are NOT auto-fixed by `ruff check --fix`, so each one halted `make format` until hand-edited. Cost ~3 extra format round-trips.
+
+**Rule**: In Python comments and docstrings, use ASCII only — `x` not `×`, `...` not `…`, `->` not `→`, `'` not `’`. Markdown/prose files (`.md`, templates) are fine (not linted by ruff). When writing test names/docstrings that describe a cross-product, write `ACTOR x MODE` or `ACTOR-MODE`, never `×`. If `make format` errors with RUF002/RUF003, the fix is a literal ASCII swap (no `--unsafe-fixes` needed).
+
+**Status**: Active
+
 ## Archived
 
 (No archived lessons yet. Move solved/obsolete "Active" entries here once the pattern hasn't fired for 3+ sessions.)

@@ -165,7 +165,52 @@ def plan_entries(target_root, planned_files):
     return entries, created_directories
 
 
-def _build_v2_write_entry(rel_path, skill_content):
+# The NEUTRALIZE un-ignore block (design note Option B). The intermediate
+# `!.claude/commands/` line is REQUIRED — git cannot descend into `commands/`
+# to re-include the file without first re-including the dir. EXACTLY 6 lines
+# (sentinel comment + 5 patterns); the sentinel-based restore removes exactly
+# these (a 7th line after the block is never consumed — iter-4 FN4). This must
+# stay byte-identical to the Part-1 dogfood `.gitignore` exception.
+NEUTRALIZE_SENTINEL = "# dev-project-setup: un-ignore the managed /dev-review command below"
+NEUTRALIZE_BLOCK_LINES = [
+    NEUTRALIZE_SENTINEL,
+    "!.claude/",
+    ".claude/*",
+    "!.claude/commands/",
+    ".claude/commands/*",
+    "!.claude/commands/dev-review.md",
+]
+
+
+def compute_neutralize_apply_bytes(current_bytes, block_lines):
+    """Return `.gitignore` bytes after appending the un-ignore block.
+
+    Idempotent: if the sentinel (`block_lines[0]`) is already a line, return
+    `current_bytes` unchanged. Otherwise insert the block as whole lines,
+    preserving the trailing-newline structure of `current_bytes`, so
+    `_restore_v2_neutralize`'s line-removal is byte-exact in every case
+    (trailing-`\\n` or not, empty or not). Operates in bytes — no UTF-8
+    round-trip — mirroring `compute_append_merge_bytes`.
+
+    NO whole-file SHA is recorded for NEUTRALIZE (restore is sentinel-based):
+    the block lands LAST (sort_key tier 1, after any tier-0 APPEND_MERGE on the
+    same `.gitignore`), and restore composes with that APPEND_MERGE because
+    NEUTRALIZE restores FIRST (iter-2 FN2).
+    """
+    block_bytes_lines = [line.encode("utf-8") for line in block_lines]
+    lines = current_bytes.split(b"\n")
+    if block_bytes_lines[0] in lines:
+        return current_bytes  # idempotent — sentinel already present
+    if lines and lines[-1] == b"":
+        # current ends with a newline (or is empty): insert before the trailing ""
+        new_lines = lines[:-1] + block_bytes_lines + [b""]
+    else:
+        # current has no trailing newline: append the block after the last line
+        new_lines = lines + block_bytes_lines
+    return b"\n".join(new_lines)
+
+
+def _build_v2_write_entry(rel_path, skill_content, sort_key=0):
     skill_sha = _sha256(skill_content)
     return {
         "path": rel_path,
@@ -180,10 +225,11 @@ def _build_v2_write_entry(rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content):
+def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content, sort_key=0):
     existing = target_full_path.read_bytes()
     existing_mode = os.stat(target_full_path).st_mode & 0o777
     target_sha = _sha256(existing)
@@ -201,10 +247,11 @@ def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content):
+def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content, sort_key=0):
     skill_sha = _sha256(skill_content)
     return {
         "path": rel_path,
@@ -224,10 +271,11 @@ def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content):
+def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content, sort_key=0):
     # Import locally to avoid a module-load cycle if manifest.py is imported
     # before adopt.py is fully initialised.
     from bootstrap_lib.adopt import compute_append_merge_bytes
@@ -250,6 +298,48 @@ def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content):
         "sha256_after_target_path": merged_sha,
         "pre_append_length": len(existing),
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
+    }
+
+
+def _build_v2_neutralize_entry(target_root, rel_path=".gitignore", sort_key=1):
+    """NEUTRALIZE: append the managed un-ignore block to the target's
+    `.gitignore` so a `.claude/`-ignored command file becomes git-visible.
+
+    Restore is SENTINEL-based — the entry records `NEUTRALIZE_BLOCK_LINES`, NOT
+    a whole-file SHA: `sha256_*_target_path` / `pre_append_length` are None.
+    That is deliberate (iter-2 FN2): a whole-file SHA computed at plan-time
+    against the ORIGINAL `.gitignore` would be un-matchable at restore-time
+    because the tier-0 APPEND_MERGE already mutated the file. The sentinel guard
+    is position- and length-independent, so it composes with that APPEND_MERGE
+    (NEUTRALIZE restores first — tier 1 > tier 0).
+
+    Captures the existing `.gitignore` mode in `mode_before` so apply + restore
+    PRESERVE it — never loosen a private (e.g. 0600) ignore file to 0644 (Tier-2
+    codex P2 on PR #35). NEUTRALIZE only fires when the `.gitignore` exists (the
+    root-`.gitignore`-source precondition), so the stat normally succeeds; a
+    defensive miss leaves `mode_before=None` → apply/restore fall back to
+    `mode_after`.
+    """
+    try:
+        mode_before = os.stat(Path(target_root) / rel_path).st_mode & 0o777
+    except OSError:
+        mode_before = None
+    return {
+        "path": rel_path,
+        "policy": "NEUTRALIZE",
+        "target_path": rel_path,
+        "existed_before": True,  # `.gitignore` exists — it is what ignores `.claude/`
+        "content_before_b64": None,
+        "mode_before": mode_before,
+        "sha256_before": None,
+        "sha256_after": None,
+        "sha256_before_target_path": None,
+        "sha256_after_target_path": None,  # NO whole-file SHA guard (sentinel-based)
+        "pre_append_length": None,
+        "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
+        "neutralize_block": list(NEUTRALIZE_BLOCK_LINES),  # recorded for sentinel restore
     }
 
 
@@ -284,6 +374,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
                 pre_existing_dirs.add(str(rel))
 
     needed_dirs = set()
+    neutralize_gitignore_added = False  # dedupe the single `.gitignore` NEUTRALIZE entry
     for analysis in adoption_plan.analyses:
         rel_path = analysis.rel_path
         policy = analysis.recommendation.policy
@@ -318,12 +409,37 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
             entries.append(_build_v2_write_new_entry(rel_path, new_rel_path, skill_content))
         elif policy == "APPEND_MERGE":
             entries.append(_build_v2_append_merge_entry(target_full_path, rel_path, skill_content))
+        elif policy == "NEUTRALIZE":
+            # One NEUTRALIZE recommendation on the command file expands into TWO
+            # entries (D8): (i) a DEDUPED `.gitignore` NEUTRALIZE entry
+            # (sort_key=1 — applies after any tier-0 APPEND_MERGE so its block is
+            # last) and (ii) the dependent command-file WRITE (sort_key=2 —
+            # applied after `.gitignore` is set up so the file lands git-visible).
+            if not neutralize_gitignore_added:
+                entries.append(_build_v2_neutralize_entry(root, sort_key=1))
+                neutralize_gitignore_added = True
+            # (ii) reuse normal WRITE parent-dir tracking so `_restore_v2` can
+            # remove any `.claude/` / `.claude/commands/` it created (iter-3 FN3).
+            parent = Path(rel_path).parent
+            while str(parent) not in (".", ""):
+                if str(parent) not in pre_existing_dirs:
+                    needed_dirs.add(str(parent))
+                parent = parent.parent
+            entries.append(_build_v2_write_entry(rel_path, skill_content, sort_key=2))
         else:
             raise ValueError(
                 f"unknown policy {policy!r} for {rel_path!r} (expected one of "
-                "WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/SKIP)"
+                "WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/NEUTRALIZE/SKIP)"
             )
 
+    # Apply ordering (Bucket A `sort_key` tiers): sort ascending by
+    # (sort_key, path). Tier 0 = all normal mutations (incl. APPEND_MERGE on
+    # `.gitignore`); tier 1 = the NEUTRALIZE `.gitignore` entry (must apply
+    # AFTER the APPEND_MERGE so its sentinel block is last); tier 2 = the
+    # dependent command-file WRITE. `_apply_adoption_writes` iterates this list
+    # in order; `_restore_v2` reverses it (descending). Legacy entries without
+    # `sort_key` read as 0 via `.get`.
+    entries.sort(key=lambda e: (e.get("sort_key", 0), e["path"]))
     created_directories = sorted(needed_dirs, key=lambda p: (len(Path(p).parts), p))
     return entries, created_directories
 
@@ -570,11 +686,53 @@ def _restore_v2_append_merge(entry, target_root, stderr):
     return "skipped"
 
 
+def _restore_v2_neutralize(entry, target_root, stderr):
+    """NEUTRALIZE appended the managed un-ignore block to `.gitignore`. Restore
+    is SENTINEL-based (no whole-file SHA, iter-2 FN2): locate the sentinel line,
+    verify the slice starting there matches the recorded `neutralize_block`
+    EXACTLY, then delete exactly those lines (a 7th line after the block is never
+    consumed). Composes with a same-file APPEND_MERGE because NEUTRALIZE (tier 1)
+    restores BEFORE it (tier 0), so APPEND_MERGE's original-based SHA stays valid.
+
+    Guards:
+      sentinel absent → no-op skip (apply interrupted before NEUTRALIZE, or the
+                        user already removed the block) — benign.
+      block modified  → SKIP-with-warning; never clobber the user's edit.
+      block intact    → delete exactly the recorded lines.
+    """
+    target_path_str = entry["target_path"]
+    target_path = target_root / target_path_str
+    block_lines = [line.encode("utf-8") for line in entry["neutralize_block"]]
+    sentinel = block_lines[0]
+    if not target_path.exists():
+        stderr.write(
+            f"SKIP {target_path_str}: file missing; nothing to un-neutralize "
+            "(user deletion or interrupted apply — restore is conservative)\n"
+        )
+        return "skipped"
+    lines = target_path.read_bytes().split(b"\n")
+    try:
+        idx = lines.index(sentinel)
+    except ValueError:
+        stderr.write(f"SKIP {target_path_str}: NEUTRALIZE sentinel absent; nothing to remove\n")
+        return "skipped"
+    if lines[idx : idx + len(block_lines)] != block_lines:
+        stderr.write(f"SKIP {target_path_str}: NEUTRALIZE block modified; left in place\n")
+        return "skipped"
+    del lines[idx : idx + len(block_lines)]
+    bio.atomic_write(target_path, b"\n".join(lines))
+    # Restore the ORIGINAL `.gitignore` mode (never loosen a private ignore
+    # file); fall back to mode_after/0644 for legacy entries lacking mode_before.
+    os.chmod(target_path, entry.get("mode_before") or entry.get("mode_after", 0o644))
+    return "restored"
+
+
 _V2_RESTORE_HANDLERS = {
     "WRITE": _restore_v2_write,
     "OVERWRITE": _restore_v2_overwrite,
     "WRITE_NEW": _restore_v2_write_new,
     "APPEND_MERGE": _restore_v2_append_merge,
+    "NEUTRALIZE": _restore_v2_neutralize,
 }
 
 
@@ -609,8 +767,18 @@ def _restore_v2(m, stderr):
         stderr.write(f"aborting restore: {n_rejected} entry/entries rejected for path-safety\n")
         return (n_restored, n_removed, n_skipped, n_rejected)
 
-    # Per-policy dispatch
-    for entry in m.entries:
+    # Per-policy dispatch. Restore REVERSES apply: iterate descending by
+    # (sort_key, target_path) so tier 2 (command WRITE) undoes before tier 1
+    # (NEUTRALIZE sentinel-removal) before tier 0 (APPEND_MERGE truncation) —
+    # the inverse of plan_adoption_entries' ascending apply order. Legacy v2
+    # manifests without `sort_key` read as 0 via `.get` (each handler operates
+    # on an independent target_path, so their relative order is irrelevant).
+    ordered_entries = sorted(
+        m.entries,
+        key=lambda e: (e.get("sort_key", 0), e.get("target_path", "")),
+        reverse=True,
+    )
+    for entry in ordered_entries:
         policy = entry.get("policy")
         handler = _V2_RESTORE_HANDLERS.get(policy)
         if handler is None:

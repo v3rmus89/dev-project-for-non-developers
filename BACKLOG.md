@@ -1218,3 +1218,44 @@ guard that the plan-review targets already had. Codex caught it.
 For generated projects: the lesson is project-local and doesn't ship in
 the shared template (which starts empty). Generated projects accumulate
 their own equivalent if/when they encounter the pattern.
+
+### Review-target shell-injection hardening for PLAN_FILE / ITERATION passthrough (imp-2)
+
+**Status**: parked.
+
+**Why parked**: PR #35's `make review` dispatcher sanitizes its MODE/ACTOR
+inputs via a `$(filter)` allowlist, but `PLAN_FILE` / `ITERATION` are still
+expanded directly into the recipe shell (`PLAN_FILE="$(PLAN_FILE)"` in the
+sub-make call) — and the `review-plan-by-*` / `review-commit-by-*` sub-targets
+they dispatch to ALSO embed `$(PLAN_FILE)` / `$(ITERATION)` directly in their
+shell prompts and `test -f` guards. So this is a PRE-EXISTING injection class
+spanning every review target, NOT introduced by the dispatcher — a
+dispatcher-only fix would be cosmetic because the sub-target re-introduces it.
+The trust model matches MODE/ACTOR (values come from the user's own shell or
+the `/dev-review` command's fixed args — no untrusted-input boundary), so
+severity is low. Surfaced by the PR #35 live `/dev-review commit` smoke (Tier-1
+F1).
+
+A SECOND, related class (PR #35 codex re-review): make-level `$(shell ...)`
+execution. Because make expands `$(VAR)` fully (re-scanning the result), a
+value like `make review ACTOR='$(shell rm -rf ~)codex'` runs the embedded
+`$(shell)` when the dispatcher evaluates `$(filter … ,$(ACTOR))` — verified,
+and `$(value)`/`$(origin)` do NOT prevent it (the filter argument is
+re-expanded). This is inherent to GNU make (it affects every `$(VAR)` in every
+recipe/target, not just the dispatcher) and is bounded by the same
+no-untrusted-input trust model. There is no clean make-level fix (you cannot
+inspect a value without expanding it); the practical mitigation is "don't pass
+untrusted strings to `make`", same as any Makefile. Likely WONTFIX unless an
+untrusted-input path appears; documented here so it isn't re-triaged each pass.
+
+**Trigger to pick up**: a repo-wide review-target hardening pass — single-quote
+`$(PLAN_FILE)` (e.g. `$(subst ','\'',$(PLAN_FILE))`) and numeric-filter
+`ITERATION` across ALL `review-*` recipes + the dispatcher (byte-identical in
+`Makefile` + `shared/Makefile.review.tmpl`) — OR if any review target ever
+consumes PLAN_FILE/ITERATION (or MODE/ACTOR) from an untrusted source.
+
+**Rough effort**: ~2 hours (all review-* recipes in both Makefile surfaces + tests).
+
+**Done in PR #35** (not parked): the `.gitignore` MODE-preservation half of the
+codex re-review — NEUTRALIZE now captures `mode_before` and apply+restore chmod
+to it, so a private (e.g. 0600) ignore file is never loosened to 0644.

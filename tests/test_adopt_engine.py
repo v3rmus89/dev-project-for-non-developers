@@ -25,6 +25,7 @@ from bootstrap_lib.adopt import (
     PolicyRecommendation,
     TargetMeta,
     _compute_target_meta,
+    _is_dotclaude_class_pattern,
     analyze_target,
     compute_append_merge_bytes,
     format_recommendation_report,
@@ -260,7 +261,8 @@ class TestRecommendPolicyRules:
     """Scope #5 rules a0/a..h, one test per rule. Each asserts
     `manual_review_needed` explicitly per Bucket D contract."""
 
-    # ─── Rule (a0): missing AND ignored_by_git → SKIP, manual_review=True ───
+    # ─── Rule (a0): missing AND ignored_by_git ───
+    # Not cleanly NEUTRALIZE-able (neutralize_eligible defaults False) → SKIP.
     def test_rule_a0_missing_and_ignored_returns_skip_manual_review(self, tmp_path: Path) -> None:
         meta = _meta(
             exists=False,
@@ -273,6 +275,26 @@ class TestRecommendPolicyRules:
         assert rec.policy == "SKIP"
         assert rec.manual_review_needed is True
         assert "gitignores" in rec.reason
+
+    # Cleanly NEUTRALIZE-able ignore → NEUTRALIZE (the un-ignore block can fix it).
+    def test_rule_a0_dotclaude_class_ignore_returns_neutralize(self, tmp_path: Path) -> None:
+        meta = _meta(
+            exists=False,
+            size=0,
+            sha256=None,
+            line_count=None,
+            ignored_by_git=".gitignore:50",
+            neutralize_eligible=True,
+        )
+        rec = recommend_policy(
+            ".claude/commands/dev-review.md",
+            tmp_path / ".claude/commands/dev-review.md",
+            b"# command\n",
+            meta,
+        )
+        assert rec.policy == "NEUTRALIZE"
+        assert rec.manual_review_needed is True  # ALWAYS needs consent (mutates .gitignore)
+        assert "consent" in rec.reason
 
     # ─── Rule (a): missing AND not ignored → WRITE/safe-create ───
     def test_rule_a_missing_and_not_ignored_returns_write(self, tmp_path: Path) -> None:
@@ -1252,3 +1274,153 @@ class TestPyprojectSkipAdvisory:
         # (plan H1 fold): copying tables into pyproject.toml is futile while
         # the standalone file wins.
         assert "overrides these tables" in report
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR-2 (Part 2A) — the `.claude/`-class ignore classifier (iter-1 FN5 / iter-3
+# FN4). NEUTRALIZE must fire ONLY when the matched ignore pattern is one the
+# managed un-ignore block can actually fix; a broad pattern (e.g. `*.md`) that
+# merely happens to match stays a conservative SKIP (design-note AC4).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "pattern, expected",
+    [
+        (".claude", True),
+        (".claude/", True),
+        (".claude/**", True),
+        ("/.claude/", True),  # root-anchored — leading / stripped (iter-3 FN4)
+        ("/.claude/**", True),
+        (".claude/commands/", True),
+        ("!.claude/", True),  # leading ! stripped (defensive)
+        ("  .claude/  ", True),  # surrounding space stripped
+        ("*.md", False),  # broad pattern the un-ignore block can't fix
+        ("*.local", False),
+        ("secrets/", False),
+        ("claude/", False),  # missing leading dot
+        (".claudette/", False),  # `.claude` prefix but not a `.claude/` path segment
+    ],
+)
+def test_is_dotclaude_class_pattern(pattern, expected):
+    assert _is_dotclaude_class_pattern(pattern) is expected
+
+
+@pytest.mark.parametrize(
+    "ignore_line, expect_neutralize",
+    [
+        (".claude/", True),
+        ("/.claude/", True),
+        (".claude/**", True),
+        ("/.claude/**", True),
+        (".claude", True),
+        ("*.md", False),  # broad pattern that also matches → conservative SKIP
+    ],
+)
+def test_rule_a0_end_to_end_dotclaude_class_vs_broad(tmp_path, ignore_line, expect_neutralize):
+    """End-to-end through REAL `git check-ignore`: a planned, ignored
+    `.claude/commands/dev-review.md` recommends NEUTRALIZE when the matching
+    pattern is `.claude/`-class, else a conservative SKIP — both with
+    manual_review_needed=True. Exercises the full classifier path
+    (_compute_target_meta → _check_ignored_by_git → _is_dotclaude_class_pattern
+    → recommend_policy), not just the in-memory boolean."""
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(ignore_line + "\n")
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.exists is False
+    assert meta.ignored_by_git is not None, f"{ignore_line!r} should ignore {rel}"
+    assert meta.neutralize_eligible is expect_neutralize
+    # privacy: the captured reference is source:line only — never the pattern
+    assert ".claude" not in meta.ignored_by_git
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.manual_review_needed is True
+    assert rec.policy == ("NEUTRALIZE" if expect_neutralize else "SKIP")
+
+
+def test_rule_a0_negated_reinclude_is_write_not_neutralize(tmp_path):
+    """Tier-2 codex P2 (PR #35): a target whose `.gitignore` already re-includes
+    the command file via a `!`-negation (manual setup, OR an interrupted prior
+    adopt that appended the un-ignore block but never wrote the file) is NOT
+    ignored — `git check-ignore -v` reports rc 0 + the `!` pattern, but `-q`
+    exits 1. The planned command must get a plain rule-(a) WRITE, never
+    NEUTRALIZE (which would re-append the block / abort under --non-interactive)."""
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(
+        ".claude/\n"
+        "!.claude/\n"
+        ".claude/*\n"
+        "!.claude/commands/\n"
+        ".claude/commands/*\n"
+        "!.claude/commands/dev-review.md\n"
+    )
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.exists is False
+    assert meta.ignored_by_git is None, "a `!`-re-included path must read as not-ignored"
+    assert meta.neutralize_eligible is False
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.policy == "WRITE"
+    assert rec.manual_review_needed is False
+
+
+def test_rule_a0_exclude_sourced_is_skip_not_neutralize(tmp_path):
+    """Tier-2 codex P2 finding A (PR #35): when `.claude/` is ignored via
+    `.git/info/exclude` (NOT the target `.gitignore`) and no `.gitignore` exists,
+    NEUTRALIZE would CREATE a `.gitignore` whose restore leaves a stray empty
+    file. Require the ignore to be ROOT-`.gitignore`-sourced → else conservative
+    SKIP, and nothing is created."""
+    _git_init(tmp_path)
+    exclude = tmp_path / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".claude/\n")  # ignore via exclude; NO .gitignore in the worktree
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.exists is False
+    assert meta.ignored_by_git is not None  # it IS ignored (by exclude)
+    assert meta.neutralize_eligible is False  # but NOT cleanly NEUTRALIZE-able
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.policy == "SKIP"
+    assert rec.manual_review_needed is True
+    assert not (tmp_path / ".gitignore").exists()  # analyze created nothing
+
+
+def test_rule_a0_sentinel_already_present_is_skip_not_neutralize(tmp_path):
+    """Tier-2 codex P2 finding B (PR #35): a `.gitignore` that already carries
+    the NEUTRALIZE sentinel (a prior/partial block — here the functional `!`
+    lines are absent so the command is still ignored by `.claude/`) is NOT
+    cleanly NEUTRALIZE-able: apply would no-op on the sentinel (silent failure).
+    Fall back to SKIP."""
+    from bootstrap_lib.manifest import NEUTRALIZE_SENTINEL
+
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(f".claude/\n{NEUTRALIZE_SENTINEL}\n")
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.ignored_by_git is not None  # still ignored by `.claude/`
+    assert meta.neutralize_eligible is False  # sentinel present → not eligible
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.policy == "SKIP"
+
+
+def test_rule_a0_block_then_reignore_is_skip_not_neutralize(tmp_path):
+    """Tier-2 codex P2 finding D (PR #35): a `.gitignore` carrying the full
+    un-ignore block AND a later rule re-ignoring the command → the later rule
+    wins (so it's ignored), but the sentinel is present, so NEUTRALIZE (which
+    would let restore delete the pre-existing block) is rejected → SKIP."""
+    from bootstrap_lib.manifest import NEUTRALIZE_BLOCK_LINES
+
+    _git_init(tmp_path)
+    # The full managed block (INCLUDING its sentinel comment) THEN a later rule
+    # re-ignoring the command — the later rule wins, so the command is ignored
+    # again, but the sentinel comment is present in the file.
+    block = "\n".join(NEUTRALIZE_BLOCK_LINES)
+    (tmp_path / ".gitignore").write_text(
+        ".claude/\n" + block + "\n.claude/commands/dev-review.md\n"
+    )
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.ignored_by_git is not None  # later positive rule wins → ignored
+    assert meta.neutralize_eligible is False  # sentinel present → not eligible
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.policy == "SKIP"

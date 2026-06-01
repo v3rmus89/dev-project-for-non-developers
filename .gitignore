@@ -48,3 +48,10 @@ plan-review-*.md
 
 # Claude Code session state (lock files etc.)
 .claude/
+
+# dev-project-setup: un-ignore the managed /dev-review command below
+!.claude/
+.claude/*
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/dev-review.md

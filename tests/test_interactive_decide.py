@@ -362,6 +362,96 @@ class TestActions:
             assert name in out
 
 
+# ─── NEUTRALIZE consent (PR-2 Part 2A) ───
+
+
+class TestNeutralizeConsent:
+    """NEUTRALIZE mutates the owner's `.gitignore` AND overrides a `.claude/`
+    ignore they set deliberately, so it ALWAYS needs explicit consent
+    (manual_review_needed=True). This pins the GENERIC consent gating —
+    `--non-interactive` exits 2, interactive still prompts (auto-accept does NOT
+    bypass it: `_interactive_decide` only receives `non_interactive`). The
+    NEUTRALIZE-specific action matrix (offer only r/s/d/?/q, reject n/o/a) lands
+    with the builder/apply in a later commit."""
+
+    _CMD = ".claude/commands/dev-review.md"
+
+    def test_neutralize_non_interactive_aborts(self, tmp_path):
+        plan = _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+        with pytest.raises(_AdoptionAbort, match="--non-interactive"):
+            _decide(plan, {self._CMD: b"# cmd\n"}, non_interactive=True)
+
+    def test_neutralize_prompts_interactively(self, tmp_path):
+        plan = _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+        new_plan, out = _decide(plan, {self._CMD: b"# cmd\n"}, stdin_text="r\n")
+        # the file is surfaced for a decision and the recommendation is shown
+        assert self._CMD in out
+        assert "NEUTRALIZE" in out
+        # [r] accept preserves NEUTRALIZE and marks it reviewed
+        rec = new_plan.analyses[0].recommendation
+        assert rec.policy == "NEUTRALIZE"
+        assert rec.manual_review_needed is False
+
+
+class TestNeutralizeActionMatrix:
+    """PR-2 (Part 2D / iter-4 FN1): a NEUTRALIZE target offers ONLY
+    recommended/skip/diff/help/quit. The generic mutating actions are unsafe —
+    [n]ew would write an ignored `.new`, [o]verwrite assumes the file exists,
+    [a]ppend is `.gitignore`-only — so they are neither OFFERED nor ACCEPTED."""
+
+    _CMD = ".claude/commands/dev-review.md"
+
+    def test_allowed_actions_only_rsdhq_for_neutralize(self):
+        actions = _allowed_actions_for(self._CMD, "NEUTRALIZE")
+        assert actions == ["r", "s", "d", "?", "q"]
+        for unsafe in ("n", "o", "a"):
+            assert unsafe not in actions
+
+    def _neutralize_plan(self, tmp_path):
+        return _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+
+    def test_n_rejected_and_reprompts(self, tmp_path):
+        new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="n\ns\n"
+        )
+        assert "[n]ew is not available" in out
+        # 'n' was NOT accepted as WRITE_NEW; user fell through to [s]kip
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_o_rejected_and_reprompts(self, tmp_path):
+        new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="o\ns\n"
+        )
+        assert "[o]verwrite is not available" in out
+        # 'o' was rejected BEFORE the typed-OVERWRITE confirmation
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_a_rejected_and_reprompts(self, tmp_path):
+        new_plan, _out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="a\ns\n"
+        )
+        # 'a' is invalid for a non-.gitignore NEUTRALIZE target → rejected
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_help_omits_unsafe_actions(self, tmp_path):
+        _new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="?\ns\n"
+        )
+        assert "[r]ecommended" in out
+        assert "[n]ew" not in out
+        assert "[o]verwrite" not in out
+        assert "[a]ppend" not in out
+
+
 # ─── Decided recommendations always set manual_review_needed=False ───
 
 

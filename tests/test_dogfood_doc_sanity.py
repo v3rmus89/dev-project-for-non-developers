@@ -213,6 +213,125 @@ def test_readme_step3_names_approval_mechanisms_and_claude_md_is_agnostic():
     )
 
 
+def _render_shared(tmpl_name):
+    """Render a shared/*.tmpl for the skill repo's own (claude) context."""
+    from bootstrap_lib import render
+
+    env = render.build_env("python")
+    return env.get_template(tmpl_name).render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+
+@pytest.mark.parametrize("rel_path", ["CLAUDE.md", "shared/CLAUDE.md.tmpl"])
+def test_dev_review_dispatch_convention_in_claude_surfaces(rel_path):
+    """S5/S6: the Claude dispatch convention (invoke /dev-review; commit→ACTOR=claude
+    directly, plan→ask the author; REVIEWER is terminal-only because a per-tool-call
+    export does not persist) must be present in BOTH the dogfood CLAUDE.md AND the
+    rendered shared/CLAUDE.md.tmpl — a Risks-table failure mode is the instruction
+    landing in one surface but not the other. The Codex wording differs (it can't
+    invoke a slash command) and is asserted separately on the AGENTS surfaces."""
+    if rel_path.endswith(".tmpl"):
+        text = _render_shared("CLAUDE.md.tmpl")
+    else:
+        text = (SKILL_ROOT / rel_path).read_text()
+    assert "/dev-review" in text, f"{rel_path} missing the /dev-review dispatch convention"
+    assert "single source of dispatch truth" in text, (
+        f"{rel_path} missing the make-review-is-dispatch-truth note"
+    )
+    assert "REVIEWER" in text, (
+        f"{rel_path} must note REVIEWER is terminal-only (not a per-tool-call export)"
+    )
+
+
+@pytest.mark.parametrize("rel_path", ["AGENTS.md", "shared/AGENTS.md.tmpl"])
+def test_dev_review_dispatch_convention_in_agents_surfaces(rel_path):
+    """S5/S6 (Codex mirror): Codex CANNOT invoke a Claude slash command, so BOTH
+    the dogfood AGENTS.md AND the rendered shared/AGENTS.md.tmpl must tell it to
+    run `make review ACTOR=codex …` directly, passing ACTOR=codex inline (a
+    separate `export REVIEWER` is unreliable — each tool call is a fresh shell,
+    iter-4 FN3)."""
+    if rel_path.endswith(".tmpl"):
+        text = _render_shared("AGENTS.md.tmpl")
+    else:
+        text = (SKILL_ROOT / rel_path).read_text()
+    assert "make review" in text and "ACTOR=codex" in text, (
+        f"{rel_path} missing the Codex `make review ACTOR=codex` dispatch convention"
+    )
+    assert "fresh shell" in text, (
+        f"{rel_path} must explain ACTOR=codex is passed inline because each tool call "
+        "is a fresh shell (no persistent REVIEWER export)"
+    )
+
+
+def test_dev_review_command_body_six_branch_dispatch():
+    """6-branch acceptance (S7 / 1D). The dispatcher resolve-mode tests cover 4
+    branches (Claude/Codex x plan/commit); these are the other 2 (Other x {plan,
+    commit}), asserted on the command body — mode-asymmetric per iter-3 FN1:
+
+    - Other x commit → emits `make review MODE=commit ACTOR=claude` DIRECTLY, with
+      NO AskUserQuestion (the session is the implementer by construction);
+    - Other x plan  → AskUserQuestions the author, THEN emits the chosen-direction
+      `make review MODE=plan ACTOR=<answer> …` form.
+
+    And it NEVER lists both cross-AI directions at once (PR #10 iter-4 F5)."""
+    body = (SKILL_ROOT / ".claude" / "commands" / "dev-review.md").read_text()
+
+    commit_idx = body.find("\n## commit")
+    plan_idx = body.find("\n## plan")
+    assert commit_idx != -1, "command missing a `## commit` section"
+    assert plan_idx != -1, "command missing a `## plan` section"
+    assert commit_idx < plan_idx, "expected the `## commit` section before `## plan`"
+    commit_section = body[commit_idx:plan_idx]
+    plan_section = body[plan_idx:]
+
+    # Other x commit: direct ACTOR=claude, no ask.
+    assert "make review MODE=commit ACTOR=claude" in commit_section, (
+        "commit branch must dispatch `make review MODE=commit ACTOR=claude` directly"
+    )
+    assert "AskUserQuestion" not in commit_section, (
+        "commit branch must NOT ask — the session is the implementer by construction"
+    )
+
+    # Other x plan: ask the author first, then emit the chosen-direction form.
+    assert "AskUserQuestion" in plan_section, (
+        "plan branch must AskUserQuestion the author (never a silent default)"
+    )
+    assert "make review MODE=plan ACTOR=" in plan_section, (
+        "plan branch must emit `make review MODE=plan ACTOR=<author> …`"
+    )
+
+    # Never offers both cross-AI directions — the dispatcher owns direction.
+    assert not ("review-plan-by-codex" in body and "review-plan-by-claude" in body), (
+        "command must NOT list both cross-AI review directions (PR #10 iter-4 F5)"
+    )
+
+
+def test_usage_doc_documents_neutralize_and_dev_review():
+    """S12 / iter-4 FN5: docs/usage.md's normative tables must carry the
+    NEUTRALIZE adopt-rule row + the v2-restore sentinel-removal row, and the
+    `/dev-review` front-end, so the docs cannot silently drift from the engine."""
+    text = (SKILL_ROOT / "docs" / "usage.md").read_text()
+    # adopt-mode rule table: the `.claude/`-class → NEUTRALIZE policy (vs broad → SKIP)
+    assert "`NEUTRALIZE`" in text, "usage.md must document the NEUTRALIZE policy"
+    assert "`.claude/`-class" in text, (
+        "usage.md must document the `.claude/`-class NEUTRALIZE trigger"
+    )
+    # v2 restore matrix: sentinel-based block removal (NOT whole-file SHA)
+    assert "sentinel match" in text, (
+        "usage.md restore docs must describe NEUTRALIZE sentinel-based block removal"
+    )
+    # the /dev-review front-end + its dispatcher
+    assert "/dev-review" in text, "usage.md must document the /dev-review command"
+    assert "make review" in text, "usage.md must document the make review dispatcher"
+
+
 def test_backlog_has_deferred_bucket_entries():
     """V-22: BACKLOG.md carries durable entries for deferred Buckets A + F (iter-7 F2 fold).
     Both slugs present; each entry has Trigger + Starting requirements subsections;

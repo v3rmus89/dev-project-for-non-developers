@@ -33,6 +33,15 @@ project grows. Generic baseline:
 Code must pass `make check`. The same suite runs in CI. If a change wouldn't
 pass `make check`, that's a blocker.
 
+## Dispatching reviews (Codex)
+
+To launch a review yourself, call the **`make review`** dispatcher directly — there is no Claude slash command you can invoke (`.claude/commands/*` is a Claude Code feature with no `codex` equivalent):
+
+- `make review MODE=commit ACTOR=codex` — same-AI Tier-1 review of the latest commit (Codex is the implementer).
+- `make review MODE=plan ACTOR=codex PLAN_FILE=docs/plans/<file>.md [ITERATION=N]` — cross-direction review of a Codex-authored plan.
+
+Pass `ACTOR=codex` **inline on the same invocation** (or call the explicit `review-commit-by-codex` / `review-plan-by-claude` target). A separate `export REVIEWER=codex` is unreliable — each tool call is a fresh shell, so the export won't reach a later `make`. `REVIEWER` is a convenience for a hand-run `make review` in one interactive terminal only.
+
 ## Plan Review Guidance
 
 For files under `docs/plans/`, review the **plan itself**, not code style.

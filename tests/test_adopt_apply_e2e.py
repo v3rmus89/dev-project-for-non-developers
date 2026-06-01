@@ -149,6 +149,41 @@ class TestApplyAdoptionWritesDirect:
         # Pre-existing .new MUST be preserved.
         assert (tmp_path / "CLAUDE.md.new").read_bytes() == b"# user already started merging\n"
 
+    def test_neutralize_sentinel_appeared_at_apply_raises(self, tmp_path):
+        """TOCTOU (Tier-2 codex P2, PR #35): if the un-ignore block appears in
+        `.gitignore` between plan-time and apply-time, NEUTRALIZE must FAIL LOUD
+        — not silently no-op while recording a block restore would later remove."""
+        from bootstrap_lib import manifest
+        from bootstrap_lib.adopt import AdoptionCollisionError
+
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(b".claude/\n")  # plan-time state (no sentinel)
+        entry = manifest._build_v2_neutralize_entry(tmp_path)
+        tampered = (
+            b".claude/\n"
+            + manifest.NEUTRALIZE_SENTINEL.encode()
+            + b"\n!.claude/commands/dev-review.md\n"
+        )
+        gi.write_bytes(tampered)  # the block appears in the apply window
+        with pytest.raises(AdoptionCollisionError):
+            cli._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
+        assert gi.read_bytes() == tampered  # untouched (no double-append)
+
+    def test_neutralize_gitignore_deleted_at_apply_raises(self, tmp_path):
+        """TOCTOU (Tier-2 codex P2, PR #35): if `.gitignore` is deleted in the
+        apply window, NEUTRALIZE must FAIL LOUD — not recreate it from empty
+        (which restore would leave behind as a stray file)."""
+        from bootstrap_lib import manifest
+        from bootstrap_lib.adopt import AdoptionCollisionError
+
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(b".claude/\n")
+        entry = manifest._build_v2_neutralize_entry(tmp_path)
+        gi.unlink()  # deleted in the apply window
+        with pytest.raises(AdoptionCollisionError):
+            cli._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
+        assert not gi.exists()  # NOT recreated
+
     def test_append_merge_re_merges_at_apply_time(self, tmp_path):
         """Re-merge at apply uses CURRENT target bytes — line-level idempotent."""
         (tmp_path / ".gitignore").write_bytes(b"venv/\n")

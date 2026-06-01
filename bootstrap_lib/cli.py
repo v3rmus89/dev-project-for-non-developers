@@ -270,8 +270,15 @@ class _AdoptionAbort(Exception):
 _ALWAYS_ACTIONS = ("r", "s", "n", "o", "d", "?", "q")
 
 
-def _allowed_actions_for(rel_path):
+def _allowed_actions_for(rel_path, policy=None):
     """Return the ordered list of allowed action keys for this file's prompt."""
+    if policy == "NEUTRALIZE":
+        # NEUTRALIZE is a two-entry mutation (append the `.gitignore` un-ignore
+        # block + WRITE the command file). The generic mutating actions are all
+        # UNSAFE here (iter-4 FN1): [n]ew would write an ignored `.new`,
+        # [o]verwrite assumes the target file already exists, [a]ppend is
+        # `.gitignore`-only. Offer ONLY recommended/skip/diff/help/quit.
+        return ["r", "s", "d", "?", "q"]
     name = Path(rel_path).name
     actions = list(_ALWAYS_ACTIONS)
     if name == ".gitignore":
@@ -338,7 +345,7 @@ def _prompt_one_file(analysis, planned_files, target_root, stdin, stdout):
     [d] and [?] re-display info and re-prompt. [o] requires typed `OVERWRITE`."""
     rec = analysis.recommendation
     rel_path = analysis.rel_path
-    allowed = _allowed_actions_for(rel_path)
+    allowed = _allowed_actions_for(rel_path, rec.policy)
 
     stdout.write(f"\n=== {rel_path} ===\n")
     stdout.write(f"  recommended: {rec.policy}\n")
@@ -369,7 +376,15 @@ def _prompt_one_file(analysis, planned_files, target_root, stdin, stdout):
         if choice == "s":
             return _user_decision(rec, "SKIP", "user chose [s]kip")
         if choice == "n":
-            return _user_decision(rec, "WRITE_NEW", "user chose [n]ew (.new alongside original)")
+            if "n" in allowed:
+                return _user_decision(
+                    rec, "WRITE_NEW", "user chose [n]ew (.new alongside original)"
+                )
+            stdout.write(
+                f"  [n]ew is not available for a {rec.policy} target (got {rel_path}); "
+                "type [?] for valid actions\n"
+            )
+            continue
         if choice == "a":
             if "a" in allowed:
                 return _user_decision(rec, "APPEND_MERGE", "user chose [a]ppend (line-level merge)")
@@ -379,6 +394,12 @@ def _prompt_one_file(analysis, planned_files, target_root, stdin, stdout):
             )
             continue
         if choice == "o":
+            if "o" not in allowed:
+                stdout.write(
+                    f"  [o]verwrite is not available for a {rec.policy} target (got {rel_path}); "
+                    "type [?] for valid actions\n"
+                )
+                continue
             stdout.write(
                 '  type "OVERWRITE" (uppercase, exactly) to confirm destructive overwrite: '
             )
@@ -573,10 +594,42 @@ def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
             merged = compute_append_merge_bytes(current_target, planned_files[rel_path])
             io.atomic_write(target_full, merged)
             os.chmod(target_full, entry["mode_after"])
+        elif policy == "NEUTRALIZE":
+            # TOCTOU re-check (mirrors WRITE_NEW's apply-time guard): analyze
+            # validated `.gitignore` exists and lacks the sentinel, but it could
+            # have changed in the apply window (incl. the interactive prompt). If
+            # it vanished, or someone added the block, FAIL LOUD rather than
+            # recreate-from-empty / no-op while the manifest still records the
+            # block — either would make `--restore` remove user content or leave
+            # a stray `.gitignore` (Tier-2 codex P2 on PR #35).
+            if not target_full.exists():
+                raise AdoptionCollisionError(
+                    f"{entry['target_path']} disappeared between plan-time and apply-time; "
+                    "bootstrap will NOT recreate it for NEUTRALIZE"
+                )
+            current_target = target_full.read_bytes()
+            if manifest.NEUTRALIZE_SENTINEL.encode() in current_target:
+                raise AdoptionCollisionError(
+                    f"{entry['target_path']} gained the un-ignore block between plan-time and "
+                    "apply-time; aborting so restore cannot reverse a block bootstrap did not add"
+                )
+            # Append the managed un-ignore block (NOT planned-file content).
+            # `compute_neutralize_apply_bytes` preserves the trailing-newline
+            # structure so the sentinel restore is byte-exact. Runs at tier 1 —
+            # after any tier-0 APPEND_MERGE on the same `.gitignore` — so its
+            # block is the last thing in the file.
+            neutralized = manifest.compute_neutralize_apply_bytes(
+                current_target, entry["neutralize_block"]
+            )
+            io.atomic_write(target_full, neutralized)
+            # PRESERVE the original `.gitignore` mode (atomic_write makes a new
+            # file) — never loosen a private ignore file to 0644. Fall back to
+            # mode_after for legacy entries lacking mode_before.
+            os.chmod(target_full, entry.get("mode_before") or entry["mode_after"])
         else:
             raise ValueError(
                 f"unknown policy {policy!r} in v2 entry for {rel_path!r}; "
-                "expected WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE "
+                "expected WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/NEUTRALIZE "
                 "(SKIP entries should NOT appear in v2 manifests)"
             )
         if first:

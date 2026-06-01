@@ -18,6 +18,7 @@ SHARED_TEMPLATE_MAP = {
     "docs/SMOKE.md": "docs-SMOKE.md.tmpl",
     "docs/codex-github-review-setup.md": "docs-codex-github-review-setup.md.tmpl",
     ".editorconfig": "editorconfig.tmpl",
+    ".claude/commands/dev-review.md": "claude-commands-dev-review.md.tmpl",
     "scripts/run-with-clean-env.py": "scripts-run-with-clean-env.py.tmpl",
     "scripts/loop-status.py": "scripts-loop-status.py.tmpl",
     "scripts/extract-plan-facts.py": "scripts-extract-plan-facts.py.tmpl",

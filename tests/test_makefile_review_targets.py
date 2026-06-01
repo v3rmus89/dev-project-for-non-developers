@@ -17,6 +17,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP_PY = SKILL_ROOT / "bootstrap.py"
 
@@ -107,6 +109,10 @@ def test_make_help_lists_review_targets(tmp_path):
     assert result.returncode == 0, result.stderr
     for tgt in ["review-plan-by-codex", "review-plan-by-claude", "preflight-review-tooling"]:
         assert tgt in result.stdout, f"{tgt} missing from `make help`"
+    # the `make review` dispatcher (PR-2, iter-3 FN5) is listed as its OWN target
+    # (first token == "review"), distinct from the review-plan-by-* substrings.
+    help_targets = [line.strip().split()[0] for line in result.stdout.splitlines() if line.strip()]
+    assert "review" in help_targets, f"`review` dispatcher missing from `make help`: {help_targets}"
 
 
 def test_review_plan_by_codex_materialises_output_file(tmp_path):
@@ -1362,3 +1368,252 @@ def test_loop_reset_removes_thread_state(tmp_path):
     assert r.returncode == 0, r.stderr + r.stdout
     assert not tf.exists(), "loop-reset must remove THREAD_FILE"
     assert not tj.exists(), "loop-reset must remove THREAD_JSONL_FILE"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR-2 (Bucket A) — the `make review` dispatcher (S1/S2).
+#
+#   make review MODE={plan,commit} ACTOR={claude,codex} [PLAN_FILE=… ITERATION=…]
+#
+# resolves to the CORRECT review target — cross-direction for plan review
+# (claude→codex, codex→claude), same-AI for commit review — and invokes it.
+# REVIEW_RESOLVE=1 is a deterministic test hook: it prints the resolved target
+# (or NEEDS-ASK) and exits 0 WITHOUT invoking any CLI. The resolutions are the 4
+# of the design note's 6 acceptance branches; the other 2 (Other x plan/commit)
+# are command-body assertions on .claude/commands/dev-review.md (test_dev_review_*).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# (MODE, ACTOR, resolved-target). Plan review is cross-direction; commit is same-AI.
+_DISPATCH_RESOLUTIONS = [
+    ("plan", "claude", "review-plan-by-codex"),
+    ("plan", "codex", "review-plan-by-claude"),
+    ("commit", "claude", "review-commit-by-claude"),
+    ("commit", "codex", "review-commit-by-codex"),
+]
+_ALL_REVIEW_TARGETS = {t for _, _, t in _DISPATCH_RESOLUTIONS}
+
+
+def _run_review(target, args, extra_env=None):
+    """Invoke `make -C target review …`. Always scrubs REVIEWER/ACTOR from the
+    inherited env so a developer's `export REVIEWER=codex` cannot leak into the
+    unset-actor assertions (the dispatcher reads $(REVIEWER) as the fallback)."""
+    env = os.environ.copy()
+    env.pop("REVIEWER", None)
+    env.pop("ACTOR", None)
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        ["make", "-C", str(target), "review", *args],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize("mode,actor,expected", _DISPATCH_RESOLUTIONS)
+def test_review_resolve_mode_maps_actor_x_mode(tmp_path, mode, actor, expected):
+    """The 4 ACTOR x MODE resolutions (4 of the 6 acceptance branches), proven
+    deterministically via REVIEW_RESOLVE=1 — no live AI, no shims."""
+    target = _bootstrap_fixture(tmp_path)
+    result = _run_review(target, [f"MODE={mode}", f"ACTOR={actor}", "REVIEW_RESOLVE=1"])
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert expected in resolved_lines, f"expected {expected!r} in {resolved_lines!r}"
+    # never mis-resolves to a different review target (e.g. wrong cross-direction)
+    for other in _ALL_REVIEW_TARGETS - {expected}:
+        assert other not in resolved_lines, (
+            f"unexpected {other!r} also resolved: {resolved_lines!r}"
+        )
+
+
+def test_review_resolve_mode_unset_actor_prints_needs_ask_exit_0(tmp_path):
+    """Unset ACTOR (and no REVIEWER) → NEEDS-ASK. In RESOLVE mode it exits 0 so
+    every branch (including unset) is cleanly assertable; it is the routing
+    trigger that makes /dev-review AskUserQuestion for the actor."""
+    target = _bootstrap_fixture(tmp_path)
+    result = _run_review(target, ["MODE=plan", "REVIEW_RESOLVE=1"])
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert "NEEDS-ASK" in resolved_lines, resolved_lines
+    for t in _ALL_REVIEW_TARGETS:
+        assert t not in resolved_lines, f"unset must not resolve to a target: {resolved_lines!r}"
+
+
+def test_review_normal_mode_unset_actor_exits_2(tmp_path):
+    """NORMAL mode (no REVIEW_RESOLVE) for unset ACTOR prints NEEDS-ASK and
+    exits 2 — the exit-code asymmetry vs resolve mode (which exits 0)."""
+    target = _bootstrap_fixture(tmp_path)
+    result = _run_review(target, ["MODE=plan"])
+    assert result.returncode == 2, (result.returncode, result.stdout, result.stderr)
+    assert "NEEDS-ASK" in result.stdout
+
+
+def test_review_reviewer_env_is_actor_fallback(tmp_path):
+    """REVIEWER is the terminal convenience: a shell `export REVIEWER=codex`
+    (env var → make var) supplies ACTOR when ACTOR= is not passed. Resolve mode
+    proves the fallback without needing a persistent export across tool calls."""
+    target = _bootstrap_fixture(tmp_path)
+    result = _run_review(target, ["MODE=plan", "REVIEW_RESOLVE=1"], extra_env={"REVIEWER": "codex"})
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    # ACTOR=codex via REVIEWER → cross-direction → review-plan-by-claude
+    assert "review-plan-by-claude" in resolved_lines, resolved_lines
+
+
+def test_review_explicit_actor_overrides_reviewer_env(tmp_path):
+    """An explicit ACTOR= on the command line wins over $(REVIEWER) (precedence)."""
+    target = _bootstrap_fixture(tmp_path)
+    result = _run_review(
+        target,
+        ["MODE=plan", "ACTOR=claude", "REVIEW_RESOLVE=1"],
+        extra_env={"REVIEWER": "codex"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    # ACTOR=claude wins → cross-direction → review-plan-by-codex (NOT -by-claude)
+    assert "review-plan-by-codex" in resolved_lines, resolved_lines
+    assert "review-plan-by-claude" not in resolved_lines, resolved_lines
+
+
+# ── Normal-mode invocation tests (iter-4 FN2) — resolve mode proves the
+#    DECISION; these prove the dispatcher actually INVOKES the sub-target (a
+#    broken recursive $(MAKE) or dropped PLAN_FILE/ITERATION passthrough would
+#    slip past resolve-mode-only tests). Faked codex/claude on PATH.
+
+
+def test_review_normal_mode_plan_claude_invokes_codex_with_passthrough(tmp_path):
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="dispatch_plan_codex")
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    out_file = tmp_path / "out-plan-codex.md"
+    result = _run_review(
+        target,
+        [
+            "MODE=plan",
+            "ACTOR=claude",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=7",
+            f"PLAN_REVIEW_OUT_CODEX={out_file}",
+        ],
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = json.loads(argv_log.read_text())
+    clis = [entry["cli"] for entry in log]
+    # cross-direction: a Claude-authored plan is reviewed by codex (review-plan-by-codex)
+    assert "codex" in clis and "claude" not in clis, clis
+    # PLAN_FILE + ITERATION passthrough is visible in the codex prompt
+    prompt = " ".join(log[-1]["argv"])
+    assert "iteration 7" in prompt, prompt
+    assert "docs/plans/dispatch_plan_codex.md" in prompt, prompt
+
+
+def test_review_normal_mode_plan_codex_invokes_claude_with_passthrough(tmp_path):
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="dispatch_plan_claude")
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    out_file = tmp_path / "out-plan-claude.md"
+    result = _run_review(
+        target,
+        [
+            "MODE=plan",
+            "ACTOR=codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=7",
+            f"PLAN_REVIEW_OUT_CLAUDE={out_file}",
+        ],
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = json.loads(argv_log.read_text())
+    clis = [entry["cli"] for entry in log]
+    # cross-direction: a Codex-authored plan is reviewed by claude (review-plan-by-claude)
+    assert "claude" in clis and "codex" not in clis, clis
+    prompt = " ".join(log[-1]["argv"])
+    assert "iteration 7" in prompt, prompt
+    assert "docs/plans/dispatch_plan_claude.md" in prompt, prompt
+
+
+def test_review_normal_mode_commit_claude_invokes_claude_same_ai(tmp_path):
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    out_file = tmp_path / "out-commit-claude.md"
+    result = _run_review(
+        target,
+        ["MODE=commit", "ACTOR=claude", f"REVIEW_COMMIT_OUT_CLAUDE={out_file}"],
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = json.loads(argv_log.read_text())
+    clis = [entry["cli"] for entry in log]
+    # same-AI Tier-1: a Claude commit is reviewed by claude (review-commit-by-claude)
+    assert "claude" in clis and "codex" not in clis, clis
+
+
+def test_review_normal_mode_commit_codex_invokes_codex_same_ai(tmp_path):
+    target = _bootstrap_fixture(tmp_path)
+    _hermetic_git_setup(target)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    out_file = tmp_path / "out-commit-codex.md"
+    result = _run_review(
+        target,
+        ["MODE=commit", "ACTOR=codex", f"REVIEW_COMMIT_OUT_CODEX={out_file}"],
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = json.loads(argv_log.read_text())
+    clis = [entry["cli"] for entry in log]
+    # same-AI Tier-1: a Codex commit is reviewed by codex (review-commit-by-codex)
+    assert "codex" in clis and "claude" not in clis, clis
+
+
+def test_review_non_allowlist_actor_mode_filtered_to_needs_ask(tmp_path):
+    """Tier-2 claude[bot] hardening (PR #35): MODE/ACTOR are sanitized to a fixed
+    allowlist via `$(filter)` at the MAKE level (no shell), so a non-allowlist
+    value — including shell metacharacters — filters to empty (→ NEEDS-ASK) and
+    never reaches the recipe shell. Proves no command injection via ACTOR/MODE."""
+    target = _bootstrap_fixture(tmp_path)
+    marker = tmp_path / "INJECTED"
+    # A QUOTE-BREAKING payload (the `"` escapes the `ACTOR="..."` assignment) —
+    # this is what genuinely injected against the pre-fix `ACTOR="$(ACTOR)"`
+    # (a bare-`;` payload is already neutralized by the double-quoting, so it
+    # would NOT prove the fix). `$(filter)` empties it → NEEDS-ASK, never shell.
+    result = _run_review(
+        target,
+        ["MODE=plan", f'ACTOR=x"; touch {marker}; echo "', "REVIEW_RESOLVE=1"],
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert "NEEDS-ASK" in resolved, resolved
+    for t in _ALL_REVIEW_TARGETS:
+        assert t not in resolved
+    assert not marker.exists(), "ACTOR value reached the shell — command injection!"
+
+    # A bogus MODE (also quote-breaking) is likewise filtered → NEEDS-ASK.
+    result2 = _run_review(
+        target, ['MODE=plan"; rm -rf /; echo "', "ACTOR=claude", "REVIEW_RESOLVE=1"]
+    )
+    assert result2.returncode == 0, result2.stderr + result2.stdout
+    assert "NEEDS-ASK" in [line.strip() for line in result2.stdout.splitlines() if line.strip()]
+
+
+def test_review_non_allowlist_actor_normal_mode_does_not_invoke_or_inject(tmp_path):
+    """Smoke Tier-1 F2 (PR #35): the resolve-mode injection test short-circuits
+    before the sub-make, so it only proves the DECISION is safe. This exercises
+    the NORMAL-mode recipe shell path too (no REVIEW_RESOLVE): a quote-breaking
+    ACTOR filters to empty → NEEDS-ASK (normal-mode exit 2), with NO review CLI
+    invoked and NO injected marker — proving the recipe shell never sees the
+    raw value on the live-dispatch path either."""
+    target = _bootstrap_fixture(tmp_path)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    marker = tmp_path / "INJECTED_NORMAL"
+    result = _run_review(
+        target,
+        ["MODE=plan", f'ACTOR=x"; touch {marker}; echo "'],  # no REVIEW_RESOLVE → normal mode
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 2, (result.returncode, result.stdout, result.stderr)
+    assert "NEEDS-ASK" in result.stdout
+    assert not marker.exists(), "ACTOR reached the shell in normal mode — command injection!"
+    assert not argv_log.exists(), "no review CLI should run for a NEEDS-ASK dispatch"
