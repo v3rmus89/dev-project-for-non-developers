@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -145,6 +146,59 @@ def test_overlap_makefile_review_section():
             )
         )
         pytest.fail(f"Makefile review-section drift:\n{diff}")
+
+
+def test_overlap_dev_review_command():
+    """V-21 (S4): the dogfood `.claude/commands/dev-review.md` must equal the
+    rendered `shared/claude-commands-dev-review.md.tmpl`. The template carries no
+    Jinja directives (project-agnostic `make` targets; PLAN_FILE/ITERATION are
+    runtime args, not render vars), so render == source == dogfood. It is still
+    loaded THROUGH the Jinja env like every other overlap template."""
+    rendered = _render("claude-commands-dev-review.md.tmpl", SKILL_REPO_CONTEXT)
+    _assert_byte_equal(
+        rendered,
+        SKILL_ROOT / ".claude" / "commands" / "dev-review.md",
+        ".claude/commands/dev-review.md",
+    )
+
+
+def test_dev_review_command_is_not_git_ignored():
+    """S3 / Verification 3: this skill repo ignores `.claude/` (`.gitignore`, to
+    keep local session state out of git), so the dogfood command would be
+    uncommittable — and V-21 would read an untracked file — without the Part-1
+    un-ignore exception. Assert `git check-ignore` reports NO match for the
+    command file, while a sibling `.claude/` path stays ignored (the exception
+    un-ignores ONLY the command)."""
+    inside = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=SKILL_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        pytest.skip("not a git work tree")
+    cmd = subprocess.run(
+        ["git", "check-ignore", ".claude/commands/dev-review.md"],
+        cwd=SKILL_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    # rc=1 == path matched NO effective ignore (the trailing `!`-negation wins);
+    # rc=0 would mean the un-ignore exception is missing/broken.
+    assert cmd.returncode == 1, (
+        f".claude/commands/dev-review.md is git-ignored (rc={cmd.returncode}, "
+        f"matched {cmd.stdout!r}) — the Part-1 .gitignore un-ignore exception is missing"
+    )
+    sibling = subprocess.run(
+        ["git", "check-ignore", ".claude/settings.local.json"],
+        cwd=SKILL_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert sibling.returncode == 0, (
+        ".claude/settings.local.json should stay ignored — the exception must "
+        "un-ignore ONLY the managed command file, not all of .claude/"
+    )
 
 
 @pytest.mark.parametrize("script_rel,tmpl_name", _SCRIPT_TEMPLATE_PAIRS)
