@@ -41,6 +41,13 @@ By design the screen can only conclude *stay-fresh* / *escalate-to-full-rigor* /
   (`ab_replay_lib.PLACEHOLDER_PRICES_USD_PER_MTOK`); illustrative only, NOT
   authoritative. The verdict rests on the price-independent uncached ratio, not
   this number.
+- **Continue loses on EVERY axis** — so the verdict is robust to pricing. Using
+  codex-REPORTED GPT-5.5 rates (web search 2026-06-01, NOT independently verified:
+  input $5/M, cached $0.50/M, output $30/M): uncached-only **1.69x**, input incl.
+  cached **1.97x**, full incl. output **1.84x** (fresh ~$6.46 vs continue ~$11.89).
+  Output strengthens, not flips, the result: continue produced MORE output
+  (60,399 vs 44,530, +15,869), so it costs more on output too. Continue is bigger
+  on uncached AND cached AND output volume — no nonnegative price vector rescues it.
 
 ### Per-call detail (input / cached / uncached / shell commands)
 
@@ -109,10 +116,28 @@ between iterations and caches even less, would not reverse the result.
   wants single-thread continuity for non-cost reasons.
 - **No full-rigor escalation.** The full-rigor measurement was the BACKLOG
   fallback for a *promising-but-ambiguous* (`ratio ≤ 0.90`) screen. This screen is
-  an unambiguous disconfirmation, so there is nothing to escalate. Re-open only if
-  the resume *mechanism* changes (e.g. codex adds a history-compacting resume that
-  doesn't re-send the full thread).
+  an unambiguous disconfirmation, so there is nothing to escalate.
+- **Re-open only with a DIFFERENT (optimized-continue) mechanism**, which would be
+  its own pre-registered A/B + quality check — not a re-run of this one. Concrete
+  designs that could make continue win (from the codex cross-check): a lean delta
+  resume prompt ("review only what changed since iter N; prior-findings summary
+  below"); replace raw transcript carryover with a compact structured summary of
+  prior findings / accepted-rejected / open risks; feed plan diffs not the full
+  plan; prune or summarize old tool outputs before resume; and compare against an
+  equally-optimized fresh baseline (fresh + compact prior-summary + diff), not the
+  naive fresh here.
 - `BACKLOG.md` `continue-thread-pr-followup` updated with this result.
+
+## Independent cross-check (codex gpt-5.5, 2026-06-01)
+
+Codex reviewed this method + data (not the repo) and **independently confirmed
+stay-fresh**: "do not flip to continue based on this measurement … fresh remains
+the conservative default until an optimized continue workflow is separately
+tested." Its substantive additions are folded above (output-token cost completion;
+price-weighted ratios; the optimized-continue designs) and into Caveats below
+(workload-not-matched; context-tier billing). It agreed the fixed run order only
+weakens the *magnitude*, not the direction (continue lost despite the favorable
+cache/order bias).
 
 ## Caveats (screen-scope, honest)
 
@@ -132,6 +157,18 @@ between iterations and caches even less, would not reverse the result.
   screen does NOT rule that out — it rules out flipping the default to the
   mechanism as it exists today. The delta-prompt / history-compacting redesign is
   the BACKLOG escalation, not a refutation of this result.
+- **Not workload-matched (codex):** we measured an *agent policy*, not a controlled
+  replay of identical review work — continue seed ran 66 commands, fresh-iter1 48,
+  later resumes far fewer. The arms did different amounts of work. (This is the same
+  root as the non-determinism point, framed as a design limit, not just noise.)
+- **Context-tier billing unknown (codex):** public GPT-5.5 rates are quoted for
+  context < 270K, but our per-call input is 1.4M–4.5M, so the exact dollar figures
+  may sit on a different billing path (or `turn.completed.usage` may aggregate
+  subcalls). The *direction* holds for any nonnegative, proportional price vector;
+  the absolute dollars are indicative only.
+- **Quality not rigorously measured:** the equivalence read above is a light eyeball,
+  not a coverage audit — fewer resume commands could be efficient reuse OR missed
+  re-inspection. (Moot for a stay-fresh default; would matter for an adopt decision.)
 - N=3 on ONE plan; a screen, not a robust estimate (see the non-determinism point).
 - Prompt is a close ASCII mirror of the Makefile review prompt (Makefile:186), not
   byte-identical (byte-identity test parked to BACKLOG).
