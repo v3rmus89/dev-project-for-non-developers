@@ -256,6 +256,14 @@ consent it appends a 6-line un-ignore block to `.gitignore` that re-includes
 and writes the command file. The decision needs explicit consent — under
 `--non-interactive` it exits 2; `--auto-accept-recommendations` still prompts.
 
+NEUTRALIZE is offered **only when it can cleanly apply *and* restore**: the
+ignore must be sourced from the target's own root `.gitignore` (not
+`.git/info/exclude` or a global excludes file), and that `.gitignore` must not
+already carry the managed block. Otherwise — including a file already
+re-included by a `!`-negation — adoption falls back to a manual `SKIP` so it
+never creates a stray `.gitignore`, no-ops on a partial block, or removes
+content it didn't add.
+
 ```bash
 # target/.gitignore contains `.claude/` (+ maybe some skill patterns)
 ./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
