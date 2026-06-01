@@ -1218,3 +1218,28 @@ guard that the plan-review targets already had. Codex caught it.
 For generated projects: the lesson is project-local and doesn't ship in
 the shared template (which starts empty). Generated projects accumulate
 their own equivalent if/when they encounter the pattern.
+
+### Review-target shell-injection hardening for PLAN_FILE / ITERATION passthrough (imp-2)
+
+**Status**: parked.
+
+**Why parked**: PR #35's `make review` dispatcher sanitizes its MODE/ACTOR
+inputs via a `$(filter)` allowlist, but `PLAN_FILE` / `ITERATION` are still
+expanded directly into the recipe shell (`PLAN_FILE="$(PLAN_FILE)"` in the
+sub-make call) — and the `review-plan-by-*` / `review-commit-by-*` sub-targets
+they dispatch to ALSO embed `$(PLAN_FILE)` / `$(ITERATION)` directly in their
+shell prompts and `test -f` guards. So this is a PRE-EXISTING injection class
+spanning every review target, NOT introduced by the dispatcher — a
+dispatcher-only fix would be cosmetic because the sub-target re-introduces it.
+The trust model matches MODE/ACTOR (values come from the user's own shell or
+the `/dev-review` command's fixed args — no untrusted-input boundary), so
+severity is low. Surfaced by the PR #35 live `/dev-review commit` smoke (Tier-1
+F1).
+
+**Trigger to pick up**: a repo-wide review-target hardening pass — single-quote
+`$(PLAN_FILE)` (e.g. `$(subst ','\'',$(PLAN_FILE))`) and numeric-filter
+`ITERATION` across ALL `review-*` recipes + the dispatcher (byte-identical in
+`Makefile` + `shared/Makefile.review.tmpl`) — OR if any review target ever
+consumes PLAN_FILE/ITERATION from an untrusted source.
+
+**Rough effort**: ~2 hours (all review-* recipes in both Makefile surfaces + tests).

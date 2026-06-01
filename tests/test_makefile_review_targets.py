@@ -1596,3 +1596,24 @@ def test_review_non_allowlist_actor_mode_filtered_to_needs_ask(tmp_path):
     )
     assert result2.returncode == 0, result2.stderr + result2.stdout
     assert "NEEDS-ASK" in [line.strip() for line in result2.stdout.splitlines() if line.strip()]
+
+
+def test_review_non_allowlist_actor_normal_mode_does_not_invoke_or_inject(tmp_path):
+    """Smoke Tier-1 F2 (PR #35): the resolve-mode injection test short-circuits
+    before the sub-make, so it only proves the DECISION is safe. This exercises
+    the NORMAL-mode recipe shell path too (no REVIEW_RESOLVE): a quote-breaking
+    ACTOR filters to empty → NEEDS-ASK (normal-mode exit 2), with NO review CLI
+    invoked and NO injected marker — proving the recipe shell never sees the
+    raw value on the live-dispatch path either."""
+    target = _bootstrap_fixture(tmp_path)
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    marker = tmp_path / "INJECTED_NORMAL"
+    result = _run_review(
+        target,
+        ["MODE=plan", f'ACTOR=x"; touch {marker}; echo "'],  # no REVIEW_RESOLVE → normal mode
+        extra_env={"PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 2, (result.returncode, result.stdout, result.stderr)
+    assert "NEEDS-ASK" in result.stdout
+    assert not marker.exists(), "ACTOR reached the shell in normal mode — command injection!"
+    assert not argv_log.exists(), "no review CLI should run for a NEEDS-ASK dispatch"
