@@ -682,3 +682,38 @@ class TestNeutralizeRoundTrip:
         gi = (target / ".gitignore").read_bytes()
         assert manifest.NEUTRALIZE_SENTINEL.encode() not in gi, "skip must NOT append the block"
         assert not (target / self._CMD).exists(), "skip must NOT write the (still-ignored) command"
+
+    def test_neutralize_preserves_private_gitignore_mode(self, tmpdir_isolated):
+        """Tier-2 codex P2 (PR #35): NEUTRALIZE must PRESERVE a private (0600)
+        `.gitignore` mode through apply AND restore — never loosen it to 0644.
+        Drives the real CLI apply + restore (chmod to the captured mode_before)."""
+        import os
+        import stat
+
+        target = tmpdir_isolated / "target"
+        self._setup_target(target)
+        gi = target / ".gitignore"
+        os.chmod(gi, 0o600)
+
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+            ],
+            stdin_text="r\n",
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        assert manifest.NEUTRALIZE_SENTINEL.encode() in gi.read_bytes()  # NEUTRALIZE ran
+        assert stat.S_IMODE(os.stat(gi).st_mode) == 0o600, "apply must preserve the 0600 mode"
+
+        manifest_p = _extract_manifest_path(out)
+        rc, _o, _e = run_cli(["--restore", str(manifest_p)])
+        assert rc == 0
+        assert stat.S_IMODE(os.stat(gi).st_mode) == 0o600, "restore must preserve the 0600 mode"

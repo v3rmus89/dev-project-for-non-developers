@@ -606,7 +606,10 @@ def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
                 current_target, entry["neutralize_block"]
             )
             io.atomic_write(target_full, neutralized)
-            os.chmod(target_full, entry["mode_after"])
+            # PRESERVE the original `.gitignore` mode (atomic_write makes a new
+            # file) — never loosen a private ignore file to 0644. Fall back to
+            # mode_after for legacy entries lacking mode_before.
+            os.chmod(target_full, entry.get("mode_before") or entry["mode_after"])
         else:
             raise ValueError(
                 f"unknown policy {policy!r} in v2 entry for {rel_path!r}; "

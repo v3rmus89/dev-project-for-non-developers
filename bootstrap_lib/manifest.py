@@ -302,7 +302,7 @@ def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content, sort
     }
 
 
-def _build_v2_neutralize_entry(rel_path=".gitignore", sort_key=1):
+def _build_v2_neutralize_entry(target_root, rel_path=".gitignore", sort_key=1):
     """NEUTRALIZE: append the managed un-ignore block to the target's
     `.gitignore` so a `.claude/`-ignored command file becomes git-visible.
 
@@ -313,14 +313,25 @@ def _build_v2_neutralize_entry(rel_path=".gitignore", sort_key=1):
     because the tier-0 APPEND_MERGE already mutated the file. The sentinel guard
     is position- and length-independent, so it composes with that APPEND_MERGE
     (NEUTRALIZE restores first — tier 1 > tier 0).
+
+    Captures the existing `.gitignore` mode in `mode_before` so apply + restore
+    PRESERVE it — never loosen a private (e.g. 0600) ignore file to 0644 (Tier-2
+    codex P2 on PR #35). NEUTRALIZE only fires when the `.gitignore` exists (the
+    root-`.gitignore`-source precondition), so the stat normally succeeds; a
+    defensive miss leaves `mode_before=None` → apply/restore fall back to
+    `mode_after`.
     """
+    try:
+        mode_before = os.stat(Path(target_root) / rel_path).st_mode & 0o777
+    except OSError:
+        mode_before = None
     return {
         "path": rel_path,
         "policy": "NEUTRALIZE",
         "target_path": rel_path,
         "existed_before": True,  # `.gitignore` exists — it is what ignores `.claude/`
         "content_before_b64": None,
-        "mode_before": None,
+        "mode_before": mode_before,
         "sha256_before": None,
         "sha256_after": None,
         "sha256_before_target_path": None,
@@ -405,7 +416,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
             # last) and (ii) the dependent command-file WRITE (sort_key=2 —
             # applied after `.gitignore` is set up so the file lands git-visible).
             if not neutralize_gitignore_added:
-                entries.append(_build_v2_neutralize_entry(sort_key=1))
+                entries.append(_build_v2_neutralize_entry(root, sort_key=1))
                 neutralize_gitignore_added = True
             # (ii) reuse normal WRITE parent-dir tracking so `_restore_v2` can
             # remove any `.claude/` / `.claude/commands/` it created (iter-3 FN3).
@@ -710,7 +721,9 @@ def _restore_v2_neutralize(entry, target_root, stderr):
         return "skipped"
     del lines[idx : idx + len(block_lines)]
     bio.atomic_write(target_path, b"\n".join(lines))
-    os.chmod(target_path, entry.get("mode_after", 0o644))
+    # Restore the ORIGINAL `.gitignore` mode (never loosen a private ignore
+    # file); fall back to mode_after/0644 for legacy entries lacking mode_before.
+    os.chmod(target_path, entry.get("mode_before") or entry.get("mode_after", 0o644))
     return "restored"
 
 

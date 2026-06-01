@@ -1350,8 +1350,8 @@ class TestNeutralize:
         return AdoptionPlan(target_root=target_root, analyses=tuple(analyses))
 
     # ─── builder ───
-    def test_neutralize_builder_fields(self):
-        e = manifest_mod._build_v2_neutralize_entry()
+    def test_neutralize_builder_fields(self, tmp_path):
+        e = manifest_mod._build_v2_neutralize_entry(tmp_path)
         assert e["policy"] == "NEUTRALIZE"
         assert e["target_path"] == ".gitignore"
         assert e["sort_key"] == 1
@@ -1437,7 +1437,7 @@ class TestNeutralize:
         import io
 
         out = io.StringIO()
-        entry = manifest_mod._build_v2_neutralize_entry()
+        entry = manifest_mod._build_v2_neutralize_entry(tmp_path)
         outcome = manifest_mod._restore_v2_neutralize(entry, tmp_path, out)
         assert outcome == "skipped"
         assert "sentinel absent" in out.getvalue()
@@ -1452,7 +1452,7 @@ class TestNeutralize:
         import io
 
         out = io.StringIO()
-        entry = manifest_mod._build_v2_neutralize_entry()
+        entry = manifest_mod._build_v2_neutralize_entry(tmp_path)
         outcome = manifest_mod._restore_v2_neutralize(entry, tmp_path, out)
         assert outcome == "skipped"
         assert "modified" in out.getvalue()
@@ -1471,7 +1471,7 @@ class TestNeutralize:
 
         # Build entries as plan_adoption_entries would: APPEND_MERGE(0) + NEUTRALIZE(1) + WRITE(2)
         am = manifest_mod._build_v2_append_merge_entry(gi, ".gitignore", skill_gitignore)
-        neu = manifest_mod._build_v2_neutralize_entry(sort_key=1)
+        neu = manifest_mod._build_v2_neutralize_entry(tmp_path, sort_key=1)
         wr = manifest_mod._build_v2_write_entry(cmd, cmd_content, sort_key=2)
         entries = [am, neu, wr]
 
@@ -1497,5 +1497,5 @@ class TestNeutralize:
     def _restore_neutralize(self, target_root):
         import io
 
-        entry = manifest_mod._build_v2_neutralize_entry()
+        entry = manifest_mod._build_v2_neutralize_entry(target_root)
         return manifest_mod._restore_v2_neutralize(entry, target_root, io.StringIO())

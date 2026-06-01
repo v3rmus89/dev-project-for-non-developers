@@ -108,14 +108,15 @@ MODE           ?=
 REVIEWER       ?=
 ACTOR          ?= $(REVIEWER)
 REVIEW_RESOLVE ?=
-# Sanitize the MODE/ACTOR dispatch inputs to a fixed allowlist at the MAKE
-# level — $(filter) never invokes a shell, so a hostile command-line value
-# (e.g. ACTOR=x"; rm -rf ~; echo ") filters to empty (-> NEEDS-ASK) and never
-# reaches the recipe shell, keeping the resolved $$TARGET injection-proof. The
-# /dev-review command + AGENTS.md only ever pass the literal tokens; this
-# guards a fat-fingered terminal value. PLAN_FILE/ITERATION are passed through
-# to the sub-target as every review target does — repo-wide hardening of that
-# passthrough is a BACKLOG follow-up.
+# Sanitize MODE/ACTOR to a fixed allowlist with $(filter) (a MAKE function —
+# no shell). This guards the RECIPE-SHELL resolution: a quote-breaking value
+# (e.g. ACTOR=x"; rm -rf ~; echo ") filters to empty -> NEEDS-ASK, so the
+# recipe's `case`/`$$TARGET` never sees raw input. It does NOT (and cannot, at
+# the make level) stop a `$(shell ...)` embedded in the RAW value from running
+# when make expands $(ACTOR) — that is inherent to GNU make (it affects every
+# $(VAR)) and the values here come only from /dev-review's fixed literals or
+# the user's own shell (no untrusted-input boundary). Repo-wide make-expansion
+# hardening (incl. PLAN_FILE/ITERATION) is parked in BACKLOG.
 _REVIEW_MODE  = $(filter plan commit,$(MODE))
 _REVIEW_ACTOR = $(filter claude codex,$(ACTOR))
 
