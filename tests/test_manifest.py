@@ -1234,3 +1234,84 @@ class TestPlanAdoptionEntries:
         assert (
             target_root / "CLAUDE.md"
         ).read_bytes() == b"# domain\n" + b"line\n" * 25  # original was untouched throughout
+
+
+class TestSortKeyOrdering:
+    """PR-2 (Part 2B) `sort_key` tiers: ascending apply / descending restore +
+    legacy-v2 (no `sort_key`) backward-compat. The tier VALUES (1 NEUTRALIZE,
+    2 command WRITE) are assigned in a later commit; here every builder defaults
+    to tier 0 and the ordering MACHINERY is pinned."""
+
+    def test_v2_builders_include_sort_key_default_zero(self, tmp_path):
+        content = b"x\n"
+        w = manifest_mod._build_v2_write_entry("a.txt", content)
+        assert w["sort_key"] == 0
+        # the param is respected (used by the command-WRITE tier-2 in a later commit)
+        assert manifest_mod._build_v2_write_entry("a.txt", content, sort_key=2)["sort_key"] == 2
+
+        (tmp_path / "e.txt").write_bytes(content)
+        ov = manifest_mod._build_v2_overwrite_entry(tmp_path / "e.txt", "e.txt", content)
+        assert ov["sort_key"] == 0
+
+        wn = manifest_mod._build_v2_write_new_entry("c.md", "c.md.new", content)
+        assert wn["sort_key"] == 0
+
+        (tmp_path / "gi").write_bytes(b"venv/\n")
+        am = manifest_mod._build_v2_append_merge_entry(
+            tmp_path / "gi", ".gitignore", b"node_modules/\n"
+        )
+        assert am["sort_key"] == 0
+
+    def test_plan_adoption_entries_sorted_ascending_by_path(self, tmp_path):
+        """Uniform tier 0 → entries come back sorted ascending by path (the sort
+        is APPLIED — input order below is z/a/m, output must be a/m/z)."""
+        from bootstrap_lib.adopt import analyze_target
+
+        planned = {"z.txt": b"z\n", "a.txt": b"a\n", "m.txt": b"m\n"}  # none exist → rule-a WRITE
+        plan = analyze_target(tmp_path, planned)
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, planned, plan)
+        paths = [e["path"] for e in entries]
+        assert paths == ["a.txt", "m.txt", "z.txt"], paths
+        assert all(e["sort_key"] == 0 for e in entries)
+
+    def test_restore_v2_iterates_descending_by_sort_key(self, tmp_path, monkeypatch):
+        """`_restore_v2` reverses apply: it must process entries in DESCENDING
+        sort_key order (tier 2 → 1 → 0). Recorded via a wrapped handler."""
+        order = []
+
+        def _recording_handler(entry, target_root, stderr):
+            order.append(entry.get("sort_key", 0))
+            return "skipped"
+
+        monkeypatch.setattr(manifest_mod, "_V2_RESTORE_HANDLERS", {"WRITE": _recording_handler})
+        # Build in NON-sorted input order to prove the restore sort (not input order).
+        entries = [
+            {
+                **_v2_entry(policy="WRITE", path="a.txt", sha256_after_target_path="a" * 64),
+                "sort_key": 0,
+            },
+            {
+                **_v2_entry(policy="WRITE", path="b.txt", sha256_after_target_path="b" * 64),
+                "sort_key": 2,
+            },
+            {
+                **_v2_entry(policy="WRITE", path="c.txt", sha256_after_target_path="c" * 64),
+                "sort_key": 1,
+            },
+        ]
+        m = _v2_manifest(tmp_path, entries)
+        _restore(m)
+        assert order == [2, 1, 0], order
+
+    def test_legacy_v2_without_sort_key_restores_unchanged(self, tmp_path):
+        """A v2 manifest whose entries predate `sort_key` must restore via the
+        `.get('sort_key', 0)` default — no KeyError, correct outcome."""
+        content = b"# created by apply\n"
+        (tmp_path / "f.txt").write_bytes(content)
+        entry = _v2_entry(policy="WRITE", path="f.txt", sha256_after_target_path=_sha256(content))
+        assert "sort_key" not in entry  # legacy shape (predates this commit)
+        m = _v2_manifest(tmp_path, [entry])
+        (counters, _out) = _restore(m)
+        _n_restored, n_removed, _n_skipped, n_rejected = counters
+        assert (n_removed, n_rejected) == (1, 0)
+        assert not (tmp_path / "f.txt").exists()

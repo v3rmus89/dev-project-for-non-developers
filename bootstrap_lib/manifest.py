@@ -165,7 +165,7 @@ def plan_entries(target_root, planned_files):
     return entries, created_directories
 
 
-def _build_v2_write_entry(rel_path, skill_content):
+def _build_v2_write_entry(rel_path, skill_content, sort_key=0):
     skill_sha = _sha256(skill_content)
     return {
         "path": rel_path,
@@ -180,10 +180,11 @@ def _build_v2_write_entry(rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content):
+def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content, sort_key=0):
     existing = target_full_path.read_bytes()
     existing_mode = os.stat(target_full_path).st_mode & 0o777
     target_sha = _sha256(existing)
@@ -201,10 +202,11 @@ def _build_v2_overwrite_entry(target_full_path, rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content):
+def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content, sort_key=0):
     skill_sha = _sha256(skill_content)
     return {
         "path": rel_path,
@@ -224,10 +226,11 @@ def _build_v2_write_new_entry(rel_path, new_rel_path, skill_content):
         "sha256_after_target_path": skill_sha,
         "pre_append_length": None,
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
-def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content):
+def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content, sort_key=0):
     # Import locally to avoid a module-load cycle if manifest.py is imported
     # before adopt.py is fully initialised.
     from bootstrap_lib.adopt import compute_append_merge_bytes
@@ -250,6 +253,7 @@ def _build_v2_append_merge_entry(target_full_path, rel_path, skill_content):
         "sha256_after_target_path": merged_sha,
         "pre_append_length": len(existing),
         "mode_after": default_mode_for(rel_path),
+        "sort_key": sort_key,
     }
 
 
@@ -324,6 +328,14 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
                 "WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/SKIP)"
             )
 
+    # Apply ordering (Bucket A `sort_key` tiers): sort ascending by
+    # (sort_key, path). Tier 0 = all normal mutations (incl. APPEND_MERGE on
+    # `.gitignore`); tier 1 = the NEUTRALIZE `.gitignore` entry (must apply
+    # AFTER the APPEND_MERGE so its sentinel block is last); tier 2 = the
+    # dependent command-file WRITE. `_apply_adoption_writes` iterates this list
+    # in order; `_restore_v2` reverses it (descending). Legacy entries without
+    # `sort_key` read as 0 via `.get`.
+    entries.sort(key=lambda e: (e.get("sort_key", 0), e["path"]))
     created_directories = sorted(needed_dirs, key=lambda p: (len(Path(p).parts), p))
     return entries, created_directories
 
@@ -609,8 +621,18 @@ def _restore_v2(m, stderr):
         stderr.write(f"aborting restore: {n_rejected} entry/entries rejected for path-safety\n")
         return (n_restored, n_removed, n_skipped, n_rejected)
 
-    # Per-policy dispatch
-    for entry in m.entries:
+    # Per-policy dispatch. Restore REVERSES apply: iterate descending by
+    # (sort_key, target_path) so tier 2 (command WRITE) undoes before tier 1
+    # (NEUTRALIZE sentinel-removal) before tier 0 (APPEND_MERGE truncation) —
+    # the inverse of plan_adoption_entries' ascending apply order. Legacy v2
+    # manifests without `sort_key` read as 0 via `.get` (each handler operates
+    # on an independent target_path, so their relative order is irrelevant).
+    ordered_entries = sorted(
+        m.entries,
+        key=lambda e: (e.get("sort_key", 0), e.get("target_path", "")),
+        reverse=True,
+    )
+    for entry in ordered_entries:
         policy = entry.get("policy")
         handler = _V2_RESTORE_HANDLERS.get(policy)
         if handler is None:
