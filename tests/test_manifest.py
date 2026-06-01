@@ -1315,3 +1315,187 @@ class TestSortKeyOrdering:
         _n_restored, n_removed, _n_skipped, n_rejected = counters
         assert (n_removed, n_rejected) == (1, 0)
         assert not (tmp_path / "f.txt").exists()
+
+
+class TestNeutralize:
+    """PR-2 (Part 2C/2D): NEUTRALIZE builder, sentinel-based apply/restore
+    (byte-exact, no whole-file SHA), and the two-entry expansion. The crux test
+    is the NEUTRALIZE+APPEND_MERGE composition on the same `.gitignore`."""
+
+    def _neutralize_plan(self, target_root, command_rels):
+        from bootstrap_lib.adopt import (
+            AdoptionPlan,
+            PlannedFileAnalysis,
+            PolicyRecommendation,
+            TargetMeta,
+        )
+
+        analyses = []
+        for rel in command_rels:
+            meta = TargetMeta(
+                exists=False,
+                size=0,
+                sha256=None,
+                line_count=None,
+                heading_count=None,
+                has_dependency_groups=False,
+                python_version_pin=None,
+                ignored_by_git=".gitignore:1",
+                ignored_by_dotclaude_pattern=True,
+            )
+            rec = PolicyRecommendation(
+                policy="NEUTRALIZE", reason="x", confidence="high", manual_review_needed=False
+            )
+            analyses.append(PlannedFileAnalysis(rel_path=rel, target_meta=meta, recommendation=rec))
+        return AdoptionPlan(target_root=target_root, analyses=tuple(analyses))
+
+    # ─── builder ───
+    def test_neutralize_builder_fields(self):
+        e = manifest_mod._build_v2_neutralize_entry()
+        assert e["policy"] == "NEUTRALIZE"
+        assert e["target_path"] == ".gitignore"
+        assert e["sort_key"] == 1
+        # sentinel-based restore → NO whole-file SHA / length guard
+        assert e["sha256_after_target_path"] is None
+        assert e["sha256_before_target_path"] is None
+        assert e["pre_append_length"] is None
+        # the 6-line block is recorded for restore
+        assert e["neutralize_block"] == manifest_mod.NEUTRALIZE_BLOCK_LINES
+        assert len(manifest_mod.NEUTRALIZE_BLOCK_LINES) == 6
+
+    # ─── two-entry expansion (D8) ───
+    def test_neutralize_two_entry_expansion(self, tmp_path):
+        cmd = ".claude/commands/dev-review.md"
+        plan = self._neutralize_plan(tmp_path, [cmd])
+        entries, created_dirs = manifest_mod.plan_adoption_entries(
+            tmp_path, {cmd: b"# command\n"}, plan
+        )
+        # ascending sort applied: NEUTRALIZE(1) before command WRITE(2)
+        assert [(e["policy"], e["sort_key"]) for e in entries] == [
+            ("NEUTRALIZE", 1),
+            ("WRITE", 2),
+        ]
+        neu, wr = entries
+        assert neu["target_path"] == ".gitignore"
+        assert wr["path"] == cmd and wr["target_path"] == cmd
+        # parent dirs tracked so restore can clean them up (iter-3 FN3)
+        assert ".claude" in created_dirs and ".claude/commands" in created_dirs
+
+    def test_neutralize_gitignore_entry_deduped(self, tmp_path):
+        """Several `.claude/` NEUTRALIZE recommendations → still ONE `.gitignore`
+        entry (deduped), one command WRITE each."""
+        rels = [".claude/commands/dev-review.md", ".claude/commands/other.md"]
+        plan = self._neutralize_plan(tmp_path, rels)
+        entries, _ = manifest_mod.plan_adoption_entries(tmp_path, {r: b"# c\n" for r in rels}, plan)
+        neutralize_entries = [e for e in entries if e["policy"] == "NEUTRALIZE"]
+        write_entries = [e for e in entries if e["policy"] == "WRITE"]
+        assert len(neutralize_entries) == 1, "the .gitignore NEUTRALIZE entry must be deduped"
+        assert len(write_entries) == 2
+
+    # ─── apply bytes helper ───
+    def test_compute_neutralize_apply_idempotent_and_byte_reversible(self, tmp_path):
+        block = manifest_mod.NEUTRALIZE_BLOCK_LINES
+        original = b".claude/\nvenv/\n"
+        applied = manifest_mod.compute_neutralize_apply_bytes(original, block)
+        assert manifest_mod.NEUTRALIZE_SENTINEL.encode() in applied
+        # idempotent — second apply is a no-op
+        assert manifest_mod.compute_neutralize_apply_bytes(applied, block) == applied
+        # restore via the handler is byte-identical to original
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(applied)
+        outcome = self._restore_neutralize(tmp_path)
+        assert outcome == "restored"
+        assert gi.read_bytes() == original
+
+    def test_compute_neutralize_apply_no_trailing_newline(self, tmp_path):
+        """A `.gitignore` with no trailing newline still round-trips byte-exact."""
+        block = manifest_mod.NEUTRALIZE_BLOCK_LINES
+        original = b".claude/\nvenv/"  # no trailing \n
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(manifest_mod.compute_neutralize_apply_bytes(original, block))
+        assert self._restore_neutralize(tmp_path) == "restored"
+        assert gi.read_bytes() == original
+
+    # ─── sentinel restore guards ───
+    def test_neutralize_restore_does_not_consume_trailing_line(self, tmp_path):
+        """iter-4 FN4: a 7th line after the block is NEVER consumed."""
+        block = manifest_mod.NEUTRALIZE_BLOCK_LINES
+        original = b".claude/\n"
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(
+            manifest_mod.compute_neutralize_apply_bytes(original, block) + b"extra-pattern\n"
+        )
+        assert self._restore_neutralize(tmp_path) == "restored"
+        result = gi.read_bytes()
+        assert manifest_mod.NEUTRALIZE_SENTINEL.encode() not in result
+        assert result == original + b"extra-pattern\n", result
+
+    def test_neutralize_restore_sentinel_absent_is_noop(self, tmp_path):
+        """Apply interrupted before NEUTRALIZE (no block) → benign no-op skip."""
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(b".claude/\nvenv/\n")
+        import io
+
+        out = io.StringIO()
+        entry = manifest_mod._build_v2_neutralize_entry()
+        outcome = manifest_mod._restore_v2_neutralize(entry, tmp_path, out)
+        assert outcome == "skipped"
+        assert "sentinel absent" in out.getvalue()
+        assert gi.read_bytes() == b".claude/\nvenv/\n"  # untouched
+
+    def test_neutralize_restore_modified_block_skips(self, tmp_path):
+        """A user-edited block → SKIP-with-warning; never clobber their edit."""
+        sentinel = manifest_mod.NEUTRALIZE_SENTINEL.encode()
+        tampered = b".claude/\n" + sentinel + b"\n!.claude/\nTAMPERED-LINE\n"
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(tampered)
+        import io
+
+        out = io.StringIO()
+        entry = manifest_mod._build_v2_neutralize_entry()
+        outcome = manifest_mod._restore_v2_neutralize(entry, tmp_path, out)
+        assert outcome == "skipped"
+        assert "modified" in out.getvalue()
+        assert gi.read_bytes() == tampered  # untouched
+
+    # ─── the crux: NEUTRALIZE + APPEND_MERGE composition on the same .gitignore ───
+    def test_neutralize_plus_append_merge_round_trip_byte_identical(self, tmp_path):
+        from bootstrap_lib.adopt import compute_append_merge_bytes
+
+        original = b".claude/\nvenv/\n"
+        gi = tmp_path / ".gitignore"
+        gi.write_bytes(original)
+        skill_gitignore = b"venv/\nnode_modules/\n.ruff_cache/\n"  # 2 missing patterns
+        cmd = ".claude/commands/dev-review.md"
+        cmd_content = b"# command\n"
+
+        # Build entries as plan_adoption_entries would: APPEND_MERGE(0) + NEUTRALIZE(1) + WRITE(2)
+        am = manifest_mod._build_v2_append_merge_entry(gi, ".gitignore", skill_gitignore)
+        neu = manifest_mod._build_v2_neutralize_entry(sort_key=1)
+        wr = manifest_mod._build_v2_write_entry(cmd, cmd_content, sort_key=2)
+        entries = [am, neu, wr]
+
+        # APPLY ascending (tier 0 → 1 → 2), mirroring _apply_adoption_writes.
+        gi.write_bytes(compute_append_merge_bytes(gi.read_bytes(), skill_gitignore))
+        gi.write_bytes(
+            manifest_mod.compute_neutralize_apply_bytes(gi.read_bytes(), neu["neutralize_block"])
+        )
+        (tmp_path / ".claude" / "commands").mkdir(parents=True)
+        (tmp_path / cmd).write_bytes(cmd_content)
+
+        applied = gi.read_bytes()
+        assert b"node_modules/" in applied  # APPEND_MERGE landed
+        assert manifest_mod.NEUTRALIZE_SENTINEL.encode() in applied  # NEUTRALIZE landed
+
+        # RESTORE via the full v2 dispatcher (sorts DESCENDING: WRITE → NEUTRALIZE → APPEND_MERGE).
+        m = _v2_manifest(tmp_path, entries, created_directories=[".claude", ".claude/commands"])
+        (_counters, _out) = _restore(m)
+        assert gi.read_bytes() == original  # byte-identical to pre-apply
+        assert not (tmp_path / cmd).exists()  # command file removed
+        assert not (tmp_path / ".claude").exists()  # created dirs cleaned up (iter-3 FN3)
+
+    def _restore_neutralize(self, target_root):
+        import io
+
+        entry = manifest_mod._build_v2_neutralize_entry()
+        return manifest_mod._restore_v2_neutralize(entry, target_root, io.StringIO())

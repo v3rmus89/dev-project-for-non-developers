@@ -399,6 +399,59 @@ class TestNeutralizeConsent:
         assert rec.manual_review_needed is False
 
 
+class TestNeutralizeActionMatrix:
+    """PR-2 (Part 2D / iter-4 FN1): a NEUTRALIZE target offers ONLY
+    recommended/skip/diff/help/quit. The generic mutating actions are unsafe —
+    [n]ew would write an ignored `.new`, [o]verwrite assumes the file exists,
+    [a]ppend is `.gitignore`-only — so they are neither OFFERED nor ACCEPTED."""
+
+    _CMD = ".claude/commands/dev-review.md"
+
+    def test_allowed_actions_only_rsdhq_for_neutralize(self):
+        actions = _allowed_actions_for(self._CMD, "NEUTRALIZE")
+        assert actions == ["r", "s", "d", "?", "q"]
+        for unsafe in ("n", "o", "a"):
+            assert unsafe not in actions
+
+    def _neutralize_plan(self, tmp_path):
+        return _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+
+    def test_n_rejected_and_reprompts(self, tmp_path):
+        new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="n\ns\n"
+        )
+        assert "[n]ew is not available" in out
+        # 'n' was NOT accepted as WRITE_NEW; user fell through to [s]kip
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_o_rejected_and_reprompts(self, tmp_path):
+        new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="o\ns\n"
+        )
+        assert "[o]verwrite is not available" in out
+        # 'o' was rejected BEFORE the typed-OVERWRITE confirmation
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_a_rejected_and_reprompts(self, tmp_path):
+        new_plan, _out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="a\ns\n"
+        )
+        # 'a' is invalid for a non-.gitignore NEUTRALIZE target → rejected
+        assert new_plan.analyses[0].recommendation.policy == "SKIP"
+
+    def test_help_omits_unsafe_actions(self, tmp_path):
+        _new_plan, out = _decide(
+            self._neutralize_plan(tmp_path), {self._CMD: b"# cmd\n"}, stdin_text="?\ns\n"
+        )
+        assert "[r]ecommended" in out
+        assert "[n]ew" not in out
+        assert "[o]verwrite" not in out
+        assert "[a]ppend" not in out
+
+
 # ─── Decided recommendations always set manual_review_needed=False ───
 
 
