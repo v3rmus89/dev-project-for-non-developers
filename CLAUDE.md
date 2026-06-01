@@ -66,6 +66,15 @@ For substantive implementation PRs (multi-commit / cross-cutting), use BOTH tier
 
 Both feed the same (a/b/c/d) triage rule above. Full pattern in `CONTRIBUTING.md`.
 
+## Launching reviews from plan mode (`/dev-review`)
+
+To run a review from inside plan mode — without an exit-plan-mode / return cycle — invoke the **`/dev-review`** slash command, Claude's front-end to the `make review` dispatcher:
+
+- `/dev-review commit` — Tier-1 review of the latest commit. The session IS the implementer, so it dispatches `make review MODE=commit ACTOR=claude` directly (same-AI Tier-1); no question.
+- `/dev-review plan [PLAN_FILE] [ITERATION]` — the plan's author may be Claude or Codex, so the command `AskUserQuestion`s the author first (never a silent default that could mis-route a Codex-authored plan), then dispatches the correct cross-direction review.
+
+You never pick the reviewer or list both review directions — `make review` is the single source of dispatch truth. Do **not** rely on `export REVIEWER=…`: each Bash tool call is a fresh shell, so an export there won't reach a later `make` (the command passes `ACTOR=` inline instead). `REVIEWER` is a convenience for a hand-run `make review` in a single terminal only.
+
 ## Cross-session state recovery
 
 If you're starting a fresh session, just resumed after compaction, or are uncertain whether work X is already done: run `make status` BEFORE proposing changes. It synthesizes git history, open PRs, the active plan's iteration + implementation log tails, active lessons (`LESSONS.md`), local repo state, and tool availability — cheap to run, and it prevents proposing work that's already shipped. If `docs/plans/` holds multiple plan files, pass `make status PLAN_FILE=docs/plans/<active>.md` to override the mtime auto-detect.
