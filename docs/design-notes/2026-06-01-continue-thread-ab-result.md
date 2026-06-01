@@ -42,22 +42,37 @@ By design the screen can only conclude *stay-fresh* / *escalate-to-full-rigor* /
   authoritative. The verdict rests on the price-independent uncached ratio, not
   this number.
 
-### Per-call uncached input (warmup-confound check, iter-3 FN3)
+### Per-call detail (input / cached / uncached / shell commands)
 
-| call | fresh | continue |
-|---|---|---|
-| iter 1 (seed) | 200,835 | 186,476 |
-| iter 2 | 124,712 | 359,033 |
-| iter 3 | 238,568 | 405,661 |
+| call | input | cached | uncached | cache% | shell cmds |
+|---|---|---|---|---|---|
+| fresh iter 1 | 1,716,099 | 1,515,264 | 200,835 | 88.3% | 48 |
+| fresh iter 2 | 1,415,848 | 1,291,136 | 124,712 | 91.2% | 46 |
+| fresh iter 3 | 2,035,560 | 1,796,992 | 238,568 | 88.3% | 62 |
+| continue seed (1) | 3,009,004 | 2,822,528 | 186,476 | 93.8% | 66 |
+| continue resume 2 | 4,096,761 | 3,737,728 | 359,033 | 91.2% | **15** |
+| continue resume 3 | 4,496,413 | 4,090,752 | 405,661 | 91.0% | **4** |
 
-- **Continue GROWS monotonically** (186k → 359k → 406k): each resume re-sends the
-  accumulating thread history, so per-turn uncached input rises. This is the
-  structural reason continue costs more — a higher cache *share* (0.918 vs 0.891)
-  does not offset a total input that is 2.25x fresh's.
-- **Fresh is non-monotonic** (201k → 125k → 239k) — NOT a progressive
-  within-block cache-down, so the cross-mode comparison is not warmup-confounded
-  in a way that would undermine the verdict. (And even if it were, fresh-first
-  biased toward continue, and continue still lost decisively.)
+**This table is the heart of the result — and it shows continue behaving exactly
+as designed, yet still losing:**
+
+- **Continue used context efficiently** — its per-resume shell-command count
+  COLLAPSES (66 → 15 → 4). The resumes re-inspect the repo far less because they
+  already hold it in context. So continue is NOT being used naively; it is doing
+  the right thing.
+- **Continue loses anyway because it CARRIES the growing transcript as input every
+  turn** (3.0M → 4.1M → 4.5M): every prior command's output + reasoning + messages
+  is re-fed each resume. Even at ~91% cache, the 9% uncached tail of a 4.5M-token
+  transcript (406k) exceeds the entire uncached cost of a lean 2M-token fresh
+  review — and the *cached* volume continue pays for (10.6M) is 2.3x fresh's
+  (cached tokens are discounted, not free). Fresh is the inverse: re-inspect every
+  time (~50 commands) but stay lean (~1.4–2M) and discard.
+- For PLAN REVIEW — small marginal new work per iteration, large stable context —
+  "re-read but stay lean" beats "read once but carry the whole transcript forever."
+- **Warmup-confound check** (iter-3 FN3): fresh's uncached is non-monotonic
+  (201k → 125k → 239k) — not a progressive within-block cache-down — so the
+  cross-mode comparison is not warmup-confounded in a way that undermines the
+  verdict. (And fresh-first biased toward continue anyway, and continue still lost.)
 
 ## Manual quality equivalence read
 
@@ -101,9 +116,23 @@ between iterations and caches even less, would not reverse the result.
 
 ## Caveats (screen-scope, honest)
 
-- N=3 on ONE plan; a screen, not a robust estimate. But the result is directional
-  and far from the bar (1.69 vs 0.90), and the mechanism (monotone input growth on
-  resume) is structural, not noise.
+- **Large agentic non-determinism; N=1 per cell -> the precise 1.69x is NOISY.**
+  `fresh-iter1` and `continue-seed-iter1` are the *identical* operation (a fresh
+  review of P at iter 1), yet cost **1.72M vs 3.01M input** (the seed happened to
+  run 66 shell commands vs fresh's 48). With one sample per cell, treat the
+  magnitude as "continue is directionally more expensive," NOT as a precise 1.69x.
+  What is NOT noise: the resume transcript-carry growth (3.0M -> 4.1M -> 4.5M) is
+  monotonic and structural — even a lean seed could not close a 2.25x total-input
+  gap over a 3-turn loop. The DECISION (don't flip the default) is robust; the
+  exact ratio is soft.
+- **We tested the AS-BUILT mechanism (same prompt for seed AND resume).** PR #33
+  reuses the Makefile review prompt verbatim on resume (Makefile:186). A *smarter*
+  continue design would send a lean "here is what changed for iter N" delta prompt
+  to exploit the cached context and avoid re-feeding the full transcript. This
+  screen does NOT rule that out — it rules out flipping the default to the
+  mechanism as it exists today. The delta-prompt / history-compacting redesign is
+  the BACKLOG escalation, not a refutation of this result.
+- N=3 on ONE plan; a screen, not a robust estimate (see the non-determinism point).
 - Prompt is a close ASCII mirror of the Makefile review prompt (Makefile:186), not
   byte-identical (byte-identity test parked to BACKLOG).
 - est_cost uses placeholder prices — illustrative only; the verdict does not depend
