@@ -300,28 +300,39 @@ Plan-PR-then-impl-PR: this docs-only plan PR merges first; implementation branch
 
 ## Measured result (filled at V-3)
 
-| Mode | total input | total cached_input | total uncached_input | cache share | total output | wall-clock |
+Run 2026-06-01, codex-cli 0.130.0. Full detail + mechanism + quality table in
+[docs/design-notes/2026-06-01-continue-thread-ab-result.md](../design-notes/2026-06-01-continue-thread-ab-result.md).
+
+| Mode | total input | total cached_input | total uncached_input | cache share | total output | wall-clock (s) |
 |---|---|---|---|---|---|---|
-| fresh | | | | | | |
-| continue | | | | | | |
+| fresh | 5,167,507 | 4,603,392 | 564,115 | 0.891 | 44,530 | 1,020.4 |
+| continue | 11,602,178 | 10,651,008 | 951,170 | 0.918 | 60,399 | 684.5 |
 
-**Per-call uncached input (warmup-confound check)**: fresh call 1/2/3 = _pending_; continue
-call 1/2/3 = _pending_. (If fresh's own calls 2/3 are already substantially cached, the
-cross-mode ratio is confounded -> inconclusive.)
+**Per-call uncached input (warmup-confound check)**: fresh 1/2/3 = 200,835 / 124,712 / 238,568
+(non-monotonic -> NOT a within-block cache-down -> not confounding); continue 1/2/3 = 186,476 /
+359,033 / 405,661 (GROWS monotonically -- each resume re-sends the accumulating thread, the
+structural reason continue costs more).
 
-**Uncached-input ratio (continue/fresh)**: _pending_. **est_cost ratio (rough)**: _pending_.
+**Uncached-input ratio (continue/fresh)**: **1.686** (bar `> 0.90`). **est_cost ratio (rough,
+placeholder prices)**: ~1.81 (illustrative only).
 
-**Manual quality equivalence table** (per salient fresh finding: did continue reproduce an
-equivalent? any miss -> stay-fresh / inconclusive):
+**Manual quality equivalence read**: both modes produced full FN-tagged reviews; continue did NOT
+go lazy on resume (more output -- 60,399 vs 44,530 tokens). Quality roughly equivalent (moot for a
+stay-fresh verdict, recorded to rule out an artifact):
 
-| Fresh finding (id / one-line) | Continue reproduced an equivalent? | Notes |
+| Fresh finding (one-line) | Continue reproduced an equivalent? | Notes |
 |---|---|---|
-| _pending_ | | |
+| Source conflict: prompt says iter 1/2/3 but on-disk plan P is post-iter-4 (merged) | Yes -- all fresh + all continue calls flagged it | Property of replaying a merged plan, not a mode diff -> equivalent |
+| Substantive plan-body imp-3-style findings | Yes -- continue resumes returned comparable multi-finding reviews | No "already reviewed, nothing new" laziness |
 
 **Screen bars**: `ratio > 0.90` -> stay-fresh; `ratio <= 0.90` + quality equivalent + not
 warmup-confounded -> escalate-to-full-rigor; confounded/unclear -> inconclusive. **The screen
 never flips `THREAD_MODE`.**
 
-**Verdict (stay-fresh / escalate-to-full-rigor / inconclusive)**: _pending_.
-(Filled at V-3. `uncached_input = input - cached_input`. The `wall-clock` column is the per-mode
-total; per-call detail + timestamps are in the `/tmp` JSONL, which is NOT committed.)
+**Verdict: STAY-FRESH.** Decisive (1.686 >> 0.90). Continue uses ~69% MORE uncached input (and
+~81% more rough est-cost) than fresh -- resume re-sends the growing thread, and the higher cache
+*share* (0.918 vs 0.891) does not offset a total input 2.25x fresh's. This is the best case for
+continue (same plan x3) and it still lost, so **no full-rigor escalation** (the escalation was for
+a promising-but-ambiguous `ratio <= 0.90`; this is an unambiguous disconfirmation). `THREAD_MODE`
+default unchanged (`fresh`); `continue` stays opt-in. `uncached_input = input - cached_input`;
+per-call detail + timestamps are in the `/tmp` JSONL (NOT committed).
