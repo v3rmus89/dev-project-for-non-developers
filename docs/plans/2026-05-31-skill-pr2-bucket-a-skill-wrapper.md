@@ -534,7 +534,13 @@ loop is stopped here for the human-approval gate.
 
 | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |
 |-----------|----------------------|---------------------------------|-------------------------|
-| _(populated during implementation; Tier-1 proposes each row)_ | | | |
+| a9fdb93 | Part 1A: `make review` dispatcher (MODE/ACTOR → sub-target) + `REVIEW_RESOLVE` test hook, byte-identical in Makefile + `shared/Makefile.review.tmpl`; resolve-mode + faked-CLI invocation tests + `make help` + both-surfaces presence guard | none | none |
+| 950a19c | Part 1B: `/dev-review` dogfood + byte-identical verbatim template in `SHARED_TEMPLATE_MAP` (renders all langs, 0644, not in EXECUTABLE_TARGETS) + skill-repo `.gitignore` un-ignore exception; V-21 + git-check-ignore committable tests | none | none |
+| 8f6c3c9 | Part 1C/1D: dispatch convention (Claude `/dev-review` + Codex `make review ACTOR=codex`) in CLAUDE.md/AGENTS.md + both templates; 6-branch acceptance via 2 command-body asserts + 2 per-surface presence tests | none | none |
+| ad47927 | Part 2A: NEUTRALIZE policy + `.claude/`-class classifier (`ignored_by_dotclaude_pattern`, privacy-safe) + rule-a0 NEUTRALIZE/SKIP split, both `manual_review_needed=True` | none | none — apply-side gap (NEUTRALIZE not yet handled) is the planned commit-4→6 intermediate state; no test reaches it |
+| c9334d5 | Part 2B: `sort_key` (tier 0) on all v2 builders; `plan_adoption_entries` sorts ascending, `_restore_v2` descending; `.get` legacy-v2 compat; ordering + compat tests | none | none |
+| bd4f32c | Part 2C/2D: NEUTRALIZE builder + sentinel apply/restore (no whole-file SHA) + two-entry expansion (deduped `.gitignore` + command WRITE) + policy-aware decide matrix (reject n/o/a) | none | none |
+| 9c3cdcf | Part 2E: NEUTRALIZE adopt round-trip smoke through the full CLI (apply→restore byte-identical, real `git check-ignore`, created-dir cleanup) + skip-path test | none | none — amended to harden `_git_ignored` rc guard (Tier-1 imp-2) |
 
 ## Lessons surfaced (this PR)
 

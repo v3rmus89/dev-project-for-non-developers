@@ -313,6 +313,25 @@ def test_dev_review_command_body_six_branch_dispatch():
     )
 
 
+def test_usage_doc_documents_neutralize_and_dev_review():
+    """S12 / iter-4 FN5: docs/usage.md's normative tables must carry the
+    NEUTRALIZE adopt-rule row + the v2-restore sentinel-removal row, and the
+    `/dev-review` front-end, so the docs cannot silently drift from the engine."""
+    text = (SKILL_ROOT / "docs" / "usage.md").read_text()
+    # adopt-mode rule table: the `.claude/`-class → NEUTRALIZE policy (vs broad → SKIP)
+    assert "`NEUTRALIZE`" in text, "usage.md must document the NEUTRALIZE policy"
+    assert "`.claude/`-class" in text, (
+        "usage.md must document the `.claude/`-class NEUTRALIZE trigger"
+    )
+    # v2 restore matrix: sentinel-based block removal (NOT whole-file SHA)
+    assert "sentinel match" in text, (
+        "usage.md restore docs must describe NEUTRALIZE sentinel-based block removal"
+    )
+    # the /dev-review front-end + its dispatcher
+    assert "/dev-review" in text, "usage.md must document the /dev-review command"
+    assert "make review" in text, "usage.md must document the make review dispatcher"
+
+
 def test_backlog_has_deferred_bucket_entries():
     """V-22: BACKLOG.md carries durable entries for deferred Buckets A + F (iter-7 F2 fold).
     Both slugs present; each entry has Trigger + Starting requirements subsections;

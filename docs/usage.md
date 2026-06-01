@@ -128,7 +128,8 @@ Python-only — see below) and re-asks for a different directory.
 
    | Rule | Trigger | Policy | Manual review? |
    |---|---|---|---|
-   | (a0) | missing AND ignored by `git check-ignore` | `SKIP` | **yes** (always) |
+   | (a0) | missing AND gitignored by a **`.claude/`-class** rule (the managed un-ignore block can restore git-visibility) | `NEUTRALIZE` | **yes** |
+   | (a0) | missing AND gitignored by any **other** rule (e.g. `*.md`) | `SKIP` | **yes** |
    | (a) | missing AND not ignored | `WRITE` | no |
    | (b) | exists AND empty / whitespace-only | `OVERWRITE` | no |
    | (c) | exists AND byte-identical to skill template | `SKIP` | no |
@@ -145,6 +146,7 @@ Python-only — see below) and re-asks for a different directory.
    - `[n]ew` (WRITE_NEW): for any manual-review file
    - `[a]ppend` (APPEND_MERGE): **`.gitignore` only** (line-level idempotent merge)
    - `[o]verwrite`: always available BUT requires typed `OVERWRITE` (uppercase, case-sensitive) — single-keystroke `o` won't suffice (safety against stray-keystroke destruction of CLAUDE.md)
+   - **`NEUTRALIZE` targets** (a `.claude/`-class-ignored command file): ONLY `[r]ecommended` / `[s]kip` / `[d]iff` / `[?]help` / `[q]uit` are offered — `[n]ew` / `[o]verwrite` / `[a]ppend` are neither offered nor accepted (they'd write an ignored `.new`, assume the file already exists, or be `.gitignore`-only). Accepting (`[r]`) appends the un-ignore block to `.gitignore` AND writes the command file — one decision authorizes both.
 
 4. **Apply** — each non-SKIP entry is written atomically; SKIP entries don't appear in the v2 restore manifest (mutation-only contract). The manifest is fsync'd BEFORE any filesystem write, so `--restore` rolls back partial-apply states.
 
@@ -242,7 +244,33 @@ diff -u CLAUDE.md CLAUDE.md.new
 ./venv/bin/python bootstrap.py --restore /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
 ```
 
-The restore is **policy-aware**: `WRITE` entries get deleted, `OVERWRITE` entries get the pre-apply content written back, `WRITE_NEW` entries get their `.new` file removed (original was never touched throughout), `APPEND_MERGE` entries get truncated to their pre-append byte length. SKIP'd files are NOT in the manifest and never get touched by restore.
+The restore is **policy-aware**: `WRITE` entries get deleted, `OVERWRITE` entries get the pre-apply content written back, `WRITE_NEW` entries get their `.new` file removed (original was never touched throughout), `APPEND_MERGE` entries get truncated to their pre-append byte length, `NEUTRALIZE` entries get their managed un-ignore block removed from `.gitignore` by **sentinel match** (not a whole-file SHA — so it composes with an `APPEND_MERGE` on the same file). SKIP'd files are NOT in the manifest and never get touched by restore.
+
+### Adopting into a repo that gitignores `.claude/` (NEUTRALIZE)
+
+If the target repo's `.gitignore` ignores `.claude/` (common — to keep local
+Claude session state out of git), the managed `/dev-review` command would land
+invisible to git. Adoption mode recommends `NEUTRALIZE` for it: with your
+consent it appends a 6-line un-ignore block to `.gitignore` that re-includes
+**only** `.claude/commands/dev-review.md` (the rest of `.claude/` stays ignored)
+and writes the command file. The decision needs explicit consent — under
+`--non-interactive` it exits 2; `--auto-accept-recommendations` still prompts.
+
+```bash
+# target/.gitignore contains `.claude/` (+ maybe some skill patterns)
+./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
+    --project-name myproj --out ./target
+#   → accept the NEUTRALIZE prompt with [r]
+
+git -C ./target check-ignore .claude/commands/dev-review.md   # now: no match (trackable)
+./venv/bin/python bootstrap.py --restore /var/folders/.../dev-project-setup-restore-*.json
+git -C ./target check-ignore .claude/commands/dev-review.md   # again ignored; .gitignore byte-identical
+```
+
+If the same `.gitignore` also needs skill patterns merged, both happen safely on
+the one file: the `APPEND_MERGE` runs first and the `NEUTRALIZE` block lands
+last; `--restore` reverses the order (block removed, then truncation) for a
+byte-identical rollback.
 
 ### Config-shadowing safety
 
@@ -296,6 +324,7 @@ The v2 restore matrix preserves these invariants:
 - `--restore` never deletes a pre-existing file classified as `SKIP` or `OVERWRITE`. (The hole-class that the iter-1 #3 plan fold closed — rules (b)/(c)/(e) had previously classified existing files as `WRITE`, and `WRITE`'s restore deletes the path.)
 - `--restore` never touches the original file when the policy was `WRITE_NEW` — only the `.new` file is removed.
 - `--restore` uses SHA-guarded checks: if you edited the file between apply and restore, the entry is SKIPped with a warning (never clobbered).
+- `--restore` of a `NEUTRALIZE` entry removes the un-ignore block by **sentinel match** — it deletes exactly the recorded 6-line block (never a 7th line) and SKIPs-with-warning if you edited the block. Because `NEUTRALIZE` (tier 1) restores before a same-file `APPEND_MERGE` (tier 0), the truncation still lands the byte-identical original `.gitignore`.
 - Path-safety pre-flight runs BEFORE any filesystem mutation — `..` traversal, absolute paths, symlink escapes all rejected.
 
 ### Limitations + caveats
@@ -431,6 +460,27 @@ abc1234 Latest commit
 ```
 
 Use `make status PLAN_FILE=docs/plans/<active>.md` when the mtime auto-detect might pick the wrong file.
+
+## Launching reviews from plan mode (`/dev-review`)
+
+Inside a Claude plan-mode session you can launch the correct review WITHOUT the exit-plan-mode / return cycle, via the `/dev-review` slash command — Claude's front-end to the `make review` dispatcher:
+
+- `/dev-review commit` → `make review MODE=commit ACTOR=claude` → `review-commit-by-claude` (same-AI Tier-1 — the session IS the implementer, so no question).
+- `/dev-review plan [PLAN_FILE] [ITERATION]` → asks who authored the plan (`AskUserQuestion`, **Claude** the default), then `make review MODE=plan ACTOR=<author> …` → the **cross-direction** reviewer (a Claude-authored plan is reviewed by Codex; a Codex-authored plan by Claude).
+
+`make review` is the single source of dispatch truth — the command never picks the reviewer or lists both directions. Codex **cannot** invoke a Claude slash command, so when Codex is the implementer it calls the same dispatcher directly: `make review MODE={plan,commit} ACTOR=codex …`, passing `ACTOR=codex` **inline** (a per-tool-call `export REVIEWER` does not persist; see `AGENTS.md`). `REVIEWER` is a hand-terminal-only convenience (`export REVIEWER=…` within one shell).
+
+`make review MODE=… ACTOR=… REVIEW_RESOLVE=1` prints the resolved target and exits 0 without invoking any CLI — the deterministic hook `make check` uses to pin every dispatch branch.
+
+### Manual smoke (a live agent executes the markdown — not unit-runnable)
+
+The dispatcher resolutions are covered deterministically in `make check` (`REVIEW_RESOLVE=1` + faked-CLI invocation tests). The slash command itself is run by a live Claude session, so smoke it by hand once per change that touches it:
+
+1. In a Claude plan-mode session, run `/dev-review plan docs/plans/<file>.md` → confirm it runs `make review MODE=plan ACTOR=claude …` → `review-plan-by-codex`, with NO exit-plan-mode / return cycle.
+2. Run `/dev-review commit` → confirm `→ review-commit-by-claude`.
+3. For a Codex-authored plan, confirm the `AskUserQuestion` author fallback fires and selecting **Codex** routes to `review-plan-by-claude`.
+
+`make status`'s Health checks confirm both `claude` and `codex` CLIs are present.
 
 ## Tier-2 reviewer triggers
 
