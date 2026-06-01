@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io as io_module
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -558,3 +559,126 @@ class TestShadowEscalationE2E:
         assert rc == 2, f"expected exit 2, got rc={rc}"
         assert "left untouched (SKIP)" in out
         assert "--diff" in out
+
+
+# ─── NEUTRALIZE round-trip — full CLI (Part 2E / S11 / iter-2 FN1) ──────────
+
+
+class TestNeutralizeRoundTrip:
+    """End-to-end through the real CLI (run_cli → cli.main → analyze →
+    decide → plan_adoption_entries → _apply_adoption_writes → restore): a target
+    that gitignores `.claude/` AND has skill-mergeable `.gitignore` patterns.
+
+    After `--apply --mode=adopt` (consent given): `.gitignore` carries BOTH the
+    APPEND_MERGE patterns AND the NEUTRALIZE sentinel block, the command file is
+    git-visible, and it landed on disk. After `--restore`: `.gitignore` is
+    BYTE-IDENTICAL to pre-apply, the command file is removed, and the created
+    `.claude/` / `.claude/commands/` dirs are gone (iter-3 FN3). This drives the
+    ordering-sensitive apply AND restore through production code (not a
+    hand-sequenced loop)."""
+
+    _CMD = ".claude/commands/dev-review.md"
+
+    def _git_ignored(self, target_root, rel_path):
+        """True iff `git check-ignore` reports rel_path as ignored (plain form:
+        rc=0 ignored, rc=1 not — a trailing `!`-negation wins as rc=1)."""
+        r = subprocess.run(
+            ["git", "check-ignore", rel_path],
+            cwd=str(target_root),
+            capture_output=True,
+            text=True,
+        )
+        # rc 0 = ignored, rc 1 = not ignored. Anything else (e.g. 128 = not a
+        # git repo) is a test-harness error that must NOT masquerade as
+        # "not ignored" and silently pass a post-apply assertion.
+        assert r.returncode in (0, 1), f"git check-ignore errored (rc={r.returncode}): {r.stderr!r}"
+        return r.returncode == 0
+
+    def _setup_target(self, target_root):
+        target_root.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=str(target_root), check=True)
+        # `.claude/` → triggers NEUTRALIZE for the command; `venv/`/`*.pyc` are a
+        # subset of the skill's `.gitignore` → triggers APPEND_MERGE on the SAME
+        # file (the crux: both tier-0 APPEND_MERGE and tier-1 NEUTRALIZE).
+        original_gitignore = b".claude/\nvenv/\n*.pyc\n"
+        (target_root / ".gitignore").write_bytes(original_gitignore)
+        return {".gitignore": original_gitignore}
+
+    def test_neutralize_apply_then_restore_byte_identical(self, tmpdir_isolated):
+        target = tmpdir_isolated / "target"
+        pre = self._setup_target(target)
+        # Pre-apply: the command file is gitignored by the `.claude/` rule.
+        assert self._git_ignored(target, self._CMD), "fixture must gitignore the command pre-apply"
+
+        # `r\n` accepts the single NEUTRALIZE prompt (every other planned file is
+        # a fresh rule-(a) WRITE → manual_review_needed=False → no prompt).
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+            ],
+            stdin_text="r\n",
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        assert "collision detected" not in err
+
+        # `.gitignore` carries BOTH the APPEND_MERGE patterns and the NEUTRALIZE block.
+        gi = (target / ".gitignore").read_bytes()
+        assert b"venv/" in gi and b"*.pyc" in gi  # originals preserved
+        assert manifest.NEUTRALIZE_SENTINEL.encode() in gi  # NEUTRALIZE block landed
+        assert len(gi) > len(pre[".gitignore"]) + len(
+            manifest.NEUTRALIZE_SENTINEL
+        )  # APPEND_MERGE grew it too
+
+        # The command is now git-VISIBLE (un-ignored) and landed on disk.
+        assert not self._git_ignored(target, self._CMD), (
+            "the un-ignore block must make it trackable"
+        )
+        assert (target / self._CMD).exists()
+
+        # ── restore ──
+        manifest_p = _extract_manifest_path(out)
+        rc, _o, _e = run_cli(["--restore", str(manifest_p)])
+        assert rc == 0
+
+        # `.gitignore` byte-identical to pre-apply (NEUTRALIZE block removed AND
+        # APPEND_MERGE truncated — the descending-restore composition).
+        assert (target / ".gitignore").read_bytes() == pre[".gitignore"]
+        # command file removed; created `.claude/` dirs cleaned (not pre-existing).
+        assert not (target / self._CMD).exists()
+        assert not (target / ".claude").exists()
+        # …and the command is gitignored again (back to the original rule).
+        assert self._git_ignored(target, self._CMD)
+
+    def test_neutralize_skip_leaves_gitignore_and_command_untouched(self, tmpdir_isolated):
+        """User [s]kips the NEUTRALIZE prompt → `.gitignore` keeps only the
+        APPEND_MERGE patterns (no sentinel block) and the command file is NOT
+        written (it would be invisible to git anyway)."""
+        target = tmpdir_isolated / "target"
+        self._setup_target(target)
+
+        rc, _out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+            ],
+            stdin_text="s\n",  # skip the NEUTRALIZE decision
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        gi = (target / ".gitignore").read_bytes()
+        assert manifest.NEUTRALIZE_SENTINEL.encode() not in gi, "skip must NOT append the block"
+        assert not (target / self._CMD).exists(), "skip must NOT write the (still-ignored) command"
