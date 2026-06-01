@@ -595,13 +595,29 @@ def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
             io.atomic_write(target_full, merged)
             os.chmod(target_full, entry["mode_after"])
         elif policy == "NEUTRALIZE":
-            # Append the managed un-ignore block to `.gitignore` (NOT planned-file
-            # content). Idempotent + byte-reversible: `compute_neutralize_apply_bytes`
-            # appends only if the sentinel is absent and preserves the trailing-
-            # newline structure so the sentinel restore is byte-exact. Runs at
-            # tier 1 — after any tier-0 APPEND_MERGE on the same `.gitignore` — so
-            # its block is the last thing in the file.
-            current_target = target_full.read_bytes() if target_full.exists() else b""
+            # TOCTOU re-check (mirrors WRITE_NEW's apply-time guard): analyze
+            # validated `.gitignore` exists and lacks the sentinel, but it could
+            # have changed in the apply window (incl. the interactive prompt). If
+            # it vanished, or someone added the block, FAIL LOUD rather than
+            # recreate-from-empty / no-op while the manifest still records the
+            # block — either would make `--restore` remove user content or leave
+            # a stray `.gitignore` (Tier-2 codex P2 on PR #35).
+            if not target_full.exists():
+                raise AdoptionCollisionError(
+                    f"{entry['target_path']} disappeared between plan-time and apply-time; "
+                    "bootstrap will NOT recreate it for NEUTRALIZE"
+                )
+            current_target = target_full.read_bytes()
+            if manifest.NEUTRALIZE_SENTINEL.encode() in current_target:
+                raise AdoptionCollisionError(
+                    f"{entry['target_path']} gained the un-ignore block between plan-time and "
+                    "apply-time; aborting so restore cannot reverse a block bootstrap did not add"
+                )
+            # Append the managed un-ignore block (NOT planned-file content).
+            # `compute_neutralize_apply_bytes` preserves the trailing-newline
+            # structure so the sentinel restore is byte-exact. Runs at tier 1 —
+            # after any tier-0 APPEND_MERGE on the same `.gitignore` — so its
+            # block is the last thing in the file.
             neutralized = manifest.compute_neutralize_apply_bytes(
                 current_target, entry["neutralize_block"]
             )
