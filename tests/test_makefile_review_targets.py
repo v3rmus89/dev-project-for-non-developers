@@ -1566,3 +1566,33 @@ def test_review_normal_mode_commit_codex_invokes_codex_same_ai(tmp_path):
     clis = [entry["cli"] for entry in log]
     # same-AI Tier-1: a Codex commit is reviewed by codex (review-commit-by-codex)
     assert "codex" in clis and "claude" not in clis, clis
+
+
+def test_review_non_allowlist_actor_mode_filtered_to_needs_ask(tmp_path):
+    """Tier-2 claude[bot] hardening (PR #35): MODE/ACTOR are sanitized to a fixed
+    allowlist via `$(filter)` at the MAKE level (no shell), so a non-allowlist
+    value — including shell metacharacters — filters to empty (→ NEEDS-ASK) and
+    never reaches the recipe shell. Proves no command injection via ACTOR/MODE."""
+    target = _bootstrap_fixture(tmp_path)
+    marker = tmp_path / "INJECTED"
+    # A QUOTE-BREAKING payload (the `"` escapes the `ACTOR="..."` assignment) —
+    # this is what genuinely injected against the pre-fix `ACTOR="$(ACTOR)"`
+    # (a bare-`;` payload is already neutralized by the double-quoting, so it
+    # would NOT prove the fix). `$(filter)` empties it → NEEDS-ASK, never shell.
+    result = _run_review(
+        target,
+        ["MODE=plan", f'ACTOR=x"; touch {marker}; echo "', "REVIEW_RESOLVE=1"],
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert "NEEDS-ASK" in resolved, resolved
+    for t in _ALL_REVIEW_TARGETS:
+        assert t not in resolved
+    assert not marker.exists(), "ACTOR value reached the shell — command injection!"
+
+    # A bogus MODE (also quote-breaking) is likewise filtered → NEEDS-ASK.
+    result2 = _run_review(
+        target, ['MODE=plan"; rm -rf /; echo "', "ACTOR=claude", "REVIEW_RESOLVE=1"]
+    )
+    assert result2.returncode == 0, result2.stderr + result2.stdout
+    assert "NEEDS-ASK" in [line.strip() for line in result2.stdout.splitlines() if line.strip()]

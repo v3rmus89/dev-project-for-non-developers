@@ -108,6 +108,13 @@ MODE           ?=
 REVIEWER       ?=
 ACTOR          ?= $(REVIEWER)
 REVIEW_RESOLVE ?=
+# Sanitize MODE/ACTOR to a fixed allowlist at the MAKE level — $(filter)
+# never invokes a shell, so a hostile command-line value (e.g.
+# ACTOR='x"; rm -rf ~') can't inject: it filters to empty (-> NEEDS-ASK) and
+# never reaches the recipe shell. The /dev-review command + AGENTS.md only
+# ever pass the literal tokens; this guards a fat-fingered terminal value.
+_REVIEW_MODE  = $(filter plan commit,$(MODE))
+_REVIEW_ACTOR = $(filter claude codex,$(ACTOR))
 
 .PHONY: review review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
@@ -118,7 +125,7 @@ REVIEW_RESOLVE ?=
         status
 
 review:	## dispatch a review to the right target: MODE={plan,commit} ACTOR={claude,codex} [PLAN_FILE=... ITERATION=...] (plan = cross-direction, commit = same-AI)
-	@ACTOR="$(ACTOR)"; MODE="$(MODE)"; \
+	@ACTOR="$(_REVIEW_ACTOR)"; MODE="$(_REVIEW_MODE)"; \
 	if [ -z "$$ACTOR" ]; then \
 	  TARGET="NEEDS-ASK"; \
 	else \
