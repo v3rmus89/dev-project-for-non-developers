@@ -57,6 +57,11 @@ def test_makefile_renders_parses_lists_targets(tmp_path):
         "preflight-review-tooling",
     ]:
         assert target in result.stdout, f"{target!r} missing from `make help`"
+    # the `make review` dispatcher (PR-2) is listed as its OWN target, distinct
+    # from review-plan-by-* / review-commit-by-* (a bare `"review" in stdout`
+    # would pass trivially on those substrings — match the first token instead).
+    help_targets = [line.strip().split()[0] for line in result.stdout.splitlines() if line.strip()]
+    assert "review" in help_targets, f"`review` dispatcher missing from `make help`: {help_targets}"
     # restart was removed per Codex iter-19 finding #3
     assert "restart" not in result.stdout
 

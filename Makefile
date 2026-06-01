@@ -98,14 +98,53 @@ FACT_CHECK_FACTS_OUT  ?= /tmp/plan-fact-check-$(KEY).facts.json
 FACT_CHECK_VERIFY_OUT ?= /tmp/plan-fact-check-$(KEY).verify.json
 PLAN_FACT_CHECK_OUT_CODEX  ?= /tmp/plan-fact-check-$(notdir $(basename $(PLAN_FILE)))-by-codex.md
 PLAN_FACT_CHECK_OUT_CLAUDE ?= /tmp/plan-fact-check-$(notdir $(basename $(PLAN_FILE)))-by-claude.md
+# `make review` dispatcher (MODE={plan,commit} ACTOR={claude,codex}). ACTOR
+# precedence: an explicit ACTOR= on the command line wins; else $(REVIEWER)
+# (a terminal `export REVIEWER=...` convenience — a Claude/Codex per-tool-call
+# export does NOT persist to a later make, so the slash command / AGENTS.md
+# pass ACTOR inline); else unset -> NEEDS-ASK. REVIEW_RESOLVE=1 prints the
+# resolved target and exits 0 WITHOUT invoking codex/claude (test hook).
+MODE           ?=
+REVIEWER       ?=
+ACTOR          ?= $(REVIEWER)
+REVIEW_RESOLVE ?=
 
-.PHONY: review-plan-by-codex review-plan-by-claude \
+.PHONY: review review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
         review-plan-consistency-by-claude \
         review-plan-fact-check-by-codex review-plan-fact-check-by-claude \
         loop-ack loop-reset loop-status \
         preflight-review-tooling \
         status
+
+review:	## dispatch a review to the right target: MODE={plan,commit} ACTOR={claude,codex} [PLAN_FILE=... ITERATION=...] (plan = cross-direction, commit = same-AI)
+	@ACTOR="$(ACTOR)"; MODE="$(MODE)"; \
+	if [ -z "$$ACTOR" ]; then \
+	  TARGET="NEEDS-ASK"; \
+	else \
+	  case "$$MODE:$$ACTOR" in \
+	    plan:claude)   TARGET="review-plan-by-codex" ;; \
+	    plan:codex)    TARGET="review-plan-by-claude" ;; \
+	    commit:claude) TARGET="review-commit-by-claude" ;; \
+	    commit:codex)  TARGET="review-commit-by-codex" ;; \
+	    *)             TARGET="NEEDS-ASK" ;; \
+	  esac; \
+	fi; \
+	if [ "$(REVIEW_RESOLVE)" = "1" ]; then \
+	  echo "$$TARGET"; \
+	  exit 0; \
+	fi; \
+	if [ "$$TARGET" = "NEEDS-ASK" ]; then \
+	  echo "NEEDS-ASK"; \
+	  echo "make review needs MODE={plan,commit} and ACTOR={claude,codex}." >&2; \
+	  echo "  plan review is cross-direction (claude->codex, codex->claude); commit review is same-AI." >&2; \
+	  echo "  Claude: run /dev-review.  Codex/terminal: pass ACTOR=codex (or set REVIEWER) inline." >&2; \
+	  exit 2; \
+	fi; \
+	case "$$MODE" in \
+	  plan)   $(MAKE) "$$TARGET" PLAN_FILE="$(PLAN_FILE)" ITERATION="$(ITERATION)" ;; \
+	  commit) $(MAKE) "$$TARGET" PLAN_FILE="$(PLAN_FILE)" ;; \
+	esac
 
 review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/plans/foo.md [ITERATION=N])
 	@test -n "$(PLAN_FILE)" || \

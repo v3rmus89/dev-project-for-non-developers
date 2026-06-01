@@ -199,3 +199,27 @@ def test_makefile_review_section_carries_thread_mode_machinery():
     for needle in needles:
         assert needle in rendered, f"rendered Makefile.review.tmpl missing: {needle!r}"
         assert needle in dogfood, f"dogfood Makefile missing: {needle!r}"
+
+
+def test_makefile_review_section_carries_review_dispatcher():
+    """PR-2 parity guard (same shape as the THREAD_MODE one above):
+    test_overlap_makefile_review_section proves the two surfaces are
+    byte-IDENTICAL — but a delete on BOTH sides also passes byte-identity. This
+    asserts the `make review` dispatcher machinery is actually PRESENT in both
+    the rendered template and the dogfood Makefile, so an accidental removal
+    fails loudly rather than silently."""
+    rendered = _render("Makefile.review.tmpl", SKILL_REPO_CONTEXT)
+    dogfood = (SKILL_ROOT / "Makefile").read_text()
+    needles = [
+        "ACTOR          ?= $(REVIEWER)",
+        'if [ "$(REVIEW_RESOLVE)" = "1" ]; then',
+        "review:",
+        'plan:claude)   TARGET="review-plan-by-codex"',
+        'plan:codex)    TARGET="review-plan-by-claude"',
+        'commit:claude) TARGET="review-commit-by-claude"',
+        'commit:codex)  TARGET="review-commit-by-codex"',
+        'TARGET="NEEDS-ASK"',
+    ]
+    for needle in needles:
+        assert needle in rendered, f"rendered Makefile.review.tmpl missing: {needle!r}"
+        assert needle in dogfood, f"dogfood Makefile missing: {needle!r}"
