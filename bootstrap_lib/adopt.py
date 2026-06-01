@@ -26,7 +26,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-Policy = Literal["WRITE", "SKIP", "OVERWRITE", "WRITE_NEW", "APPEND_MERGE"]
+Policy = Literal["WRITE", "SKIP", "OVERWRITE", "WRITE_NEW", "APPEND_MERGE", "NEUTRALIZE"]
 Confidence = Literal["high", "medium", "low"]
 
 # Files we treat as markdown for heading-count purposes.
@@ -76,6 +76,13 @@ class TargetMeta(NamedTuple):
     # into the user-facing report. Source+line is enough for the user to look
     # up the rule manually (`sed -n '48p' .gitignore`) without exposure here.
     ignored_by_git: str | None
+    # Derived (privacy-safe) boolean: True when `ignored_by_git` is set AND the
+    # matching pattern is `.claude/`-class — i.e. the managed un-ignore block can
+    # actually restore git-visibility. Computed from the raw pattern inside
+    # `_check_ignored_by_git`, which then discards the pattern (never stored).
+    # Rule (a0) keys NEUTRALIZE off this; a broad-pattern ignore (e.g. `*.md`)
+    # leaves it False and stays a conservative SKIP (design-note AC4 / iter-1 FN5).
+    ignored_by_dotclaude_pattern: bool = False
 
 
 class PolicyRecommendation(NamedTuple):
@@ -141,23 +148,49 @@ def scan_shadowing_configs(target_root: Path) -> tuple[str, ...]:
     return tuple(name for name in _SHADOWING_CONFIG_FILES if (target_root / name).is_file())
 
 
-def _check_ignored_by_git(target_root: Path, rel_path: str) -> str | None:
+def _is_dotclaude_class_pattern(pattern: str) -> bool:
+    """True if a gitignore pattern is `.claude/`-class — i.e. the managed
+    un-ignore block (NEUTRALIZE) can actually restore git-visibility for a
+    `.claude/`-nested file.
+
+    A BROAD pattern that merely happens to match the file (e.g. `*.md`) is NOT
+    `.claude/`-class: the un-ignore block wouldn't fix it, so rule (a0) must stay
+    a conservative SKIP for it (design-note AC4 / iter-1 FN5).
+
+    Normalize first: strip a leading `!` (negation) + surrounding space, then an
+    optional leading `/` (root-anchored `/.claude/`, `/.claude/**` are normal
+    gitignore forms — iter-3 FN4). Then match `.claude`, `.claude/`, `.claude/**`,
+    or any `.claude/`-prefixed pattern. The raw pattern is consumed here and
+    never stored on TargetMeta (Scope #11 privacy boundary)."""
+    p = pattern.strip()
+    if p.startswith("!"):
+        p = p[1:].strip()
+    if p.startswith("/"):
+        p = p[1:]
+    return p in (".claude", ".claude/", ".claude/**") or p.startswith(".claude/")
+
+
+def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None, bool]:
     """Run `git check-ignore -v -- <rel_path>` in target_root.
 
-    Returns just the `<source>:<line>` reference (e.g. `.gitignore:48`) if the
-    path is ignored — NOT the matching pattern itself. The pattern is dropped
-    here to honour Scope #11's privacy boundary: patterns can be path-revealing
-    (`secrets/client-acme/`, `*-customer-token-*`) and would leak verbatim into
-    the user-facing recommendation report via rule (a0)'s shape line + reason.
-    Source+line is sufficient for the user to look up the rule manually
-    (`sed -n '48p' .gitignore`) if they want to see why the file is ignored.
+    Returns `(ref, is_dotclaude_class)`:
 
-    Returns None for non-git directories or any subprocess failure (defensive:
-    missing git, permissions, etc.).
+      - `ref`: the `<source>:<line>` reference (e.g. `.gitignore:48`) if the path
+        is ignored, else None. NOT the matching pattern itself — patterns can be
+        path-revealing (`secrets/client-acme/`, `*-customer-token-*`) and would
+        leak verbatim into the user-facing report via rule (a0)'s reason. Source+
+        line is enough to look the rule up manually (`sed -n '48p' .gitignore`).
+      - `is_dotclaude_class`: True when the matched pattern is `.claude/`-class
+        (`_is_dotclaude_class_pattern`). Derived from the raw pattern, which is
+        then discarded — never stored. Rule (a0) keys NEUTRALIZE off this.
 
-    Per plan rule (a0): a planned CREATE that is ignored by git → recommended
-    SKIP with manual_review_needed=True (silent SKIP loses planned file, silent
-    WRITE writes invisible-to-git file — owner MUST decide).
+    Returns `(None, False)` for non-git directories or any subprocess failure
+    (defensive: missing git, permissions, etc.).
+
+    Per plan rule (a0): a planned CREATE that is ignored by git → NEUTRALIZE when
+    `.claude/`-class (manual_review), else a conservative SKIP (manual_review) —
+    silent SKIP loses the planned file, silent WRITE writes an invisible-to-git
+    file, so the owner MUST decide either way.
     """
     try:
         result = subprocess.run(
@@ -169,19 +202,21 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> str | None:
         )
     except (FileNotFoundError, OSError):
         # git not installed, target_root not a directory, etc.
-        return None
+        return None, False
     # Exit 0 = ignored; output is "<source>:<line>:<pattern>\t<path>".
     # Exit 1 = not ignored. Exit 128 = not a git repo.
     if result.returncode == 0 and result.stdout:
         first_line = result.stdout.splitlines()[0]
-        # Drop the tab-suffixed path, then drop the pattern field (after the
-        # second colon) to keep only `<source>:<line>` — privacy-safe.
+        # Drop the tab-suffixed path, then split off the pattern field (after the
+        # second colon). `<source>:<line>` is kept (privacy-safe); the pattern is
+        # used only to derive the `.claude/`-class boolean, then discarded.
         ref = first_line.split("\t", 1)[0] if "\t" in first_line else first_line
         parts = ref.split(":", 2)
+        is_dotclaude = len(parts) >= 3 and _is_dotclaude_class_pattern(parts[2])
         if len(parts) >= 2:
-            return f"{parts[0]}:{parts[1]}"
-        return ref
-    return None
+            return f"{parts[0]}:{parts[1]}", is_dotclaude
+        return ref, is_dotclaude
+    return None, False
 
 
 def _python_version_pin(content_bytes: bytes) -> str | None:
@@ -224,6 +259,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
     exists = full_path.is_file()
 
     if not exists:
+        ignored_ref, ignored_by_dotclaude = _check_ignored_by_git(target_root, rel_path)
         return TargetMeta(
             exists=False,
             size=0,
@@ -232,7 +268,8 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
             heading_count=None,
             has_dependency_groups=False,
             python_version_pin=None,
-            ignored_by_git=_check_ignored_by_git(target_root, rel_path),
+            ignored_by_git=ignored_ref,
+            ignored_by_dotclaude_pattern=ignored_by_dotclaude,
         )
 
     content = full_path.read_bytes()
@@ -266,6 +303,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
         has_dependency_groups=has_dependency_groups,
         python_version_pin=python_version_pin,
         ignored_by_git=None,  # only populated for missing files; existing files don't apply rule (a0)
+        ignored_by_dotclaude_pattern=False,  # only meaningful for ignored missing files
     )
 
 
@@ -392,7 +430,8 @@ def recommend_policy(
     values match Bucket D test fixture expectations + the v2 restore matrix in
     Bucket B):
 
-      (a0) missing + ignored_by_git → SKIP, manual_review_needed=True ALWAYS
+      (a0) missing + ignored_by_git, .claude/-class → NEUTRALIZE, manual_review=True
+           missing + ignored_by_git, broad pattern  → SKIP,       manual_review=True
       (a)  missing + not ignored    → WRITE,  manual_review_needed=False
       (b)  empty / whitespace-only  → OVERWRITE, manual_review_needed=False
       (c)  byte-for-byte match      → SKIP,  manual_review_needed=False
@@ -415,8 +454,26 @@ def recommend_policy(
     # Rule (a0): planned CREATE is ignored by git.
     # Silent SKIP loses the planned file; silent WRITE writes invisible-to-git
     # output. Both unacceptable. ALWAYS manual_review_needed=True so the
-    # interactive prompt asks the owner (SKIP-confirm vs WRITE_NEW).
+    # interactive prompt asks the owner.
     if not target_meta.exists and target_meta.ignored_by_git is not None:
+        if target_meta.ignored_by_dotclaude_pattern:
+            # `.claude/`-class ignore → the managed un-ignore block can restore
+            # git-visibility. NEUTRALIZE mutates the owner's `.gitignore` AND
+            # overrides a `.claude/` ignore they set deliberately, so it ALWAYS
+            # needs explicit consent (manual_review_needed=True).
+            return PolicyRecommendation(
+                policy="NEUTRALIZE",
+                reason=(
+                    f"target gitignores this path under a .claude/-class rule "
+                    f"({target_meta.ignored_by_git}); the managed un-ignore block can "
+                    "restore git-visibility — owner must consent (mutates .gitignore)"
+                ),
+                confidence="high",
+                manual_review_needed=True,
+            )
+        # Broad-pattern ignore the block can't fix (e.g. `*.md`) → stay
+        # conservative SKIP (design-note AC4 / iter-1 FN5); owner decides
+        # SKIP-confirm vs WRITE_NEW.
         return PolicyRecommendation(
             policy="SKIP",
             reason=(

@@ -362,6 +362,43 @@ class TestActions:
             assert name in out
 
 
+# ─── NEUTRALIZE consent (PR-2 Part 2A) ───
+
+
+class TestNeutralizeConsent:
+    """NEUTRALIZE mutates the owner's `.gitignore` AND overrides a `.claude/`
+    ignore they set deliberately, so it ALWAYS needs explicit consent
+    (manual_review_needed=True). This pins the GENERIC consent gating —
+    `--non-interactive` exits 2, interactive still prompts (auto-accept does NOT
+    bypass it: `_interactive_decide` only receives `non_interactive`). The
+    NEUTRALIZE-specific action matrix (offer only r/s/d/?/q, reject n/o/a) lands
+    with the builder/apply in a later commit."""
+
+    _CMD = ".claude/commands/dev-review.md"
+
+    def test_neutralize_non_interactive_aborts(self, tmp_path):
+        plan = _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+        with pytest.raises(_AdoptionAbort, match="--non-interactive"):
+            _decide(plan, {self._CMD: b"# cmd\n"}, non_interactive=True)
+
+    def test_neutralize_prompts_interactively(self, tmp_path):
+        plan = _plan(
+            tmp_path,
+            [_analysis(self._CMD, policy="NEUTRALIZE", manual_review_needed=True)],
+        )
+        new_plan, out = _decide(plan, {self._CMD: b"# cmd\n"}, stdin_text="r\n")
+        # the file is surfaced for a decision and the recommendation is shown
+        assert self._CMD in out
+        assert "NEUTRALIZE" in out
+        # [r] accept preserves NEUTRALIZE and marks it reviewed
+        rec = new_plan.analyses[0].recommendation
+        assert rec.policy == "NEUTRALIZE"
+        assert rec.manual_review_needed is False
+
+
 # ─── Decided recommendations always set manual_review_needed=False ───
 
 

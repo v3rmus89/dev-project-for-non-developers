@@ -25,6 +25,7 @@ from bootstrap_lib.adopt import (
     PolicyRecommendation,
     TargetMeta,
     _compute_target_meta,
+    _is_dotclaude_class_pattern,
     analyze_target,
     compute_append_merge_bytes,
     format_recommendation_report,
@@ -260,7 +261,8 @@ class TestRecommendPolicyRules:
     """Scope #5 rules a0/a..h, one test per rule. Each asserts
     `manual_review_needed` explicitly per Bucket D contract."""
 
-    # ─── Rule (a0): missing AND ignored_by_git → SKIP, manual_review=True ───
+    # ─── Rule (a0): missing AND ignored_by_git ───
+    # Broad-pattern ignore (ignored_by_dotclaude_pattern defaults False) → SKIP.
     def test_rule_a0_missing_and_ignored_returns_skip_manual_review(self, tmp_path: Path) -> None:
         meta = _meta(
             exists=False,
@@ -273,6 +275,26 @@ class TestRecommendPolicyRules:
         assert rec.policy == "SKIP"
         assert rec.manual_review_needed is True
         assert "gitignores" in rec.reason
+
+    # `.claude/`-class ignore → NEUTRALIZE (the un-ignore block can fix it).
+    def test_rule_a0_dotclaude_class_ignore_returns_neutralize(self, tmp_path: Path) -> None:
+        meta = _meta(
+            exists=False,
+            size=0,
+            sha256=None,
+            line_count=None,
+            ignored_by_git=".gitignore:50",
+            ignored_by_dotclaude_pattern=True,
+        )
+        rec = recommend_policy(
+            ".claude/commands/dev-review.md",
+            tmp_path / ".claude/commands/dev-review.md",
+            b"# command\n",
+            meta,
+        )
+        assert rec.policy == "NEUTRALIZE"
+        assert rec.manual_review_needed is True  # ALWAYS needs consent (mutates .gitignore)
+        assert "consent" in rec.reason
 
     # ─── Rule (a): missing AND not ignored → WRITE/safe-create ───
     def test_rule_a_missing_and_not_ignored_returns_write(self, tmp_path: Path) -> None:
@@ -1252,3 +1274,65 @@ class TestPyprojectSkipAdvisory:
         # (plan H1 fold): copying tables into pyproject.toml is futile while
         # the standalone file wins.
         assert "overrides these tables" in report
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR-2 (Part 2A) — the `.claude/`-class ignore classifier (iter-1 FN5 / iter-3
+# FN4). NEUTRALIZE must fire ONLY when the matched ignore pattern is one the
+# managed un-ignore block can actually fix; a broad pattern (e.g. `*.md`) that
+# merely happens to match stays a conservative SKIP (design-note AC4).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "pattern, expected",
+    [
+        (".claude", True),
+        (".claude/", True),
+        (".claude/**", True),
+        ("/.claude/", True),  # root-anchored — leading / stripped (iter-3 FN4)
+        ("/.claude/**", True),
+        (".claude/commands/", True),
+        ("!.claude/", True),  # leading ! stripped (defensive)
+        ("  .claude/  ", True),  # surrounding space stripped
+        ("*.md", False),  # broad pattern the un-ignore block can't fix
+        ("*.local", False),
+        ("secrets/", False),
+        ("claude/", False),  # missing leading dot
+        (".claudette/", False),  # `.claude` prefix but not a `.claude/` path segment
+    ],
+)
+def test_is_dotclaude_class_pattern(pattern, expected):
+    assert _is_dotclaude_class_pattern(pattern) is expected
+
+
+@pytest.mark.parametrize(
+    "ignore_line, expect_neutralize",
+    [
+        (".claude/", True),
+        ("/.claude/", True),
+        (".claude/**", True),
+        ("/.claude/**", True),
+        (".claude", True),
+        ("*.md", False),  # broad pattern that also matches → conservative SKIP
+    ],
+)
+def test_rule_a0_end_to_end_dotclaude_class_vs_broad(tmp_path, ignore_line, expect_neutralize):
+    """End-to-end through REAL `git check-ignore`: a planned, ignored
+    `.claude/commands/dev-review.md` recommends NEUTRALIZE when the matching
+    pattern is `.claude/`-class, else a conservative SKIP — both with
+    manual_review_needed=True. Exercises the full classifier path
+    (_compute_target_meta → _check_ignored_by_git → _is_dotclaude_class_pattern
+    → recommend_policy), not just the in-memory boolean."""
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(ignore_line + "\n")
+    rel = ".claude/commands/dev-review.md"
+    meta = _compute_target_meta(tmp_path, rel)
+    assert meta.exists is False
+    assert meta.ignored_by_git is not None, f"{ignore_line!r} should ignore {rel}"
+    assert meta.ignored_by_dotclaude_pattern is expect_neutralize
+    # privacy: the captured reference is source:line only — never the pattern
+    assert ".claude" not in meta.ignored_by_git
+    rec = recommend_policy(rel, tmp_path / rel, b"# command\n", meta)
+    assert rec.manual_review_needed is True
+    assert rec.policy == ("NEUTRALIZE" if expect_neutralize else "SKIP")
