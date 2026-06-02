@@ -173,12 +173,16 @@ def main(argv: list[str]) -> int:
     out_dir = (
         Path(args.out_dir) if args.out_dir else Path(tempfile.mkdtemp(prefix="ab-screen-"))
     ).resolve()
-    repo_root = SKILL_ROOT.resolve()
-    if out_dir == repo_root or repo_root in out_dir.parents:
-        raise SystemExit(
-            f"--out-dir must be OUTSIDE the repo (raw JSONL is never committed); "
-            f"got {out_dir} inside {repo_root}"
-        )
+    # Exclude BOTH the skill repo AND the reviewed checkout (--repo) -- raw JSONL
+    # must never land in either (the plan's never-committed contract). They are the
+    # same by default but differ when --repo replays a different checkout (codex C1
+    # re-review). resolve() so a symlinked/relative --repo is compared canonically.
+    for root in {SKILL_ROOT.resolve(), Path(args.repo).resolve()}:
+        if out_dir == root or root in out_dir.parents:
+            raise SystemExit(
+                f"--out-dir must be OUTSIDE the repo (raw JSONL is never committed); "
+                f"got {out_dir} inside {root}"
+            )
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"codex version: {codex_version()}")
     print(f"raw JSONL dir (NOT committed): {out_dir}\n")
