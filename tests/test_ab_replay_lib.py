@@ -139,6 +139,14 @@ def test_est_cost_prices_components_separately():
 
 def test_est_cost_ratio_none_when_fresh_zero():
     assert lib.est_cost_ratio([{"input_tokens": 5, "cached_input_tokens": 0}], []) is None
+    # all-zero-token fresh -> fresh cost 0 -> None (mirrors uncached_input_ratio's path)
+    assert (
+        lib.est_cost_ratio(
+            [{"input_tokens": 5, "cached_input_tokens": 0}],
+            [{"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}],
+        )
+        is None
+    )
 
 
 # ── screen verdict (NEVER flips) ─────────────────────────────────────────────────
@@ -210,6 +218,15 @@ def test_fresh_call_pins_read_only_repo_and_json():
     assert "--color" in argv and argv[argv.index("--color") + 1] == "never"
     assert argv[-1] == "REVIEW PROMPT"
     assert lib.is_read_only_argv(argv)
+
+
+def test_fresh_call_with_resume_prompt_is_not_misrouted():
+    # A fresh call whose PROMPT is the bare word "resume" must still be detected as
+    # a fresh (--sandbox read-only) call, not misrouted into the resume branch and
+    # wrongly reported unsafe. Guards the position-anchored subcommand detection.
+    call = lib.build_fresh_call("/abs/repo", "resume")
+    assert call.argv[-1] == "resume"  # the prompt really is the bare word
+    assert lib.is_read_only_argv(call.argv)
 
 
 def test_resume_call_pins_read_only_via_config_no_sandbox_flag():

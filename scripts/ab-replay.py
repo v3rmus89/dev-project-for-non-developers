@@ -30,8 +30,11 @@ Safety / rigor controls baked in:
 - **Wall-clock cap** (default 30 min) across all calls.
 
 Usage:
-    scripts/ab-replay.py [--plan PATH] [--repo ABSPATH] [--out-dir DIR]
-                         [--max-seconds N] [--execute]
+    python3.12 scripts/ab-replay.py [--plan PATH] [--repo ABSPATH] [--out-dir DIR]
+                                    [--max-seconds N] [--execute]
+
+Run with python3.12 -- the script needs >= 3.11 for `datetime.UTC`; the bare
+`./scripts/ab-replay.py` shebang may pick a system python 3.9 on macOS.
 """
 
 from __future__ import annotations
@@ -54,7 +57,8 @@ import ab_replay_lib as lib  # noqa: E402
 EXTRACTOR = SCRIPTS_DIR / "extract-codex-session-id.py"
 DEFAULT_PLAN = "docs/plans/2026-05-31-skill-pr2-bucket-a-skill-wrapper.md"
 ITERATIONS = (1, 2, 3)
-DEFAULT_MAX_SECONDS = 1800  # 30 min wall-clock cap across all calls
+DEFAULT_MAX_SECONDS = 1800  # 30 min total wall-clock cap across all calls
+PER_CALL_MAX_SECONDS = 900  # a single call may not run away past 15 min (plan:157)
 
 # Close mirror of the Makefile review-plan-by-codex prompt (Makefile:186).
 # ASCII-only (the Makefile's em-dash is ascii-ified here to satisfy ruff RUF001);
@@ -104,7 +108,14 @@ def run_call(call: lib.CodexCall, out_path: Path, timeout: float) -> dict:
         raise SystemExit(f"REFUSING non-read-only argv: {call.argv!r}")
     started = _utcnow()
     t0 = time.monotonic()
-    result = subprocess.run(call.argv, timeout=timeout, **call.run_kwargs)
+    try:
+        # cwd=SKILL_ROOT so the relative wrapper (scripts/run-with-clean-env.py)
+        # resolves no matter where the operator launches the runner from.
+        result = subprocess.run(call.argv, timeout=timeout, cwd=str(SKILL_ROOT), **call.run_kwargs)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(
+            f"call exceeded its time budget ({timeout:.0f}s); aborting -- see {out_path}"
+        ) from None
     elapsed = time.monotonic() - t0
     out_path.write_text(result.stdout or "", encoding="utf-8")
     if result.returncode != 0:
@@ -158,18 +169,24 @@ def main(argv: list[str]) -> int:
             raise SystemExit("wall-clock cap exceeded -- aborting before the next call")
         return rem
 
+    def call_timeout() -> float:
+        # Bound BOTH the total budget (remaining()) AND a single runaway call
+        # (PER_CALL_MAX_SECONDS) -- the plan's cap is "total > 30 min OR a single
+        # call runs away" (plan:157).
+        return min(remaining(), PER_CALL_MAX_SECONDS)
+
     # --- FRESH block first (pre-registered order; warms cache for continue) ---
     fresh_records = []
     for it in ITERATIONS:
         call = lib.build_fresh_call(args.repo, build_prompt(args.plan, it))
-        rec = run_call(call, out_dir / f"fresh-iter{it}.jsonl", remaining())
+        rec = run_call(call, out_dir / f"fresh-iter{it}.jsonl", call_timeout())
         fresh_records.append(rec)
         print(f"fresh iter{it}: {rec['elapsed_s']}s, uncached={_uncached(rec)}")
 
     # --- CONTINUE block: seed iter 1, resume iters 2/3 on one thread ---
     seed_call = lib.build_fresh_call(args.repo, build_prompt(args.plan, 1))
     seed_jsonl = out_dir / "continue-seed-iter1.jsonl"
-    seed_rec = run_call(seed_call, seed_jsonl, remaining())
+    seed_rec = run_call(seed_call, seed_jsonl, call_timeout())
     tid = _extract_thread_id(seed_jsonl)
     print(
         f"continue seed iter1: {seed_rec['elapsed_s']}s, uncached={_uncached(seed_rec)}, tid={tid}"
@@ -177,7 +194,7 @@ def main(argv: list[str]) -> int:
     continue_records = [seed_rec]
     for it in (2, 3):
         call = lib.build_resume_call(tid, build_prompt(args.plan, it))
-        rec = run_call(call, out_dir / f"continue-resume-iter{it}.jsonl", remaining())
+        rec = run_call(call, out_dir / f"continue-resume-iter{it}.jsonl", call_timeout())
         continue_records.append(rec)
         print(f"continue resume iter{it}: {rec['elapsed_s']}s, uncached={_uncached(rec)}")
 

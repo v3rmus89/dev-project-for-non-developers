@@ -104,16 +104,23 @@ WRITE_ENABLING_TOKENS = (
 
 
 def is_read_only_argv(argv: list[str]) -> bool:
-    """True iff `argv` pins read-only and carries no write-enabling token.
+    """True iff `argv` carries a POSITIVE read-only pin and no known write-enabling token.
 
-    The safety boundary the V-1 test asserts: a fresh call via `--sandbox
-    read-only`, a resume call via `-c sandbox_mode=read-only`, and neither
-    carrying any `WRITE_ENABLING_TOKENS`.
+    The real safety guarantee is the positive pin (fresh: adjacent `--sandbox
+    read-only`; resume: adjacent `-c sandbox_mode=read-only`) -- an argv with
+    neither returns False. `WRITE_ENABLING_TOKENS` is a defense-in-depth denylist,
+    NOT exhaustive: it cannot catch an unknown future write-enabling flag, so the
+    positive pin is what the V-1 safety assertion ultimately rests on.
     """
     joined = " ".join(argv)
     if any(tok in joined for tok in WRITE_ENABLING_TOKENS):
         return False
-    if "resume" in argv:
+    # Identify the codex subcommand by POSITION (the token after `exec`), not by
+    # membership -- a fresh call whose PROMPT happened to equal "resume" must not
+    # be misrouted into the resume branch and wrongly reported unsafe.
+    exec_i = argv.index("exec") if "exec" in argv else -1
+    is_resume = exec_i != -1 and exec_i + 1 < len(argv) and argv[exec_i + 1] == "resume"
+    if is_resume:
         # Adjacent `-c sandbox_mode=read-only` pair.
         return any(
             argv[i] == "-c" and argv[i + 1] == "sandbox_mode=read-only"
