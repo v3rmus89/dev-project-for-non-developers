@@ -156,7 +156,29 @@ def main(argv: list[str]) -> int:
         _print_planned(args.repo, args.plan)
         return 0
 
-    out_dir = Path(args.out_dir) if args.out_dir else Path(tempfile.mkdtemp(prefix="ab-screen-"))
+    # Codex Tier-2 C2: fail BEFORE any paid call if --plan is a typo / stale path.
+    # codex resolves the plan relative to the repo (-C), so check it there. A
+    # missing path would otherwise spend all 6 calls reviewing nothing.
+    plan_full = Path(args.plan) if Path(args.plan).is_absolute() else Path(args.repo) / args.plan
+    if not plan_full.is_file():
+        raise SystemExit(
+            f"--plan not found: {plan_full} -- refusing to spend paid calls on a missing/typo'd plan"
+        )
+
+    # Codex Tier-2 C1: the raw JSONL must never land in the repo (the plan's
+    # "never committed" contract). Enforce repo-exclusion by construction rather
+    # than trusting the operator's --out-dir. (Repo-exclusion, not literal /tmp:
+    # tempfile.gettempdir() is /var/folders/... on macOS, so a literal-/tmp check
+    # would wrongly reject the default temp dir there.)
+    out_dir = (
+        Path(args.out_dir) if args.out_dir else Path(tempfile.mkdtemp(prefix="ab-screen-"))
+    ).resolve()
+    repo_root = SKILL_ROOT.resolve()
+    if out_dir == repo_root or repo_root in out_dir.parents:
+        raise SystemExit(
+            f"--out-dir must be OUTSIDE the repo (raw JSONL is never committed); "
+            f"got {out_dir} inside {repo_root}"
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"codex version: {codex_version()}")
     print(f"raw JSONL dir (NOT committed): {out_dir}\n")
