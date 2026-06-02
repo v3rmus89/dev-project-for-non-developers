@@ -25,6 +25,14 @@ solved structurally.
 
 ## Active
 
+### 2026-06-01: Don't propagate an operational "must-do" from loosely-worded memory without checking the cited source
+
+**Trigger**: Before the live A/B run I told the user to "quit Codex.app" for a clean codex env, citing `feedback-codex-timeout`. User pushed back ("we discussed it shouldn't be quit"). Checking the sources: `feedback-codex-timeout` is about repo-size *review timeouts*, nothing about the app; the real control (per memory `codex-json-resume-behavior` + LESSONS 2026-05-30) is a connected MCP server's OAuth health — the codex CLI loads MCPs from `~/.codex/config`, independent of the desktop app. A loose parenthetical observation ("env flaky while Codex.app was running") had hardened into a stated requirement via a mis-citation.
+
+**Rule**: Before stating an operational precondition as a requirement, open the memory/source it rests on and confirm it actually says that. Correlation in an observation log ("X was running when it broke") is not a verified causal control. When you catch a mis-citation, fix the memory so it can't resurface.
+
+**Status**: Active
+
 ### 2026-05-17: Don't apply reviewer's suggested fix without verifying premise
 
 **Trigger**: PR #4 iter-4 #2 — Codex framed a hypothetical as imp-3 blocker. User push-back revealed the premise was wrong (Claude `--print --permission-mode plan` did NOT have the speculated invocation failure).

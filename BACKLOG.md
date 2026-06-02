@@ -96,7 +96,7 @@ still useful.
 
 ### Continue-thread mode for Codex (`continue-thread-pr-followup`)
 
-**Status**: parked — Bucket F was scoped out of PR #10. Two blocking verification gates must pass before flipping the Codex thread-continuation default from `fresh` to `continue` (iter-7 F2 fold).
+**Status**: MEASURED 2026-06-01 — **STAY-FRESH** (flip disconfirmed; `continue` ran **1.69x costlier** — see `docs/design-notes/2026-06-01-continue-thread-ab-result.md`). `THREAD_MODE` stays `fresh`; no full-rigor escalation. Re-open only if resume gains history-compaction; history below retained.
 
 **V-13 COMPLETE (2026-05-29, commit da776ee)** — ⚠️ **schema CORRECTED by the first live gate (2026-05-30)**: fixture captured at
 `tests/fixtures/codex-json-session.jsonl`; 7 validation tests pass. Key findings:
@@ -122,7 +122,7 @@ Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 **Trigger to pick up**:
 - ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
 - ~~V-13.5 protocol: 3-assertion gate~~ ~~UPDATED to 4-assertion gate~~ — **CORRECTED (2026-05-30) to a 3-gate read-only-ENFORCED check** (thread-id continuity + write-BLOCKED + resumed-rollout `sandbox_policy.type == "read-only"`; cwd gate dropped). Run the V-13.5 verifier (`scripts/verify-v13-5.py`) before merge.
-- A long plan loop (>8 iters) makes Codex token cost a real operational concern.
+- ~~A long plan loop (>8 iters) makes Codex token cost a real operational concern.~~ **SUPERSEDED 2026-06-01** — measured stay-fresh (see Status).
 
 **Starting requirements (iter-1..5 F-series findings)**:
 - ~~iter-1 F5: Bucket F `session_id` JSONL schema is only stub-tested~~ — **RESOLVED**. Resumable id is `thread.started.thread_id` (stream); `session_meta.payload.id` is the rollout-file equivalent (corrected 2026-05-30).
