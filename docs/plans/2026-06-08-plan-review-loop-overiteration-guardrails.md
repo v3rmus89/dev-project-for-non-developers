@@ -254,7 +254,7 @@ separate rows here.)
 |------|--------|------|---------|-------|--------|
 | (plan) | f1bdeeb | 2026-06-08 | Track plan (converged iter-2). | n/a | n/a |
 | C1 | 58711ed | 2026-06-08 | imp-3 calibration in both plan-review prompts; Makefile SELFTEST-OVERLAP re-synced; AGENTS.md+tmpl pointer; plan-review prompt shell-safety test | ✓ 975 pass | Claude: 0 imp-3; 1 imp-2 (F1 — test missing the literal-double-quote check) folded in amend |
-| C2 | _pending_ | — | runbooks-out-of-plans rule | — | — |
+| C2 | 975a6f1 | 2026-06-08 | "Keep executable runbooks out of the plan" rule in CONTRIBUTING.md (+ post-2b example) + generic `.tmpl` mirror (example stripped); one-line cross-ref under README "Stopping the loop" (+ byte-identical `.tmpl`); 2 presence tests + README delete-on-both-sides guard | ✓ 977 pass | Claude: 0 imp-3, 0 imp-2 (2 imp-1 noted — intentional dogfood/tmpl divergence — no change) |
 | C3 | _pending_ | — | circuit-breaker second trigger | — | — |
 
 ## Lessons surfaced (this PR)
