@@ -473,3 +473,50 @@ def test_runbook_rule_cross_referenced_in_docs_plans_readme():
     assert "Executable runbooks stay out of the plan body" in readme, (
         "docs/plans/README.md must cross-reference the runbook rule under 'Stopping the loop'"
     )
+
+
+def test_circuit_breaker_second_trigger_in_contributing():
+    """C3 (plan-review-loop over-iteration guardrails): both dogfood
+    CONTRIBUTING.md and the rendered template must carry the circuit-breaker's
+    *second trigger* — when imp-3 findings keep regenerating past ~iter 5 but
+    cluster in one artifact/theme (a deploy runbook, CLI/API signatures), that is
+    an artifact-class mismatch, not convergence: stop folding and switch to
+    execution-based verification or the gate. Distinct from the architectural-
+    blocker split (which is about design holes). Identical text in both surfaces
+    (no repo-specific example), so this also implicitly guards the dogfood/tmpl
+    parity for C3."""
+    from bootstrap_lib import render
+
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    env = render.build_env("python")
+    rendered = env.get_template("CONTRIBUTING.md.tmpl").render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+    for surface_name, text in [("dogfood", dogfood), ("rendered", rendered)]:
+        assert "Second trigger — same-class regeneration" in text, (
+            f"{surface_name} CONTRIBUTING.md must carry the circuit-breaker second trigger"
+        )
+        # The crux that distinguishes it from the architectural-blocker split:
+        # this is an artifact-class mismatch (wrong verification tool), not a
+        # design hole.
+        assert "artifact-class" in text, (
+            f"{surface_name} CONTRIBUTING.md second trigger must name the artifact-class mismatch"
+        )
+
+
+def test_circuit_breaker_in_docs_plans_readme():
+    """C3: docs/plans/README.md "Stopping the loop" carries the same-class-
+    regeneration stop signal. Byte-equality to the .tmpl is enforced by
+    test_selftest_overlap.test_overlap_docs_plans_readme; this presence guard
+    catches a delete-on-both-sides that byte-identity alone would pass."""
+    readme = (SKILL_ROOT / "docs/plans/README.md").read_text()
+    assert "Same-class regeneration is not convergence" in readme, (
+        "docs/plans/README.md must carry the circuit-breaker stop signal under 'Stopping the loop'"
+    )
