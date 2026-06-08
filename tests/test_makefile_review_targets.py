@@ -824,6 +824,47 @@ def test_tier1_prompt_has_no_backticks_in_rendered_recipe(tmp_path):
         assert "$(" not in check, f"Tier-1 prompt contains shell-substitution `$(`: {check[:200]}"
 
 
+def test_plan_review_prompt_has_calibration_and_is_shell_safe(tmp_path):
+    """C1 regression: the plan-review prompts (codex + claude) must (a) carry the
+    imp-3 calibration sentence, and (b) be shell-safe — no backticks, no `$(`
+    beyond the legit make vars, and no literal double-quote — since each is passed
+    as a double-quoted shell arg.
+    Extends the Tier-1-only no-backtick guard above to the plan-review prompts;
+    that coverage gap is what let the calibration's own backticks slip into the
+    plan at iter-1 (FN1)."""
+    target = _bootstrap_fixture(tmp_path)
+    makefile_text = (target / "Makefile").read_text()
+    needle = '"Review the plan file at'
+    starts = [i for i in range(len(makefile_text)) if makefile_text.startswith(needle, i)]
+    assert len(starts) == 2, (
+        f"expected exactly 2 plan-review prompts (codex + claude); got {len(starts)}"
+    )
+    for s in starts:
+        line_end = makefile_text.index("\n", s)
+        prompt = makefile_text[s + 1 : line_end]
+        assert "Calibrate importance strictly" in prompt, (
+            "plan-review prompt is missing the imp-3 calibration sentence"
+        )
+        # The prompt is one double-quoted shell arg, so the ONLY double-quote on the
+        # line is the closing delimiter; an inner one would terminate the arg early.
+        # (Codex ends the prompt with `"; \`, Claude with `" \` — both have exactly
+        # one `"`.) This is the third shell-safety guarantee from the plan's Tests C1.
+        assert prompt.count('"') == 1, (
+            f"plan-review prompt contains a literal double-quote: {prompt[:200]}"
+        )
+        # Make expands $(PLAN_FILE)/$(ITERATION)/$(KEY) before the shell sees them;
+        # anything else with $( or a backtick would be shell command substitution.
+        check = (
+            prompt.replace("$(PLAN_FILE)", "<P>")
+            .replace("$(ITERATION)", "<I>")
+            .replace("$(KEY)", "<K>")
+        )
+        assert "`" not in check, f"plan-review prompt contains a backtick: {check[:200]}"
+        assert "$(" not in check, (
+            f"plan-review prompt contains shell-substitution `$(`: {check[:200]}"
+        )
+
+
 def test_step9_mandate_appears_in_contributing(tmp_path):
     """PR #5b Bucket B: CONTRIBUTING.md step 9 must explicitly mandate
     appending the Tier-1-suggested impl-log row + docs-only commit pattern.

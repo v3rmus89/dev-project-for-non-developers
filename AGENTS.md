@@ -90,6 +90,7 @@ Treat serious planning risks as **importance 3**.
 For each finding return:
 
 - importance score: 1 / 2 / 3 (3 = blocker, 2 = improvement, 1 = polish)
+  - calibrate strictly: a 3 means the implemented PR would fail `make check` or its smoke walk without the change — not merely "would be more correct", and not the illustrative syntax of a runbook/CLI snippet (verified by running it at implementation); but a CLI flag / command / API signature the design *relies on* stays a 3 when it is wrong or unverified
 - what is wrong or risky
 - why it matters
 - concrete suggested change
