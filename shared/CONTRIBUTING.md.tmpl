@@ -254,6 +254,8 @@ plateau rule.
 
 **Architectural-blocker split (advisory, not a cap)**: distinct from the plateau rule above. If a review surfaces a *new architectural blocker* — not a narrow edge case, but a design hole that keeps regenerating importance-3 findings — at **iter ≥3**, consider splitting the PR rather than continuing to fold: carve the blocked piece into a follow-up (with the findings so far as its starting requirements) and ship the unblocked remainder. This is a judgment call for the human-approval gate, not an automatic trigger.
 
+**Keep executable runbooks out of the plan.** A plan describes deploy/rollback at *intent* fidelity: the sequence of steps, what is in scope, ordering constraints that matter for safety (e.g. "restore the DB backup *before* re-rendering"), and which failure modes the operator must verify. It does **not** embed line-level executable scripts — bash with traps / `set -euo pipefail`, `awk`/`grep` output parsing, DB backup/restore, or internal-API heredocs. Executable artifacts belong in a real file (`scripts/deploy/<task>.sh`) and are verified by *execution* — `shellcheck` (or a documented equivalent; add it to `make doctor` when shell deploy scripts are introduced), a `--dry-run`, and `--help` / source checks for every CLI flag and API signature — then reviewed as code (Tier-1). Static cross-review converges on design but not on executable correctness; trying to make a runbook line-perfect in the plan body regenerates importance-3 findings every iteration. **Boundary:** ordering / scope / which-failure-to-check → plan; syntax / flags / quoting / exact signatures → script.
+
 ---
 
 ## Tier-1 review — prompt template for in-session subagents

@@ -151,6 +151,8 @@ Suggested iteration counts:
 
 **Do not iterate as a ritual.** Stop the moment the rule is met.
 
+**Executable runbooks stay out of the plan body.** Describe deploy/rollback at intent fidelity (sequence, scope, ordering, failure modes to verify); line-level scripts live in `scripts/…` and are verified by execution + Tier-1 review, not the plan loop. See `CONTRIBUTING.md` ("Keep executable runbooks out of the plan").
+
 ## Why this directory exists
 
 Plans become institutional memory. Future-you (and future Claude/Codex sessions)

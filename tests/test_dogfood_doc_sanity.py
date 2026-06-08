@@ -428,3 +428,48 @@ def test_architectural_blocker_split_advisory_in_contributing():
         assert "consider splitting the PR" in text, (
             f"{surface_name} CONTRIBUTING.md advisory must say to consider splitting the PR"
         )
+
+
+def test_runbook_rule_in_contributing():
+    """C2 (plan-review-loop over-iteration guardrails): both dogfood
+    CONTRIBUTING.md and the rendered template must carry the "keep executable
+    runbooks out of the plan" rule — a plan describes deploy/rollback at intent
+    fidelity, while line-level scripts live in a real file and are verified by
+    execution + Tier-1, not the static review loop. Presence-only; the dogfood
+    copy may carry a repo-specific example (the post-2b loop) that the generic
+    template omits — the same divergence as the architectural-blocker split."""
+    from bootstrap_lib import render
+
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    env = render.build_env("python")
+    rendered = env.get_template("CONTRIBUTING.md.tmpl").render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+    for surface_name, text in [("dogfood", dogfood), ("rendered", rendered)]:
+        assert "Keep executable runbooks out of the plan" in text, (
+            f"{surface_name} CONTRIBUTING.md must carry the runbooks-out-of-plan rule"
+        )
+        # The boundary line is the operational crux (what stays in the plan vs
+        # what moves to a script) and is identical across both surfaces.
+        assert "ordering / scope / which-failure-to-check" in text, (
+            f"{surface_name} CONTRIBUTING.md runbook rule must state the plan/script boundary"
+        )
+
+
+def test_runbook_rule_cross_referenced_in_docs_plans_readme():
+    """C2: docs/plans/README.md "Stopping the loop" cross-references the runbook
+    rule. test_selftest_overlap.test_overlap_docs_plans_readme keeps README and
+    its .tmpl byte-identical, but a delete on BOTH sides would still pass that
+    byte-identity check — this presence guard makes an accidental removal of the
+    cross-reference fail loudly (same shape as the Makefile-machinery guards)."""
+    readme = (SKILL_ROOT / "docs/plans/README.md").read_text()
+    assert "Executable runbooks stay out of the plan body" in readme, (
+        "docs/plans/README.md must cross-reference the runbook rule under 'Stopping the loop'"
+    )
