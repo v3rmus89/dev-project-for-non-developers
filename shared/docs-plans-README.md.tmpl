@@ -151,6 +151,10 @@ Suggested iteration counts:
 
 **Do not iterate as a ritual.** Stop the moment the rule is met.
 
+**Same-class regeneration is not convergence.** If importance-3 findings keep regenerating past ~iter 5 but cluster in one executable artifact (a deploy runbook, CLI/API signatures), stop folding and switch to execution-based verification (extract the script; `shellcheck` / `--dry-run` / `--help`) or escalate to the human-approval gate. See `CONTRIBUTING.md` ("Second trigger — same-class regeneration").
+
+**Executable runbooks stay out of the plan body.** Describe deploy/rollback at intent fidelity (sequence, scope, ordering, failure modes to verify); line-level scripts live in `scripts/…` and are verified by execution + Tier-1 review, not the plan loop. See `CONTRIBUTING.md` ("Keep executable runbooks out of the plan").
+
 ## Why this directory exists
 
 Plans become institutional memory. Future-you (and future Claude/Codex sessions)
