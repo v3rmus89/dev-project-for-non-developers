@@ -1,9 +1,11 @@
 # Plan — Plan-review-loop over-iteration guardrails
 
 - **Date:** 2026-06-08 (drafted); iter-1 folds applied 2026-06-08.
-- **Status:** DRAFT — **converged at iter-2 (0 imp-3)**. iter-1 (3 imp-3 + 1 imp-2), iter-1.5
-  (consistency), and iter-2 (3 imp-2) all folded; C4 split to a follow-up plan. **Pending
-  human-approval gate** (stop rule met — no ritual iter-3).
+- **Status:** Plan converged at iter-2 (0 imp-3); human-approval gate passed at C1. iter-1
+  (3 imp-3 + 1 imp-2), iter-1.5 (consistency), and iter-2 (3 imp-2) all folded; C4 split to a
+  follow-up plan. **Implementation COMPLETE** — C1 (58711ed), C2 (975a6f1), C3 (a69eccf) all
+  landed green (make check 977 → 979 pass) with clean Tier-1 reviews (0 imp-3, 0 imp-2). Pending
+  the PR.
 - **Author:** Claude.
 - **Origin:** Post-mortem of the `call-details` plan
   `docs/plans/2026-06-08-doc-layout-post-2b-improvements.md`, whose review loop ran **19 Codex
@@ -255,7 +257,7 @@ separate rows here.)
 | (plan) | f1bdeeb | 2026-06-08 | Track plan (converged iter-2). | n/a | n/a |
 | C1 | 58711ed | 2026-06-08 | imp-3 calibration in both plan-review prompts; Makefile SELFTEST-OVERLAP re-synced; AGENTS.md+tmpl pointer; plan-review prompt shell-safety test | ✓ 975 pass | Claude: 0 imp-3; 1 imp-2 (F1 — test missing the literal-double-quote check) folded in amend |
 | C2 | 975a6f1 | 2026-06-08 | "Keep executable runbooks out of the plan" rule in CONTRIBUTING.md (+ post-2b example) + generic `.tmpl` mirror (example stripped); one-line cross-ref under README "Stopping the loop" (+ byte-identical `.tmpl`); 2 presence tests + README delete-on-both-sides guard | ✓ 977 pass | Claude: 0 imp-3, 0 imp-2 (2 imp-1 noted — intentional dogfood/tmpl divergence — no change) |
-| C3 | _pending_ | — | circuit-breaker second trigger | — | — |
+| C3 | a69eccf | 2026-06-09 | "Second trigger — same-class regeneration" inserted between the plateau rule and the architectural-blocker split in CONTRIBUTING.md + identical `.tmpl`; matching "Same-class regeneration is not convergence" stop signal under README "Stopping the loop" (+ byte-identical `.tmpl`); 2 presence tests + README delete-on-both-sides guard | ✓ 979 pass | Claude: 0 imp-3, 0 imp-2 (1 imp-1 — unused `enable_smoke` test kwarg, matches repo `_context()` convention — no change) |
 
 ## Lessons surfaced (this PR)
 
