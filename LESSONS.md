@@ -25,6 +25,36 @@ solved structurally.
 
 ## Active
 
+### 2026-06-09: A plan that proposes Makefile-embedded prompt text must keep that text shell-safe
+
+**Trigger**: Plan-review-loop guardrails plan, iter-1 FN1 — the C1 calibration text proposed for the plan-review prompt used backticks around `make check`, which become shell command substitution once the prompt is built as a double-quoted Makefile arg (`@PROMPT="…"`). The existing no-backtick regression test guarded only the Tier-1 commit-review prompt, so the plan-review prompts were an unguarded gap and the backticks slipped into the plan.
+
+**Rule**: When a plan proposes text that will be embedded in a double-quoted shell/Makefile argument (review prompts, recipe strings), keep it shell-safe — no backticks, no `$(`, no literal double-quotes; use single quotes for inner quoting. Extend the shell-safety regression test to cover EVERY such prompt, not only the one you are touching.
+
+**Status**: Active
+
+---
+
+### 2026-06-09: When a rule routes findings to a verifier as a safety net, confirm the verifier actually checks that class
+
+**Trigger**: Same plan, iter-1 FN2 — the C1 carve-out down-ranked CLI/API findings to imp-2 on the theory the fact-check pre-pass would catch them, but the verifier marks CLI flags `not_verifiable` and never introspects API signatures. The "safety net" had a hole that would have hidden real feasibility blockers.
+
+**Rule**: Before a rule delegates a class of checks to a tool ("the X pre-pass will catch this"), verify the tool's REAL coverage of that class — run it, read which classes it reports vs marks not-verifiable. If it cannot actually check the class, do not down-rank on its account; keep the dependency at full severity until a verifier that covers it exists.
+
+**Status**: Active
+
+---
+
+### 2026-06-09: When a rule names a verification tool, make sure that tool is in the repo's documented toolchain
+
+**Trigger**: Same plan, iter-2 FN3 — the C2 runbook rule mandated `shellcheck`, which is not installed in this env nor listed in `make doctor`. A rule that names an absent tool recreates the tool-mismatch it exists to prevent.
+
+**Rule**: Before a rule or plan requires a tool, confirm it is in the repo's documented toolchain (`make doctor`), or soften to "tool X (or a documented equivalent), added to doctor when first needed." Do not mandate a tool the project cannot run.
+
+**Status**: Active
+
+---
+
 ### 2026-06-01: Don't propagate an operational "must-do" from loosely-worded memory without checking the cited source
 
 **Trigger**: Before the live A/B run I told the user to "quit Codex.app" for a clean codex env, citing `feedback-codex-timeout`. User pushed back ("we discussed it shouldn't be quit"). Checking the sources: `feedback-codex-timeout` is about repo-size *review timeouts*, nothing about the app; the real control (per memory `codex-json-resume-behavior` + LESSONS 2026-05-30) is a connected MCP server's OAuth health — the codex CLI loads MCPs from `~/.codex/config`, independent of the desktop app. A loose parenthetical observation ("env flaky while Codex.app was running") had hardened into a stated requirement via a mis-citation.
