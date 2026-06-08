@@ -248,11 +248,14 @@ separate rows here.)
 
 ## Implementation log (this PR)
 
-**CODE_ROLLBACK_BASE** (record before first C1 commit): `<TBD>`
+**CODE_ROLLBACK_BASE** (commit before first C1 change): `f1bdeeb`
 
 | Item | Commit | Date | Summary | check | Tier-1 |
 |------|--------|------|---------|-------|--------|
-| (plan) | _this_ | 2026-06-08 | Track plan. | n/a | n/a |
+| (plan) | f1bdeeb | 2026-06-08 | Track plan (converged iter-2). | n/a | n/a |
+| C1 | 58711ed | 2026-06-08 | imp-3 calibration in both plan-review prompts; Makefile SELFTEST-OVERLAP re-synced; AGENTS.md+tmpl pointer; plan-review prompt shell-safety test | ✓ 975 pass | Claude: 0 imp-3; 1 imp-2 (F1 — test missing the literal-double-quote check) folded in amend |
+| C2 | _pending_ | — | runbooks-out-of-plans rule | — | — |
+| C3 | _pending_ | — | circuit-breaker second trigger | — | — |
 
 ## Lessons surfaced (this PR)
 
