@@ -309,84 +309,34 @@ success path and `_main_apply_adopt`; add a parallel test in
 
 ## Code-review follow-ups from PR #1
 
-### `write_manifest` not atomic (imp-2)
+### ✅ `write_manifest` not atomic — DONE in PR #40
 
-**Status**: parked.
-
-**Why parked**: `bootstrap_lib/manifest.py:119` writes the manifest directly
-to its final path with `fsync`, but does NOT use a tmp-then-rename pattern.
-If the process is killed mid-write of the manifest itself (before any
-target-file writes), a partially-written JSON manifest can be left in
-`$TMPDIR`. Since the manifest is written BEFORE any target write, an
-interrupted manifest write means there's nothing to restore — worst case
-is `--restore` fails with `JSONDecodeError` on a manifest that wouldn't
-have done anything anyway. Benign failure mode, inconsistent with the
-atomic-write discipline elsewhere.
-
-**Triggers to pick up**:
-- First user reports a `JSONDecodeError` from `--restore`.
-- Anyone reviewing the safety contract notices the asymmetry.
-
-**Rough effort**: ~10 min. Route the manifest write through
-`bootstrap_lib.io.atomic_write` (or duplicate the pattern locally).
+**Status**: ✅ shipped 2026-06-09 — `write_manifest` now routes through
+`bio.atomic_write` (tmp+rename). Commit `42ba339`.
 
 ---
 
-### `--restore` + non-`none` `--github-review` silently ignored (imp-2)
+### ✅ `--restore` + non-`none` `--github-review` silently ignored — DONE in PR #40
 
-**Status**: parked.
-
-**Why parked**: `bootstrap_lib/cli.py:34-64`'s `_resolve_mode` rejection
-list for restore mode covers `--language`, `--out`, `--apply`, etc., but
-the comment at line 57-58 acknowledges `--github-review` non-default values
-can't be detected with argparse's `default="none"`. Result:
-`bootstrap.py --restore m.json --github-review both-docs` silently ignores
-the flag rather than rejecting it. Cosmetic UX hole, no safety impact —
-the flag has no effect in restore mode either way.
-
-**Triggers to pick up**: user gets confused that `--github-review` doesn't
-error in restore mode.
-
-**Rough effort**: ~10 min. Change argparse `default` to `None` and treat
-`None` as `"none"` in `_build_context`; then the rejection-list check can
-also catch non-None `args.github_review` in restore mode.
+**Status**: ✅ shipped 2026-06-09 — `default=None` makes explicit values
+detectable; `_resolve_mode` restore path now flags `--github-review` in the
+bad-flags list. Commit `0654648`.
 
 ---
 
-### `load_manifest` error path opaque (imp-1)
+### ✅ `load_manifest` error path opaque — DONE in PR #40
 
-**Status**: parked.
-
-**Why parked**: `bootstrap_lib/cli.py:209-212` calls `load_manifest` +
-`restore_from_manifest` without wrapping them. A non-existent restore
-path or malformed JSON raises `FileNotFoundError` / `json.JSONDecodeError`
-and the user sees a Python traceback. The apply path catches errors at
-line 251; restore should do the same.
-
-**Triggers to pick up**: anyone reports a confusing traceback from
-`--restore`.
-
-**Rough effort**: ~5 min. Wrap in `try/except (OSError, JSONDecodeError,
-KeyError)` and emit a one-line stderr message.
+**Status**: ✅ shipped 2026-06-09 — `load_manifest` wrapped in
+`try/except (OSError, json.JSONDecodeError, KeyError, ValueError)` with a
+one-line stderr message. Commit `0654648` + Tier-1 fold `6897dfc`.
 
 ---
 
-### `_apply` bare `except Exception` loses traceback (imp-1)
+### ✅ `_apply` bare `except Exception` loses traceback — DONE in PR #40
 
-**Status**: parked.
-
-**Why parked**: `bootstrap_lib/cli.py:249-253`'s catch reduces apply
-failures to `f"apply failed: {e}"`. Path-safety errors and validation
-errors are caught earlier, so this is a last-resort net — but it
-disappears the stack trace for debugging mid-apply issues (e.g. an
-`os.chmod` permission error or unexpected disk-full).
-
-**Triggers to pick up**: first opaque mid-apply failure where debug
-requires the actual stack.
-
-**Rough effort**: ~5 min. Gate the traceback on
-`DEV_PROJECT_SETUP_TRACEBACK=1` env var (or always print, since this
-path is rare).
+**Status**: ✅ shipped 2026-06-09 — `DEV_PROJECT_SETUP_TRACEBACK=1`
+gates `traceback.print_exc()` in all four apply/adopt exception handlers.
+Commit `0654648` + Tier-1 fold `6897dfc`.
 
 ---
 

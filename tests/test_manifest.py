@@ -15,6 +15,42 @@ def _sha256(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def test_write_manifest_is_atomic(tmp_path, monkeypatch):
+    """write_manifest must route through bio.atomic_write (tmp+rename) rather
+    than writing directly to the final path — closes the PR #1 BACKLOG item."""
+    import tempfile
+
+    from bootstrap_lib import io as bio_module
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+    calls = []
+    original_aw = bio_module.atomic_write
+
+    def capturing(path, content):
+        calls.append((str(path), content))
+        return original_aw(path, content)
+
+    monkeypatch.setattr(bio_module, "atomic_write", capturing)
+
+    target_root = tmp_path / "proj"
+    planned = {"Makefile": b"all:\n\t@echo ok\n"}
+    entries, created_dirs = manifest_mod.plan_entries(target_root, planned)
+    m = manifest_mod.Manifest(
+        target_root=str(target_root),
+        github_review_mode="none",
+        entries=entries,
+        created_directories=created_dirs,
+    )
+    path = manifest_mod.write_manifest(m)
+
+    assert len(calls) == 1, "expected exactly one atomic_write call for the manifest"
+    assert calls[0][0] == str(path)
+    data = json.loads(calls[0][1].decode("utf-8"))
+    assert "target_root" in data
+
+
 def test_round_trip_basic(tmp_path, monkeypatch):
     import tempfile
 

@@ -67,10 +67,10 @@ def add_flags(parser):
         "--github-review",
         dest="github_review",
         choices=GITHUB_REVIEW_MODES,
-        default="none",
+        default=None,
         help=(
             "emit Claude / Codex GitHub auto-review files. "
-            "Default 'none' avoids hidden OAuth-secret dependencies"
+            "Omitting the flag is equivalent to 'none'"
         ),
     )
     parser.add_argument(

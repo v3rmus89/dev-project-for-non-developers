@@ -447,10 +447,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
 def write_manifest(m):
     path = manifest_path()
     payload = json.dumps(m.to_dict(), indent=2, sort_keys=True).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(payload)
-        f.flush()
-        os.fsync(f.fileno())
+    bio.atomic_write(path, payload)
     return path
 
 
