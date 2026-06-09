@@ -378,10 +378,12 @@ def test_restore_returns_nonzero_when_path_safety_rejects(tmp_path, monkeypatch)
     _ = base64  # keep import alive in case base64 referenced from sibling tests
 
 
-@pytest.mark.parametrize("mode", ["claude", "both-docs"])
+@pytest.mark.parametrize("mode", ["none", "claude", "both-docs"])
 def test_github_review_rejected_in_restore_mode(tmp_path, mode):
-    """--github-review with a non-default value must be rejected in restore mode.
-    Closes the PR #1 BACKLOG item: default=None makes the explicit flag detectable."""
+    """Any explicit --github-review value must be rejected in restore mode.
+    Closes the PR #1 BACKLOG item: default=None makes explicit values detectable.
+    Note: "none" is the canonical value but is also rejected when explicitly
+    passed — all explicit values are invalid in restore mode."""
     manifest_p = tmp_path / "manifest.json"
     manifest_p.write_text("{}")  # invalid manifest content, but flag check fires first
     rc, _out, err = run_cli(["--restore", str(manifest_p), "--github-review", mode])
@@ -445,6 +447,34 @@ def test_apply_failure_no_traceback_without_env_var(tmp_path, monkeypatch):
     assert rc == 1
     assert "apply failed before manifest write" in err
     assert "Traceback" not in err
+
+
+def test_apply_mid_write_failure_shows_traceback_with_env_var(tmp_path, monkeypatch):
+    """DEV_PROJECT_SETUP_TRACEBACK=1 includes a full traceback for _apply_writes failures.
+    Exercises the second traceback.print_exc() gate (cli.py _apply_writes except block)."""
+    from bootstrap_lib import io as bio_module
+
+    call_count = {"n": 0}
+    original_aw = bio_module.atomic_write
+
+    def flaky_write(target_path, content_bytes):
+        call_count["n"] += 1
+        # call 1 = manifest write (must succeed to get a durable manifest);
+        # call 2+ = file writes → raise to hit the _apply_writes except block.
+        if call_count["n"] >= 2:
+            raise RuntimeError("simulated mid-apply failure")
+        return original_aw(target_path, content_bytes)
+
+    monkeypatch.setattr(bio_module, "atomic_write", flaky_write)
+    monkeypatch.setenv("DEV_PROJECT_SETUP_TRACEBACK", "1")
+
+    target = tmp_path / "proj"
+    rc, _out, err = run_cli(
+        ["--apply", "--language", "python", "--project-name", "x", "--out", str(target)]
+    )
+    assert rc == 1
+    assert "apply failed mid-write" in err
+    assert "Traceback" in err
 
 
 def test_apply_prints_oauth_token_hint_for_opt_in_modes(tmp_path):

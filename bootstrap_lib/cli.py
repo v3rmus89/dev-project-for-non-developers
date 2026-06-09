@@ -666,6 +666,8 @@ def _main_apply_adopt(args, target_root, planned_files):
         adoption_plan = adopt.analyze_target(target_root, planned_files)
     except Exception as e:
         sys.stderr.write(f"adopt-mode analyze failed: {e}\n")
+        if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
+            traceback.print_exc()
         return 1
 
     # Show the recommendation report BEFORE prompting so the user sees the
@@ -729,6 +731,8 @@ def _main_apply_adopt(args, target_root, planned_files):
         return 2
     except Exception as e:
         sys.stderr.write(f"adopt-mode apply failed mid-write: {e}\n")
+        if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
+            traceback.print_exc()
         sys.stderr.write(
             "target tree may be in a partial state. To roll back the writes\n"
             "that did complete, run the restore command below.\n"
@@ -810,7 +814,7 @@ def main(argv):
     if mode == "restore":
         try:
             m = manifest.load_manifest(args.restore)
-        except (OSError, json.JSONDecodeError, KeyError) as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             sys.stderr.write(f"cannot read manifest {args.restore}: {e}\n")
             return 1
         # Codex iter-22 P2: surface the rejected count as a non-zero exit so
