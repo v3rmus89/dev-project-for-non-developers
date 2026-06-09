@@ -602,20 +602,24 @@ a code PR gets skipped.
 
 ---
 
-### Per-file `--decisions` / skip / abort interactive flow
+### 🟡 Per-file `--decisions` / skip / abort interactive flow — interactive DONE
 
-**Status**: parked.
+**Status**: partially shipped — **interactive flow DONE** (PR #7); only the
+non-interactive `--decisions` JSON remains. **Updated 2026-06-09 (backlog audit).**
 
-**Why parked**: PR #1's collision policy is repo-wide
-(`--overwrite-existing` is all-or-nothing consent). The merged plan's
-original "asks per-file" wording is implementable but needs a
-`--decisions` JSON file or an interactive prompt — both add UX surface
-area beyond PR #1's scope.
+**What shipped**: PR #7's `--mode=adopt` delivered the interactive per-file
+decide loop (`bootstrap_lib/cli.py::_interactive_decide`): per-file
+`[r]ecommended / [s]kip / [d]iff / [n]ew / [o]verwrite (typed confirm) /
+[a]ppend / [q]uit-abort`. This covers the merged plan's original "asks
+per-file" intent.
 
-**Triggers to pick up**: first user with a partial-overlay case (some
-files theirs, some files generated) who can't use the all-or-nothing flag.
+**What remains parked**: only the **non-interactive** `--decisions` JSON file
+for scripted/CI runs — the interactive flow makes it low-value.
 
-**Rough effort**: ~half a day.
+**Triggers to pick up**: a real scripted/CI partial-overlay case that cannot
+use the interactive prompt.
+
+**Rough effort**: ~half a day (the JSON variant only).
 
 ---
 
@@ -916,9 +920,11 @@ already assert post-restore content equality, no test changes needed.
 
 ---
 
-### Adoption-mode: orchestrator-level test for rule (a0) via subprocess git path (imp-1)
+### ✅ Adoption-mode: orchestrator-level test for rule (a0) via subprocess git path (imp-1) — DONE
 
-**Status**: parked. **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+**Status**: ✅ DONE (verified 2026-06-09, backlog audit). **Source**: Tier-1 review on `analyze_target` impl commit (PR #17).
+
+**What closed it**: `tests/test_adopt_engine.py::test_report_does_not_leak_gitignore_pattern_via_rule_a0` does a real `_git_init(tmp_path)` + `.gitignore` write, calls `analyze_target(...)` end-to-end, and asserts the rule-(a0) `manual review needed` SKIP via the full subprocess path (and that the gitignore pattern is not leaked) — closing the orchestrator-path gap described below.
 
 **Why parked**: `TestRecommendPolicyRules.test_rule_a0_...` exercises rule
 (a0) at the unit layer (feeds `ignored_by_git=".gitignore:..."` directly
@@ -1170,7 +1176,13 @@ iter-1 version while the repo had iter-6).
 
 ### Investigate Codex GitHub bot's ready-state auto-fire reliability (imp-1)
 
-**Status**: parked.
+**Status**: parked (investigation) — **workaround shipped** (`docs/usage.md`). **Updated 2026-06-09 (backlog audit).**
+
+**New data point (2026-06-09)**: Codex again did NOT auto-fire on PR #38's
+ready-state; the explicit `@codex review` nudge worked. With PR #9 / #10 + #38,
+the "third consecutive non-fire" trigger is effectively met — the investigation
+(GitHub-app webhook config + Codex bot release notes) is now actionable, not
+just deferred.
 
 **Why parked**: empirically, Codex Tier-2 review didn't auto-fire on
 `gh pr ready` transition during Plan PR #9 + Impl PR #10. Both required
