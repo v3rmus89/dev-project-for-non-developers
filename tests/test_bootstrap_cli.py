@@ -378,6 +378,75 @@ def test_restore_returns_nonzero_when_path_safety_rejects(tmp_path, monkeypatch)
     _ = base64  # keep import alive in case base64 referenced from sibling tests
 
 
+@pytest.mark.parametrize("mode", ["claude", "both-docs"])
+def test_github_review_rejected_in_restore_mode(tmp_path, mode):
+    """--github-review with a non-default value must be rejected in restore mode.
+    Closes the PR #1 BACKLOG item: default=None makes the explicit flag detectable."""
+    manifest_p = tmp_path / "manifest.json"
+    manifest_p.write_text("{}")  # invalid manifest content, but flag check fires first
+    rc, _out, err = run_cli(["--restore", str(manifest_p), "--github-review", mode])
+    assert rc == 2, f"expected rc=2 for --github-review={mode}, got {rc}"
+    assert "--github-review" in err
+    assert "not valid in restore mode" in err
+
+
+def test_restore_missing_manifest_friendly_error(tmp_path):
+    """A non-existent manifest path gives a one-line error, not a raw traceback."""
+    missing = tmp_path / "nonexistent.json"
+    rc, _out, err = run_cli(["--restore", str(missing)])
+    assert rc == 1
+    assert "cannot read manifest" in err
+    assert "Traceback" not in err
+
+
+def test_restore_malformed_manifest_friendly_error(tmp_path):
+    """A malformed-JSON manifest gives a one-line error, not a raw traceback."""
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not valid json}")
+    rc, _out, err = run_cli(["--restore", str(bad)])
+    assert rc == 1
+    assert "cannot read manifest" in err
+    assert "Traceback" not in err
+
+
+def test_apply_failure_shows_traceback_with_env_var(tmp_path, monkeypatch):
+    """DEV_PROJECT_SETUP_TRACEBACK=1 causes a full traceback on apply failure."""
+    from bootstrap_lib import manifest as manifest_module
+
+    def boom(_m):
+        raise RuntimeError("simulated manifest write failure")
+
+    monkeypatch.setattr(manifest_module, "write_manifest", boom)
+    monkeypatch.setenv("DEV_PROJECT_SETUP_TRACEBACK", "1")
+
+    target = tmp_path / "proj"
+    rc, _out, err = run_cli(
+        ["--apply", "--language", "python", "--project-name", "x", "--out", str(target)]
+    )
+    assert rc == 1
+    assert "apply failed before manifest write" in err
+    assert "Traceback" in err
+
+
+def test_apply_failure_no_traceback_without_env_var(tmp_path, monkeypatch):
+    """Without DEV_PROJECT_SETUP_TRACEBACK, apply failures show no traceback."""
+    from bootstrap_lib import manifest as manifest_module
+
+    def boom(_m):
+        raise RuntimeError("simulated manifest write failure")
+
+    monkeypatch.setattr(manifest_module, "write_manifest", boom)
+    monkeypatch.delenv("DEV_PROJECT_SETUP_TRACEBACK", raising=False)
+
+    target = tmp_path / "proj"
+    rc, _out, err = run_cli(
+        ["--apply", "--language", "python", "--project-name", "x", "--out", str(target)]
+    )
+    assert rc == 1
+    assert "apply failed before manifest write" in err
+    assert "Traceback" not in err
+
+
 def test_apply_prints_oauth_token_hint_for_opt_in_modes(tmp_path):
     """When --github-review is claude or both-docs, the next-steps printout
     must surface the CLAUDE_CODE_OAUTH_TOKEN secret-setup step. Without

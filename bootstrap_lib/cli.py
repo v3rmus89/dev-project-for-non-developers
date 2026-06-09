@@ -1,10 +1,12 @@
 import argparse
 import difflib
+import json
 import os
 import shlex
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from bootstrap_lib import detect, io, manifest, paths, render
@@ -64,8 +66,9 @@ def _resolve_mode(args):
             bad.append("--auto-accept-recommendations")
         if args.non_interactive:
             bad.append("--non-interactive")
-        # --github-review has a default of 'none'; only flag it if user passed
-        # a non-default — but we can't tell from args alone. Skip.
+        # default=None so we can detect an explicit user-supplied value.
+        if args.github_review is not None:
+            bad.append("--github-review")
         if bad:
             raise CLIError(
                 2,
@@ -89,7 +92,7 @@ def _resolve_mode(args):
             "invalid project name: must match ^[a-z][a-z0-9-]*$ — e.g. 'my-project', 'foo123'",
         )
 
-    if args.github_review != "none" and (not args.github_owner or not args.github_repo):
+    if args.github_review not in (None, "none") and (not args.github_owner or not args.github_repo):
         raise CLIError(
             2,
             f"--github-review={args.github_review} requires --github-owner and --github-repo "
@@ -167,7 +170,7 @@ def _build_context(args, package_manager=None):
         "enable_smoke": bool(args.enable_smoke),
         "github_owner": args.github_owner or "",
         "github_repo": args.github_repo or "",
-        "github_review_mode": args.github_review,
+        "github_review_mode": args.github_review or "none",
     }
 
 
@@ -503,7 +506,7 @@ def _prepare_apply(target_root, planned_files, args):
     entries, created_directories = manifest.plan_entries(root, planned_files)
     m = manifest.Manifest(
         target_root=str(root.resolve()),
-        github_review_mode=args.github_review,
+        github_review_mode=args.github_review or "none",
         entries=entries,
         created_directories=created_directories,
     )
@@ -704,7 +707,7 @@ def _main_apply_adopt(args, target_root, planned_files):
         # anything when restored from a different cwd (no files removed,
         # exit 0, user thinks rollback worked).
         target_root=str(Path(target_root).resolve()),
-        github_review_mode=args.github_review,
+        github_review_mode=args.github_review or "none",
         entries=entries,
         created_directories=created_dirs,
         format_version=manifest.MANIFEST_FORMAT_V2,
@@ -805,7 +808,11 @@ def main(argv):
         return e.exit_code
 
     if mode == "restore":
-        m = manifest.load_manifest(args.restore)
+        try:
+            m = manifest.load_manifest(args.restore)
+        except (OSError, json.JSONDecodeError, KeyError) as e:
+            sys.stderr.write(f"cannot read manifest {args.restore}: {e}\n")
+            return 1
         # Codex iter-22 P2: surface the rejected count as a non-zero exit so
         # scripted rollback flows don't silently report success when the
         # manifest contained a path-safety violation and no work was done.
@@ -866,12 +873,16 @@ def main(argv):
         root, entries, manifest_p = _prepare_apply(target_root, planned_files, args)
     except Exception as e:
         sys.stderr.write(f"apply failed before manifest write: {e}\n")
+        if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
+            traceback.print_exc()
         return 1
 
     try:
         _apply_writes(root, planned_files, entries)
     except Exception as e:
         sys.stderr.write(f"apply failed mid-write: {e}\n")
+        if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
+            traceback.print_exc()
         sys.stderr.write(
             "target tree may be in a partial state. To roll back the writes\n"
             "that did complete, run the restore command below.\n"
@@ -887,7 +898,7 @@ def main(argv):
         print("next steps:")
         print(f"  cd {target_root} && make install")
         print("  make install-hooks  # registers git hooks, requires .git/")
-    if args.github_review != "none":
+    if args.github_review not in (None, "none"):
         # gh-repo-create hint. Two detection states: (a) the target is not in
         # a git work tree → it needs `git init` first; (b) it IS in one but
         # has no remote → only remote creation is needed.
