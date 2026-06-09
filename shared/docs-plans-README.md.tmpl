@@ -61,7 +61,9 @@ Two distinct PR types:
    make review-plan-consistency-by-claude PLAN_FILE=docs/plans/YYYY-MM-DD-<slug>.md ITERATION=1.5
    ```
    Fix any contradictions it reports before the next cross-review pass —
-   cheaper than letting the next reviewer find them.
+   cheaper than letting the next reviewer find them. Cap this self-check at
+   ~2 passes per iteration — if a pass surfaces only cosmetic or self-inflicted
+   nits, stop (see "Stopping the loop").
 3. **MANDATORY HUMAN-APPROVAL GATE** — after the loop converges and BEFORE
    any `git add` or `git commit`:
    - Post a final-plan summary in chat (Scope + key decisions + anything
@@ -152,6 +154,8 @@ Suggested iteration counts:
 **Do not iterate as a ritual.** Stop the moment the rule is met.
 
 **Same-class regeneration is not convergence.** If importance-3 findings keep regenerating past ~iter 5 but cluster in one executable artifact (a deploy runbook, CLI/API signatures), stop folding and switch to execution-based verification (extract the script; `shellcheck` / `--dry-run` / `--help`) or escalate to the human-approval gate. See `CONTRIBUTING.md` ("Second trigger — same-class regeneration").
+
+**Cap the consistency self-check at ~2 passes.** The `N.5` self-check (`make review-plan-consistency-by-claude`) catches contradictions a fold introduced — not cosmetic wording drift. If a pass surfaces only self-inflicted nits (each fold spawning the next), stop; that is the same-class-regeneration trigger applied to the self-check. See `CONTRIBUTING.md` ("Cap the consistency self-check").
 
 **Executable runbooks stay out of the plan body.** Describe deploy/rollback at intent fidelity (sequence, scope, ordering, failure modes to verify); line-level scripts live in `scripts/…` and are verified by execution + Tier-1 review, not the plan loop. See `CONTRIBUTING.md` ("Keep executable runbooks out of the plan").
 

@@ -520,3 +520,51 @@ def test_circuit_breaker_in_docs_plans_readme():
     assert "Same-class regeneration is not convergence" in readme, (
         "docs/plans/README.md must carry the circuit-breaker stop signal under 'Stopping the loop'"
     )
+
+
+def test_cap_consistency_self_check_in_contributing():
+    """Cap-consistency rule (sibling of C3, scoped to the N.5 self-check): both
+    dogfood CONTRIBUTING.md and the rendered template must carry the rule that
+    caps the consistency self-check (`make review-plan-consistency-by-claude`) at
+    ~2 passes — when a pass surfaces only cosmetic / self-inflicted nits (each fold
+    spawning the next), that is same-class regeneration applied to the self-check,
+    not convergence. Distinct from C3's *second trigger*, which is an executable
+    *artifact*-class mismatch in the cross-review loop. The dogfood carries a
+    repo-specific example (the guardrails plan's own 5-pass run) that the .tmpl
+    strips, so this guards only the shared rule text."""
+    from bootstrap_lib import render
+
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    env = render.build_env("python")
+    rendered = env.get_template("CONTRIBUTING.md.tmpl").render(
+        project_name="fixture",
+        language="python",
+        python_version="3.12",
+        enable_smoke=False,
+        github_owner="owner",
+        github_repo="repo",
+        github_review_mode="claude",
+    )
+
+    for surface_name, text in [("dogfood", dogfood), ("rendered", rendered)]:
+        assert "Cap the consistency self-check" in text, (
+            f"{surface_name} CONTRIBUTING.md must carry the consistency-self-check cap rule"
+        )
+        # The crux distinguishing it from C3's artifact-class second trigger: this
+        # fires on cosmetic / self-inflicted churn in the self-check, where each
+        # fold spawns the next nit rather than resolving a real contradiction.
+        assert "self-inflicted" in text, (
+            f"{surface_name} CONTRIBUTING.md cap rule must name the self-inflicted-churn signal"
+        )
+
+
+def test_cap_consistency_self_check_in_docs_plans_readme():
+    """docs/plans/README.md "Stopping the loop" carries the consistency-self-check
+    cap stop signal. Byte-equality to the .tmpl is enforced by
+    test_selftest_overlap.test_overlap_docs_plans_readme; this presence guard
+    catches a delete-on-both-sides that byte-identity alone would pass."""
+    readme = (SKILL_ROOT / "docs/plans/README.md").read_text()
+    assert "Cap the consistency self-check at ~2 passes" in readme, (
+        "docs/plans/README.md must carry the consistency-self-check cap stop signal "
+        "under 'Stopping the loop'"
+    )
