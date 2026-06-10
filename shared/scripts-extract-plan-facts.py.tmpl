@@ -78,13 +78,32 @@ def _heading_text(line: str) -> str:
 
 
 def extract_active_text(plan_text: str) -> str:
-    """Strip lines that belong to historical (excluded) sections."""
+    """Strip lines that belong to historical (excluded) sections.
+
+    Fenced code blocks (``` or ~~~) are opaque to heading detection: a
+    Markdown heading shown *inside* a fence (e.g. an example
+    ``## Evidence table``) is literal content, not a section boundary, and
+    must not flip the extractor into historical-exclusion mode and silently
+    drop the active facts that follow the fence.  The fence lines themselves
+    stay in the active text — only their role as section headings is
+    suppressed (mirrors parse_fact_roots's fence handling).
+    """
     lines = plan_text.splitlines()
     active: list[str] = []
     excluded_depth: int | None = None
+    in_fence = False
 
     for line in lines:
-        lvl = _heading_level(line)
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            if excluded_depth is None:
+                active.append(line)
+            continue
+
+        # Inside a fence, a "## ..." line is literal example content, not a
+        # real section boundary — leave excluded_depth untouched.
+        lvl = None if in_fence else _heading_level(line)
         if lvl is not None:
             # Exiting an excluded section when we see a heading at the same
             # or shallower (lower number) depth.
@@ -98,9 +117,8 @@ def extract_active_text(plan_text: str) -> str:
             )
             if is_excluded:
                 excluded_depth = lvl
-                # Include the heading line itself as a boundary marker but
-                # don't include the body — actually, we skip it entirely so
-                # the heading text can't accidentally be extracted as a fact.
+                # Skip the heading line entirely so its text can't be
+                # extracted as a fact.
                 continue
 
         if excluded_depth is None:

@@ -63,6 +63,52 @@ def test_active_bad_plan_findings():
     )
 
 
+def test_fenced_heading_does_not_exclude_following_facts(tmp_path):
+    """Regression (Tier-1, C4 Bucket A): a Markdown heading shown INSIDE a
+    fenced code block (e.g. an example ``## Evidence table``) must NOT flip
+    extract_active_text into historical-exclusion mode and silently drop the
+    active facts that follow the fence — which would make the fact-check report
+    falsely clean by under-scanning active plan text."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Critical files\n\n"
+        "Before the fence: `bootstrap_lib/cli.py`.\n\n"
+        "## Notes\n\n"
+        "```\n"
+        "## Evidence table\n"
+        "| iter | finding |\n"
+        "```\n\n"
+        "After the fence: `bootstrap_lib/render.py`.\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "bootstrap_lib/render.py" in raws, (
+        f"active fact after a fenced ## heading was dropped (the fenced heading "
+        f"was mistaken for a real section boundary): {raws}"
+    )
+    assert "bootstrap_lib/cli.py" in raws
+
+
+def test_real_excluded_heading_still_excludes(tmp_path):
+    """Companion to the fenced-heading regression: a REAL (unfenced)
+    ``## Evidence table`` heading must still mark its section historical, so a
+    fact under it is excluded. Locks in the distinction the fence fix relies on
+    — the fix must not over-correct into ignoring real excluded headings."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Critical files\n\n"
+        "Active: `bootstrap_lib/cli.py`.\n\n"
+        "## Evidence table\n\n"
+        "Historical: `bootstrap_lib/should_be_excluded.py`.\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "bootstrap_lib/cli.py" in raws
+    assert "bootstrap_lib/should_be_excluded.py" not in raws, (
+        f"a real ## Evidence table heading must still exclude its section: {raws}"
+    )
+
+
 def test_absolute_path_outside_roots_is_unsupported_external():
     """Codex Tier-2 P2 regression: absolute paths outside declared fact roots
     must land in unsupported_external, NOT verified (POSIX `root / abs` drops root)."""
