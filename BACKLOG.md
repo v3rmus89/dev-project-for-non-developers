@@ -70,6 +70,91 @@ still useful.
 
 ---
 
+## Follow-ups from C4 (call-details plan-review catch-up)
+
+C4 re-synced `call-details`' whole plan-review subsystem with the skill (the
+loop-status numeric-ordering fix shipped in skill PR #43). Three follow-ups were
+parked during it — two surfaced by call-details' Tier-1, one carried over from
+skill PR #42.
+
+### CommonMark-correct fence tracker shared by the fact extractor + fact-roots parser (`fact-check-nested-fence-tracker`)
+
+**Status**: parked (skill PR #42 Codex P2) — `extract_active_text` AND
+`parse_fact_roots` in `scripts/extract-plan-facts.py` each track fenced code
+blocks with a naive backtick/tilde `in_fence` toggle. A nested or
+variable-length fence (a four-backtick outer block containing a three-backtick
+inner block, or a tilde fence wrapping a backtick fence) mis-toggles `in_fence`:
+the inner closing fence reads as a re-open, so active facts after it can be
+dropped and a fact-roots block can be mis-classified. PR #42 fixed the common
+case (a single fenced `##` heading); the nested / variable-length case is the
+deeper gap.
+
+**Trigger to pick up**:
+- A plan that uses nested or tilde fences silently drops active facts or
+  mis-parses its `## Fact roots` block.
+
+**Starting requirements**:
+- One CommonMark-correct fence tracker shared by both functions: on an opening
+  fence, store the marker char (backtick vs tilde) AND its run length; only
+  close on a same-marker fence whose length is >= the opener's. Replace both
+  naive toggles with it.
+- Tests: four-backtick-outer / three-backtick-inner; tilde-outer / backtick-inner;
+  a fact after a nested fence still extracted; a fact-roots block after a nested
+  fence still parsed.
+
+**Rough effort**: ~half a day.
+
+---
+
+### Surface a malformed LATEST review in `loop-status` (`loop-status-malformed-latest`)
+
+**Status**: parked (C4 Bucket B+C Tier-1) — `_load_iters` skips
+malformed / footer-missing review files, so if the *latest* review for a plan is
+malformed (the reviewer didn't emit a valid JSON verdict fence), `make
+loop-status` reports `no-iters` and exits 0 rather than surfacing it. This is by
+design — loop-status is advisory (exit 0 for all non-error states, D-5) — but it
+can mildly mislead a driver who just ran an iteration and sees "no-iters".
+
+**Trigger to pick up**:
+- A reviewer flakes on the JSON fence and `loop-status` silently says no-iters
+  when the driver just ran an iter, often enough to want a distinct signal.
+
+**Starting requirements**:
+- Thread the plan stem (or plan file) into `loop-status.py` so a malformed file
+  *for this plan* is distinguishable from unrelated `/tmp` noise even without a
+  parseable `key`; emit a `malformed-latest` status (non-zero, or a clear notice).
+- Rename / clarify `test_v16_exit_1_on_malformed` (it asserts rc==0 by design).
+- Apply in `scripts/loop-status.py` + `shared/scripts-loop-status.py.tmpl` + the
+  Makefile `loop-status` target + tests, then re-sync downstream.
+
+**Rough effort**: ~half a day.
+
+---
+
+### Exact single-token allowlist for the `review` dispatcher (`review-dispatcher-exact-allowlist`)
+
+**Status**: parked (C4 Bucket E Tier-1) — the `review` dispatcher's `$(filter)`
+allowlist accepts a *mixed* multi-token value: `MODE='commit junk'` filters to
+`commit` and dispatches instead of resolving to NEEDS-ASK. Shell safety (the
+primary goal) holds — the recipe's `case` only ever sees a clean allowlisted
+token — and real callers pass fixed single-token literals (`/dev-review`,
+`AGENTS.md`, a human), so this is a strictness nit, not a hole.
+
+**Trigger to pick up**:
+- A caller passes a multi-token MODE/ACTOR and the dispatcher silently runs
+  instead of asking.
+
+**Starting requirements**:
+- Require an exact single-token match, e.g.
+  `_REVIEW_MODE = $(and $(filter 1,$(words $(MODE))),$(filter plan commit,$(MODE)))`
+  (exactly one word AND in the allowlist); same for `_REVIEW_ACTOR`.
+- Regression cases: `MODE='commit junk'`, `ACTOR='codex junk'`, both mixed → NEEDS-ASK.
+- Apply in the skill `Makefile` + `shared/Makefile.review.tmpl` + downstream.
+
+**Rough effort**: ~1 hour.
+
+---
+
 ## Follow-ups from skill-pr10 (harvest plan-tango B/C/D/E)
 
 ### Skill wrapper in plan mode (`skill-wrapper-pr-followup`)
