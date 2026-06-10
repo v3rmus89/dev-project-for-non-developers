@@ -61,7 +61,7 @@ early), not a number.
 
 | Item | Why out |
 |------|---------|
-| The `/dev-review` Claude slash-command (the skill repo's tracked `.claude/commands/dev-review.md`) | It is a **Claude Code** feature with no `codex` equivalent (`.claude/commands/*` is only read by Claude Code); `call-details` is Codex-oriented and reaches the dispatcher via `make review` directly. **Verification (Bucket F):** call-details docs must not reference a `/dev-review` command that does not exist there — they currently do not, and Bucket F must not introduce one when adapting the skill's `CLAUDE.md`. |
+| The `/dev-review` Claude slash-command (the skill repo's tracked `.claude/commands/dev-review.md`) | It is a **Claude Code** feature with no `codex` equivalent (`.claude/commands/*` is only read by Claude Code); `call-details` is Codex-oriented and reaches the dispatcher via `make review` directly. **Verification (Bucket F):** the **adapted reviewer surfaces** (`CLAUDE.md`/`AGENTS.md`/`CONTRIBUTING.md`/`docs/plans/README.md`) must not reference a `/dev-review` command that does not exist there — they currently do not, and Bucket F must not introduce one when adapting the skill's `CLAUDE.md`. This frozen plan copy names `/dev-review` only to mark it out-of-scope, so the check excludes the plan file itself (see Verification). |
 | Porting C4 into the `Telegram bot` repo | Separate, larger reconciliation (that repo is Codex-only, no `LESSONS.md`, triage nested differently) — its own follow-up; see the session's sequencing decision |
 | `propagate-shared-rules.py` *into* call-details | call-details is a propagation *target*, not a propagator; adding the tool itself is optional and deferred unless call-details needs to re-propagate downstream |
 | Re-rendering call-details' product code / non-review Makefile targets | This is a plan-review-subsystem sync only; product targets (`docker-*`, pipeline, PII) are untouched |
@@ -149,8 +149,10 @@ verifies by execution + Tier-1, not by transcribing into this plan.
   coverage, so this is alignment, not a wholesale rewrite.
 - **`/dev-review` guard (FN3):** when adapting `CLAUDE.md`, do **not** introduce a
   reference to `/dev-review` — it is a Claude-Code-only command with no `codex`
-  equivalent, deliberately not ported (see NOT-in-scope). Verify call-details docs
-  remain free of any `/dev-review` mention.
+  equivalent, deliberately not ported (see NOT-in-scope). Verify the **adapted
+  reviewer surfaces** (`CLAUDE.md`/`AGENTS.md`/`CONTRIBUTING.md`/`docs/plans/README.md`)
+  remain free of any `/dev-review` mention — the check excludes this frozen plan
+  copy, which names it only as the not-ported example (see Verification).
 - **Preserve, do not touch:** `## Hard rules — PII`, `## Gotchas`, and
   call-details' Codex-first review phrasing. This is the highest-judgment bucket;
   it is reviewed as prose, by a human, before commit.
@@ -280,8 +282,12 @@ verifies by execution + Tier-1, not by transcribing into this plan.
 - **Source preflight (FN4):** impl start verifies the skill checkout is at
   `SOURCE_SYNC_BASE` (`18a64be`); a mismatch forces a re-run of iter-0.5 + source diff.
 - **Reviewer surfaces (FN2/FN3):** call-details' `AGENTS.md` carries current
-  dispatcher + calibration guidance; `grep -r dev-review` over call-details docs
-  returns nothing (no dangling reference to an unported command).
+  dispatcher + calibration guidance; a `dev-review` grep over the **adapted
+  reviewer surfaces** (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`,
+  `docs/plans/README.md`) returns nothing (no dangling reference to an unported
+  command) — **excluding this frozen plan copy**, which intentionally names
+  `/dev-review` as the deliberately-not-ported command. A bare
+  `grep -r dev-review docs/` would match the frozen copy itself and false-fail.
 - **Rollback proof:** `git revert` of the catch-up commit range restores
   call-details to `CODE_ROLLBACK_BASE` with a still-green `make check`.
 
@@ -328,6 +334,7 @@ at impl start.
 | 1.5 | C-1 — `$(KEY)` assigned to Bucket B but needed earlier by Bucket A | 2 | (a) fold | `$(KEY)` reassigned to Bucket A (Scope items 1+2, Bucket A/B bodies); B reuses it. A lands at rollout step 3, before B at step 4. |
 | 1.5 | C-2 — `test_loop_status.py` + `test_review_plan_fact_check.py` double-owned (feature bucket AND Bucket G) | 2 | (a) fold | Convention set: feature tests land with their bucket (A/B); Bucket G owns the rewrite-boundary rule + cross-cutting tests (`test_makefile_review_targets.py`, `test_review_loop_artifacts.py`) + final green-gate. Scope item 7 + Bucket G reframed. |
 | gate | #3 — triage-heading rename (was "optional, do not assume") | n/a | (a) fold (human gate) | User approved baking it in (2026-06-10). Bucket F's "Optional durable improvement" → **DECIDED yes**: rename call-details' triage heading to the managed `## Triaging review findings`. Bucket D cross-ref added. |
+| Tier-2 | Codex (GitHub) — `grep -r dev-review` false-fails on the frozen plan copy | 3 | (a) fold | Premise verified: this plan file contains `/dev-review` at 9 lines; once frozen into call-details' `docs/plans/`, a bare repo-wide grep matches it, so Bucket F's check would false-fail even when the adapted surfaces are clean. Scoped the `dev-review` check to the **adapted reviewer surfaces** (excluding the frozen copy) at NOT-in-scope (L64), the Bucket F guard, and Verification. claude[bot] imp-1 (user-specific fact-root paths) **(c) rejected** — absolute roots are load-bearing for the fact-check pre-pass (decision 3). |
 
 ## Implementation log (this PR)
 
