@@ -478,3 +478,25 @@ def test_v16_5_wrong_key_file_is_ignored(tmp_path):
     assert iters[0]["verdict"] == "needs-iter"
     status, _ = classify(iters)
     assert status == "needs-iter"
+
+
+# ── numeric iteration ordering ───────────────────────────────────────────────
+
+
+def test_v16_numeric_iteration_order(tmp_path):
+    """Regression (Tier-1, C4 B+C): iter files load in NUMERIC order, so iter-9 <
+    iter-10 < iter-11. A lexical filename sort orders iter-10/iter-11 BEFORE iter-2
+    and makes iter-9 the 'last' footer in a double-digit loop — exactly the
+    long-loop case loop-status exists to guard."""
+    key = "numordr000000"
+    # Use the imp-3 count as a per-iter marker so the load order is observable.
+    for n in (9, 10, 11):
+        _write_review(
+            tmp_path,
+            f"plan-review-p-by-codex-iter-{n}.md",
+            _footer("needs-iter", {"3": n}, key=key),
+        )
+    iters = _load_iters(key, tmp_path)
+    order = [it["severity_counts"]["3"] for it in iters]
+    assert order == [9, 10, 11], f"iters must load in numeric order, got {order}"
+    assert iters[-1]["severity_counts"]["3"] == 11, "last footer must be iter-11, not iter-9"
