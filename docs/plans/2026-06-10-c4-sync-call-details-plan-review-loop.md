@@ -123,8 +123,9 @@ verifies by execution + Tier-1, not by transcribing into this plan.
   ("Stopping the loop") — the matching short-form stop signals.
 - **Mechanism:** mechanical section-swap where a `## `-heading already matches;
   hand-aligned where call-details' heading text differs (its triage section is
-  `## Triaging review findings (full discipline)`; the plateau base rule already
-  exists at `CONTRIBUTING.md:201` for C3 to extend).
+  `## Triaging review findings (full discipline)` — **Bucket F renames this to the
+  managed `## Triaging review findings`**; the plateau base rule already exists at
+  `CONTRIBUTING.md:201` for C3 to extend).
 - **Verified at impl:** the four rule strings are present; `make check` green.
 
 ### Bucket E — `review` dispatcher
@@ -153,10 +154,13 @@ verifies by execution + Tier-1, not by transcribing into this plan.
 - **Preserve, do not touch:** `## Hard rules — PII`, `## Gotchas`, and
   call-details' Codex-first review phrasing. This is the highest-judgment bucket;
   it is reviewed as prose, by a human, before commit.
-- **Optional durable improvement:** rename call-details' triage heading to the
-  skill's managed `## Triaging review findings` (or pass the exact `--section`)
-  so *future* propagation is mechanical. Flag for the human-approval gate; do not
-  assume.
+- **Heading rename (DECIDED — approval gate 2026-06-10, user: yes):** rename
+  call-details' `CONTRIBUTING.md` triage heading `## Triaging review findings
+  (full discipline)` → the skill's managed `## Triaging review findings`, so the
+  triage section becomes mechanically propagatable via `propagate-shared-rules.py`'s
+  default `--section` in future syncs (no per-call override). Tier-1 confirms any
+  call-details cross-references to the old heading text are updated in the same
+  commit.
 
 ### Bucket G — Test parity + green-check verification
 
@@ -323,6 +327,7 @@ at impl start.
 | 1 | FN5 — test-port rewrite boundary underspecified | 2 | (a) fold | Premise verified (`test_makefile_review_targets.py` uses `bootstrap.py`/`SKILL_ROOT`; `test_review_plan_fact_check.py` too; `test_loop_status.py` clean). Scope item 7 + Bucket G now give a per-test call-details-local rewrite boundary + hard rule. |
 | 1.5 | C-1 — `$(KEY)` assigned to Bucket B but needed earlier by Bucket A | 2 | (a) fold | `$(KEY)` reassigned to Bucket A (Scope items 1+2, Bucket A/B bodies); B reuses it. A lands at rollout step 3, before B at step 4. |
 | 1.5 | C-2 — `test_loop_status.py` + `test_review_plan_fact_check.py` double-owned (feature bucket AND Bucket G) | 2 | (a) fold | Convention set: feature tests land with their bucket (A/B); Bucket G owns the rewrite-boundary rule + cross-cutting tests (`test_makefile_review_targets.py`, `test_review_loop_artifacts.py`) + final green-gate. Scope item 7 + Bucket G reframed. |
+| gate | #3 — triage-heading rename (was "optional, do not assume") | n/a | (a) fold (human gate) | User approved baking it in (2026-06-10). Bucket F's "Optional durable improvement" → **DECIDED yes**: rename call-details' triage heading to the managed `## Triaging review findings`. Bucket D cross-ref added. |
 
 ## Implementation log (this PR)
 
