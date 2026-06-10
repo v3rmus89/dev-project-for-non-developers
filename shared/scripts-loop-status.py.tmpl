@@ -46,15 +46,28 @@ def _parse_footer(text: str) -> dict:
     return parsed
 
 
+def _iter_sort_key(path: Path) -> tuple[int, str]:
+    """Order plan-review files by numeric iteration, then filename.
+
+    Filenames are plan-review-<stem>-by-<actor>-iter-<N>.md.  A plain lexical
+    sort puts iter-10/iter-11 before iter-2, so the "last" footer could be
+    iter-9 once a loop reaches double-digit iterations — exactly the long-loop
+    case loop-status exists to guard.  Parse N and sort on it; fall back to -1
+    for any name that does not match (it sorts first, never masking a real iter).
+    """
+    m = re.search(r"-iter-(\d+)\.md$", path.name)
+    return (int(m.group(1)) if m else -1, path.name)
+
+
 def _load_iters(key: str, review_dir: Path) -> list[dict]:
     """Load plan-review iter files filtered by KEY.
 
     Globs plan-review-*-by-*-iter-*.md in review_dir.  Skips files
     whose footer is missing, malformed, or whose key field does not
-    match *key*.  Returns footers in filename-sort order.
+    match *key*.  Returns footers in numeric-iteration order.
     """
     pattern = "plan-review-*-by-*-iter-*.md"
-    files = sorted(review_dir.glob(pattern))
+    files = sorted(review_dir.glob(pattern), key=_iter_sort_key)
     iters = []
     for path in files:
         try:
