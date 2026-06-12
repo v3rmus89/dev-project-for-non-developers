@@ -39,26 +39,32 @@ for another reason.
 
 ### Forward-pin the drifted machinery test files to call-details (`call-details-machinery-test-parity`)
 
-**Status**: parked (claude[bot] Tier-2 on PR #50). The C4 forward-pin synced the machinery
-*code* (scripts + Makefile lines); PR #50 caught up only `tests/test_loop_status.py`. Still
-pre-PR-#45 in call-details:
-- `tests/test_review_plan_fact_check.py` — lacks the `_FenceTracker` nested / variable-length
-  / tilde-fence cases the skill added in PR #45 (the `extract-plan-facts.py` code IS synced,
-  so those paths are presently covered only indirectly downstream).
-- `tests/test_review_loop_artifacts.py` is **repo-adapted, NOT byte-identical** — the skill's
-  version drives a fixture through the skill's `bootstrap.py` (absent in call-details), so it
-  is deliberately excluded from the sync. Not all machinery test files are byte-identical.
+**Status**: parked (claude[bot] Tier-2 imp-2 on PR #50). The C4 forward-pin synced the
+machinery *code* (scripts + Makefile lines) but not its tests, so call-details' suite does not
+exercise the new `malformed-latest` / key-filter / `_FenceTracker` paths. Still pre-PR-#45 in
+call-details: `tests/test_loop_status.py` and `tests/test_review_plan_fact_check.py`.
+
+**Why not a trivial byte-identical sync (the real blocker)**: the skill and call-details have
+divergent ruff policies — the skill sets `ignore = ["E501"]` ("let ruff format handle line
+length"), so its shared test files carry long fixture lines (e.g. 122-col `json.dumps` footer
+literals in `test_loop_status.py`), while call-details **enforces** E501 at line-length 100. A
+byte-identical `cp` therefore fails call-details' `make check` lint — tried in PR #50, reverted
+in `a9fa16b`. Closing this cleanly needs one of: (a) wrap the skill's shared test fixtures to
+≤100 cols so they sync byte-identical to the stricter downstream, or (b) reconcile the ruff
+configs (e.g. call-details ignores E501 under `tests/**`). Separately, `tests/test_review_loop_artifacts.py`
+is **repo-adapted, NOT byte-identical** anyway — the skill's version drives a fixture through
+the skill's `bootstrap.py` (absent in call-details) — so not every machinery test file can be
+byte-identical.
 
 Also: the skill itself has **no direct `_FenceTracker` unit test** (only indirect coverage via
-`extract_active_text` / `parse_fact_roots`). Adding one in the skill first (then forward-pinning)
-would lock in the documented nested/tilde edge cases cheaply — claude[bot] called it polish.
+`extract_active_text` / `parse_fact_roots`). Adding one only downstream would create drift — add
+it in the skill first if at all (claude[bot] called it polish).
 
-**Trigger to pick up**: the next call-details machinery sync, or a fact-check fence regression
-slips through downstream.
+**Trigger to pick up**: the next call-details machinery sync, or a fence / malformed-latest
+regression slips through downstream.
 
-**Rough effort**: ~1-2 hours (verify the skill's `test_review_plan_fact_check.py` is
-machinery-generic, sync it, run call-details' suite; optionally add a direct `_FenceTracker`
-test to the skill first).
+**Rough effort**: ~half a day (option (a): wrap skill test fixtures ≤100 cols + verify both
+repos green + sync; or option (b): ruff-config reconciliation + sync).
 
 ---
 
