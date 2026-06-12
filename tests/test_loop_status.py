@@ -9,7 +9,7 @@ V-10:   oscillating                     → fingerprint reappears at iter N vs N
 V-11:   stuck                           → fingerprints identical at N-1 and N
 V-12:   regressed                       → imp-3 count grew between iters
 V-16:   exit codes                      → 0 on converged/converged-with-polish/
-                                          needs-iter; 1 on malformed only
+                                          needs-iter/no-iters; 1 on malformed[-latest]
 V-16.5: key filtering                   → wrong-key file is ignored
 """
 
@@ -29,6 +29,7 @@ _spec.loader.exec_module(_mod)
 _parse_footer = _mod._parse_footer
 classify = _mod.classify
 _load_iters = _mod._load_iters
+_latest_file_for_stem = _mod._latest_file_for_stem
 main = _mod.main
 
 
@@ -397,37 +398,64 @@ def test_v16_exit_0_on_needs_iter(tmp_path):
     assert rc == 0
 
 
-def test_v16_exit_1_on_malformed(tmp_path):
-    """V-16: malformed last iter → main returns 1."""
-    key = "exitcode1mal"
-    bad_path = tmp_path / "plan-review-test-by-codex-iter-1.md"
-    # First write a good iter so _load_iters returns something
-    _write_review(
-        tmp_path,
-        "plan-review-test-by-codex-iter-1.md",
-        _footer("needs-iter", {"3": 1}, key=key),
-    )
-    # Overwrite with malformed content
-    bad_path.write_text("Prose only, no footer fence.\n")
-    # _load_iters skips footer-missing files, so no iters → no-iters → exit 0.
-    # To get malformed, the footer must be a valid json-verdict structure overall
-    # but invalid in some way. Simplest: only iter has a json fence but invalid JSON.
-    bad_path.write_text("```json\n{bad}\n```\n")
-    # _parse_footer returns {"status": "malformed"} → skipped by _load_iters.
-    # So iters is empty → status=no-iters → exit 0.
-    # The malformed exit-1 path fires when classify() itself returns malformed.
-    # Force this: write a file that _load_iters picks up (key matches + valid outer
-    # shape) but classify detects as malformed.
-    # Actually _load_iters already filters out malformed footers. To reach the
-    # classify("malformed") branch we need classify to receive a footer with
-    # status=malformed in the list. That can't happen via _load_iters.
-    # Test the main() exit-1 path by checking directly via classify():
+def test_v16_malformed_footer_classifies_malformed():
+    """V-16: classify() returns 'malformed' for a malformed last footer. (Direct
+    classify contract test — _load_iters filters malformed footers out, so the
+    reachable malformed exit-1 path in main() is malformed-latest, below.)"""
     status, _rationale = classify([{"status": "malformed"}])
     assert status == "malformed"
-    # And confirm main exits 1 given an args that produce malformed
-    rc = main([key, str(tmp_path)])
-    # no iters loaded (malformed file was filtered) → no-iters → 0
-    assert rc == 0  # no-iters is not an error by design (D-5)
+
+
+def test_v16_no_stem_malformed_latest_is_no_iters_exit_0(tmp_path):
+    """V-16 back-compat (2-arg, no stem): a malformed NEWEST review is dropped by
+    _load_iters, so without a plan stem main() reports no-iters and exits 0 —
+    loop-status stays advisory (D-5: exit 0 for every non-error state)."""
+    key = "mallatest000"
+    (tmp_path / "plan-review-myplan-by-codex-iter-1.md").write_text("```json\n{bad}\n```\n")
+    assert main([key, str(tmp_path)]) == 0  # no stem -> back-compat no-iters
+
+
+def test_v16_malformed_latest_with_stem_exit_1(tmp_path, capsys):
+    """V-16 malformed-latest follow-up: WITH the plan stem, a malformed NEWEST
+    review for THIS plan is surfaced distinctly (status malformed-latest, exit 1,
+    names the file) instead of collapsing to a misleading no-iters. Removing the
+    bad file returns to no-iters / exit 0."""
+    key = "mallatest000"
+    stem = "myplan"
+    bad = tmp_path / f"plan-review-{stem}-by-codex-iter-1.md"
+    bad.write_text("```json\n{bad}\n```\n")
+    rc = main([key, str(tmp_path), stem])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "malformed-latest" in out
+    assert bad.name in out  # names the offending file
+    bad.unlink()
+    assert main([key, str(tmp_path), stem]) == 0  # cleanup -> no-iters -> 0
+
+
+def test_v16_valid_latest_with_stem_unaffected(tmp_path):
+    """The stem arg must not perturb the happy path: a well-formed latest review
+    for the stem still classifies normally (needs-iter, exit 0)."""
+    key = "validlatest0"
+    stem = "myplan"
+    _write_review(
+        tmp_path,
+        f"plan-review-{stem}-by-codex-iter-1.md",
+        _footer("needs-iter", {"3": 1}, key=key),
+    )
+    assert main([key, str(tmp_path), stem]) == 0
+
+
+def test_latest_file_for_stem_picks_highest_iter(tmp_path):
+    """_latest_file_for_stem returns the numerically-highest iter file for the
+    stem (so a malformed iter-10 is not masked by a valid iter-9), or None."""
+    stem = "myplan"
+    for n in (1, 2, 10):
+        (tmp_path / f"plan-review-{stem}-by-codex-iter-{n}.md").write_text("x")
+    latest = _latest_file_for_stem(stem, tmp_path)
+    assert latest is not None
+    assert latest.name == f"plan-review-{stem}-by-codex-iter-10.md"
+    assert _latest_file_for_stem("nosuchstem", tmp_path) is None
 
 
 def test_v16_ignores_consistency_and_commit_files(tmp_path):

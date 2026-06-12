@@ -369,7 +369,7 @@ loop-status:	## Show convergence status of the plan-review loop (PLAN_FILE=docs/
 	@test -n "$(PLAN_FILE)" || \
 	  { echo "Usage: make loop-status PLAN_FILE=docs/plans/<file>.md"; exit 1; }
 	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
-	$(CURDIR)/scripts/loop-status.py "$(KEY)" /tmp
+	$(CURDIR)/scripts/loop-status.py "$(KEY)" /tmp "$(notdir $(basename $(PLAN_FILE)))"
 
 status:	## Synthesize current project state (recovery for new sessions / post-compaction). PLAN_FILE=<path> to override plan-detect; otherwise mtime-sorted with README filtered
 	@echo "── Current branch activity ──"
