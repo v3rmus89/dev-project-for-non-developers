@@ -16,7 +16,7 @@ Exit codes:
        oscillating, stuck, regressed, no-iters)
   1  — malformed: last iter footer is missing or invalid JSON; or
        malformed-latest: with a <plan-stem>, the newest review for this plan
-       is malformed (it would otherwise be skipped and read as no-iters)
+       is malformed even if older iters parsed (else masked as no-iters)
 """
 
 from __future__ import annotations
@@ -183,10 +183,12 @@ def main(argv: list[str] | None = None) -> int:
     status, rationale = classify(iters)
 
     # Surface a malformed LATEST review for THIS plan that _load_iters dropped.
-    # _load_iters skips files whose footer is missing/malformed, so a malformed
-    # newest review collapses to "no-iters".  With the plan stem we can still find
-    # that file by name and report it distinctly instead of a misleading no-iters.
-    if stem and status == "no-iters":
+    # _load_iters skips files whose footer is missing/malformed (no parseable
+    # key), so a malformed newest review is invisible: it collapses to "no-iters"
+    # when it is the only review, OR is masked behind a stale older iter that
+    # still parses.  With the plan stem we find the highest-iter file by name and,
+    # if it is malformed, report it distinctly (exit 1) regardless of older iters.
+    if stem:
         latest = _latest_file_for_stem(stem, review_dir)
         if latest is not None:
             try:

@@ -446,6 +446,26 @@ def test_v16_valid_latest_with_stem_unaffected(tmp_path):
     assert main([key, str(tmp_path), stem]) == 0
 
 
+def test_v16_malformed_latest_masked_by_older_valid_iter(tmp_path, capsys):
+    """Codex P1 (review of PR #45): a malformed NEWEST review (iter-2) must surface
+    as malformed-latest even when an OLDER iter (iter-1) still parses. _load_iters
+    drops the bad iter-2, so classify() would otherwise report iter-1's stale
+    status; the stem check must not be gated on no-iters."""
+    key = "maskediter00"
+    stem = "myplan"
+    _write_review(
+        tmp_path,
+        f"plan-review-{stem}-by-codex-iter-1.md",
+        _footer("converged", {"3": 0, "2": 0, "1": 0}, key=key),
+    )
+    (tmp_path / f"plan-review-{stem}-by-codex-iter-2.md").write_text("```json\n{bad}\n```\n")
+    rc = main([key, str(tmp_path), stem])
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "malformed-latest" in out
+    assert "iter-2" in out  # names the newest (bad) file, not the stale iter-1
+
+
 def test_latest_file_for_stem_picks_highest_iter(tmp_path):
     """_latest_file_for_stem returns the numerically-highest iter file for the
     stem (so a malformed iter-10 is not masked by a valid iter-9), or None."""
