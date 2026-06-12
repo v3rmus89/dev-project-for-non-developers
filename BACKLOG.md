@@ -8,6 +8,60 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from the #46 / #50 Tier-2 review
+
+### `loop-status` malformed-latest: a keyless foreign file at a higher iter still masks a valid latest (`loop-status-malformed-latest-keyless-foreign`)
+
+**Status**: parked (Codex P2 on call-details PR #50). PR #46 closed the *parseable*
+foreign-key direction (`_latest_files_for_stem` now key-filters footers that parse),
+but a foreign review file that is **malformed/keyless** — same plan stem (basename),
+higher iteration, in a shared `/tmp` — is still kept as a candidate (no key to filter
+on), becomes `top_iter`, and makes `main()` report `malformed-latest`/exit 1 even when
+THIS plan's latest *keyed* review is valid. A false positive (the mirror of the false
+negative PR #45 fixed); pre-existing in the malformed-latest feature, only narrowed by #46.
+
+**Why parked**: there is no small fix — a malformed file can't be attributed to a plan by
+content (it doesn't parse), and the filename stem is the only link, which is exactly the
+collision point. The robust fix is to put the review `KEY` in the output **filename/glob**
+(`plan-review-<stem>-<key>-by-<actor>-iter-<N>.md`) so even unparseable files are
+attributable by name — that touches the review-file naming contract across the Makefile
+review targets + `loop-status` glob + `_load_iters` + tests + downstream. Likelihood is the
+same low class as the original (dated plan slugs make cross-repo same-basename collisions
+near-impossible) and the impact is advisory only (a spurious `malformed-latest` notice).
+
+**Trigger to pick up**: two repos sharing `/tmp` actually collide on a plan basename and a
+driver sees a spurious `malformed-latest`, OR the review-file naming convention is changed
+for another reason.
+
+**Rough effort**: ~half a day (naming-convention change + glob/parse updates + tests + re-sync).
+
+---
+
+### Forward-pin the drifted machinery test files to call-details (`call-details-machinery-test-parity`)
+
+**Status**: parked (claude[bot] Tier-2 on PR #50). The C4 forward-pin synced the machinery
+*code* (scripts + Makefile lines); PR #50 caught up only `tests/test_loop_status.py`. Still
+pre-PR-#45 in call-details:
+- `tests/test_review_plan_fact_check.py` — lacks the `_FenceTracker` nested / variable-length
+  / tilde-fence cases the skill added in PR #45 (the `extract-plan-facts.py` code IS synced,
+  so those paths are presently covered only indirectly downstream).
+- `tests/test_review_loop_artifacts.py` is **repo-adapted, NOT byte-identical** — the skill's
+  version drives a fixture through the skill's `bootstrap.py` (absent in call-details), so it
+  is deliberately excluded from the sync. Not all machinery test files are byte-identical.
+
+Also: the skill itself has **no direct `_FenceTracker` unit test** (only indirect coverage via
+`extract_active_text` / `parse_fact_roots`). Adding one in the skill first (then forward-pinning)
+would lock in the documented nested/tilde edge cases cheaply — claude[bot] called it polish.
+
+**Trigger to pick up**: the next call-details machinery sync, or a fact-check fence regression
+slips through downstream.
+
+**Rough effort**: ~1-2 hours (verify the skill's `test_review_plan_fact_check.py` is
+machinery-generic, sync it, run call-details' suite; optionally add a direct `_FenceTracker`
+test to the skill first).
+
+---
+
 ## Follow-ups from PR-0 hardening (fact-check post-merge review)
 
 PR #30 shipped the `review-plan-fact-check-by-{codex,claude}` targets +
