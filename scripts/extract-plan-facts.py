@@ -77,6 +77,58 @@ def _heading_text(line: str) -> str:
     return text.lower()
 
 
+class _FenceTracker:
+    """CommonMark-correct fenced-code-block tracker shared by extract_active_text
+    and parse_fact_roots.
+
+    A naive ``in_fence = not in_fence`` toggle (flip on every fence-looking line)
+    mishandles nested or variable-length fences: a three-backtick line inside a
+    four-backtick block, or a backtick fence inside a tilde fence, flips the
+    state at the wrong line.  Downstream that drops active facts after the block
+    (extract_active_text) or mis-classifies a ``## Fact roots`` block
+    (parse_fact_roots).
+
+    Per CommonMark, a code fence opens on a run of >= 3 backticks or >= 3 tildes
+    and closes only on a later line whose fence uses the SAME marker character
+    and is AT LEAST as long as the opening run.  A fence-looking line that does
+    not meet the close condition is ordinary block content, not a boundary.
+    Leading indentation is ignored (matching the prior toggle's lstrip), so the
+    only behaviour change is correct handling of nesting and run length.
+    """
+
+    _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+
+    def __init__(self) -> None:
+        self._marker: str | None = None  # opening run char: "`" or "~"
+        self._length: int = 0  # opening run length
+
+    @property
+    def in_fence(self) -> bool:
+        """True when the current line is inside an open fenced code block."""
+        return self._marker is not None
+
+    def feed(self, line: str) -> bool:
+        """Advance the tracker by one line.
+
+        Returns True if *line* is a fence boundary (an opener, or a closer whose
+        marker char matches the opener and whose run is at least as long);
+        False otherwise — including a fence-looking line that is really content
+        inside a longer fence.
+        """
+        m = self._FENCE_RE.match(line.lstrip())
+        if not m:
+            return False
+        run = m.group(1)
+        char, length = run[0], len(run)
+        if self._marker is None:
+            self._marker, self._length = char, length
+            return True
+        if char == self._marker and length >= self._length:
+            self._marker, self._length = None, 0
+            return True
+        return False
+
+
 def extract_active_text(plan_text: str) -> str:
     """Strip lines that belong to historical (excluded) sections.
 
@@ -91,19 +143,19 @@ def extract_active_text(plan_text: str) -> str:
     lines = plan_text.splitlines()
     active: list[str] = []
     excluded_depth: int | None = None
-    in_fence = False
+    fence = _FenceTracker()
 
     for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
+        if fence.feed(line):
+            # A fence boundary line (opener or matching closer): keep it in the
+            # active text but never treat it as a section heading.
             if excluded_depth is None:
                 active.append(line)
             continue
 
         # Inside a fence, a "## ..." line is literal example content, not a
         # real section boundary — leave excluded_depth untouched.
-        lvl = None if in_fence else _heading_level(line)
+        lvl = None if fence.in_fence else _heading_level(line)
         if lvl is not None:
             # Exiting an excluded section when we see a heading at the same
             # or shallower (lower number) depth.
@@ -142,14 +194,12 @@ def parse_fact_roots(plan_text: str) -> list[str]:
     roots: list[str] = []
     in_block = False
     block_depth = 2
-    in_fence = False
+    fence = _FenceTracker()
 
     for line in plan_text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
+        if fence.feed(line):
             continue
-        if in_fence:
+        if fence.in_fence:
             continue
         lvl = _heading_level(line)
         if lvl is not None:
