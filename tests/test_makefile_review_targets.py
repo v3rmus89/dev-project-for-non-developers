@@ -1639,6 +1639,31 @@ def test_review_non_allowlist_actor_mode_filtered_to_needs_ask(tmp_path):
     assert "NEEDS-ASK" in [line.strip() for line in result2.stdout.splitlines() if line.strip()]
 
 
+def test_review_multi_token_mode_actor_filtered_to_needs_ask(tmp_path):
+    """Exact single-token allowlist (C4 Bucket E follow-up): a MIXED multi-token
+    value whose first token is allowlisted — e.g. MODE='commit junk' — must
+    resolve to NEEDS-ASK, not silently dispatch on the good token. The pre-fix
+    `$(filter plan commit,$(MODE))` kept 'commit' and dispatched; the fix also
+    requires exactly one word: `$(and $(filter 1,$(words $(MODE))),$(filter …))`.
+    Values here are benign (no shell metacharacters) — a strictness test, proven
+    via REVIEW_RESOLVE=1 (print-only; the recipe never executes)."""
+    target = _bootstrap_fixture(tmp_path)
+    # MODE='commit junk' (two words, first allowlisted) → NEEDS-ASK, not commit.
+    result = _run_review(target, ["MODE=commit junk", "ACTOR=claude", "REVIEW_RESOLVE=1"])
+    assert result.returncode == 0, result.stderr + result.stdout
+    resolved = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert "NEEDS-ASK" in resolved, resolved
+    for t in _ALL_REVIEW_TARGETS:
+        assert t not in resolved, f"multi-token MODE must not dispatch: {resolved!r}"
+    # ACTOR='codex junk' (two words, first allowlisted) → NEEDS-ASK, not codex.
+    result2 = _run_review(target, ["MODE=plan", "ACTOR=codex junk", "REVIEW_RESOLVE=1"])
+    assert result2.returncode == 0, result2.stderr + result2.stdout
+    resolved2 = [line.strip() for line in result2.stdout.splitlines() if line.strip()]
+    assert "NEEDS-ASK" in resolved2, resolved2
+    for t in _ALL_REVIEW_TARGETS:
+        assert t not in resolved2, f"multi-token ACTOR must not dispatch: {resolved2!r}"
+
+
 def test_review_non_allowlist_actor_normal_mode_does_not_invoke_or_inject(tmp_path):
     """Smoke Tier-1 F2 (PR #35): the resolve-mode injection test short-circuits
     before the sub-make, so it only proves the DECISION is safe. This exercises

@@ -117,8 +117,8 @@ REVIEW_RESOLVE ?=
 # $(VAR)) and the values here come only from /dev-review's fixed literals or
 # the user's own shell (no untrusted-input boundary). Repo-wide make-expansion
 # hardening (incl. PLAN_FILE/ITERATION) is parked in BACKLOG.
-_REVIEW_MODE  = $(filter plan commit,$(MODE))
-_REVIEW_ACTOR = $(filter claude codex,$(ACTOR))
+_REVIEW_MODE  = $(and $(filter 1,$(words $(MODE))),$(filter plan commit,$(MODE)))
+_REVIEW_ACTOR = $(and $(filter 1,$(words $(ACTOR))),$(filter claude codex,$(ACTOR)))
 
 .PHONY: review review-plan-by-codex review-plan-by-claude \
         review-commit-by-codex review-commit-by-claude \
