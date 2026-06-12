@@ -85,7 +85,7 @@ def _load_iters(key: str, review_dir: Path) -> list[dict]:
     return iters
 
 
-def _latest_files_for_stem(stem: str, review_dir: Path) -> list[Path]:
+def _latest_files_for_stem(key: str, stem: str, review_dir: Path) -> list[Path]:
     """Return every plan-review file at the HIGHEST iteration for *stem*, or [].
 
     _load_iters drops files whose footer does not parse, so a malformed newest
@@ -93,12 +93,28 @@ def _latest_files_for_stem(stem: str, review_dir: Path) -> list[Path]:
     (plan-review-<stem>-by-<actor>-iter-<N>.md), so the newest review(s) can be
     located by name.  When both reviewers wrote the same latest iteration, ALL of
     them are returned so a malformed sibling is not hidden behind a valid one.
+
+    A file whose footer PARSES but carries a *different* key belongs to another
+    plan that merely shares this stem (e.g. a same-named plan in another repo
+    sharing /tmp); it is excluded before the top iteration is chosen, so a foreign
+    higher-iter file cannot mask THIS plan's malformed latest.  Malformed/keyless
+    files are kept — they are exactly the candidates this surfaces (and main()
+    re-checks each), mirroring how _load_iters key-filters the parseable path.
     """
-    files = sorted(review_dir.glob(f"plan-review-{stem}-by-*-iter-*.md"), key=_iter_sort_key)
-    if not files:
+    candidates = []
+    for path in sorted(review_dir.glob(f"plan-review-{stem}-by-*-iter-*.md"), key=_iter_sort_key):
+        try:
+            footer = _parse_footer(path.read_text())
+        except OSError:
+            footer = {"status": "footer-missing"}
+        parses = footer.get("status") not in ("footer-missing", "malformed")
+        if parses and footer.get("key") != key:
+            continue
+        candidates.append(path)
+    if not candidates:
         return []
-    top_iter = _iter_sort_key(files[-1])[0]
-    return [p for p in files if _iter_sort_key(p)[0] == top_iter]
+    top_iter = _iter_sort_key(candidates[-1])[0]
+    return [p for p in candidates if _iter_sort_key(p)[0] == top_iter]
 
 
 def classify(iters: list[dict]) -> tuple[str, str]:
@@ -193,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     # still parses.  With the plan stem we find the highest-iter file by name and,
     # if it is malformed, report it distinctly (exit 1) regardless of older iters.
     if stem:
-        for latest in _latest_files_for_stem(stem, review_dir):
+        for latest in _latest_files_for_stem(key, stem, review_dir):
             try:
                 footer = _parse_footer(latest.read_text())
             except OSError:

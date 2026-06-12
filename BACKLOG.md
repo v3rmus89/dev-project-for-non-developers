@@ -8,6 +8,66 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from the #46 / #50 Tier-2 review
+
+### `loop-status` malformed-latest: a keyless foreign file at a higher iter still masks a valid latest (`loop-status-malformed-latest-keyless-foreign`)
+
+**Status**: parked (Codex P2 on call-details PR #50). PR #46 closed the *parseable*
+foreign-key direction (`_latest_files_for_stem` now key-filters footers that parse),
+but a foreign review file that is **malformed/keyless** — same plan stem (basename),
+higher iteration, in a shared `/tmp` — is still kept as a candidate (no key to filter
+on), becomes `top_iter`, and makes `main()` report `malformed-latest`/exit 1 even when
+THIS plan's latest *keyed* review is valid. A false positive (the mirror of the false
+negative PR #45 fixed); pre-existing in the malformed-latest feature, only narrowed by #46.
+
+**Why parked**: there is no small fix — a malformed file can't be attributed to a plan by
+content (it doesn't parse), and the filename stem is the only link, which is exactly the
+collision point. The robust fix is to put the review `KEY` in the output **filename/glob**
+(`plan-review-<stem>-<key>-by-<actor>-iter-<N>.md`) so even unparseable files are
+attributable by name — that touches the review-file naming contract across the Makefile
+review targets + `loop-status` glob + `_load_iters` + tests + downstream. Likelihood is the
+same low class as the original (dated plan slugs make cross-repo same-basename collisions
+near-impossible) and the impact is advisory only (a spurious `malformed-latest` notice).
+
+**Trigger to pick up**: two repos sharing `/tmp` actually collide on a plan basename and a
+driver sees a spurious `malformed-latest`, OR the review-file naming convention is changed
+for another reason.
+
+**Rough effort**: ~half a day (naming-convention change + glob/parse updates + tests + re-sync).
+
+---
+
+### Forward-pin the drifted machinery test files to call-details (`call-details-machinery-test-parity`)
+
+**Status**: parked (claude[bot] Tier-2 imp-2 on PR #50). The C4 forward-pin synced the
+machinery *code* (scripts + Makefile lines) but not its tests, so call-details' suite does not
+exercise the new `malformed-latest` / key-filter / `_FenceTracker` paths. Still pre-PR-#45 in
+call-details: `tests/test_loop_status.py` and `tests/test_review_plan_fact_check.py`.
+
+**Why not a trivial byte-identical sync (the real blocker)**: the skill and call-details have
+divergent ruff policies — the skill sets `ignore = ["E501"]` ("let ruff format handle line
+length"), so its shared test files carry long fixture lines (e.g. 122-col `json.dumps` footer
+literals in `test_loop_status.py`), while call-details **enforces** E501 at line-length 100. A
+byte-identical `cp` therefore fails call-details' `make check` lint — tried in PR #50, reverted
+in `a9fa16b`. Closing this cleanly needs one of: (a) wrap the skill's shared test fixtures to
+≤100 cols so they sync byte-identical to the stricter downstream, or (b) reconcile the ruff
+configs (e.g. call-details ignores E501 under `tests/**`). Separately, `tests/test_review_loop_artifacts.py`
+is **repo-adapted, NOT byte-identical** anyway — the skill's version drives a fixture through
+the skill's `bootstrap.py` (absent in call-details) — so not every machinery test file can be
+byte-identical.
+
+Also: the skill itself has **no direct `_FenceTracker` unit test** (only indirect coverage via
+`extract_active_text` / `parse_fact_roots`). Adding one only downstream would create drift — add
+it in the skill first if at all (claude[bot] called it polish).
+
+**Trigger to pick up**: the next call-details machinery sync, or a fence / malformed-latest
+regression slips through downstream.
+
+**Rough effort**: ~half a day (option (a): wrap skill test fixtures ≤100 cols + verify both
+repos green + sync; or option (b): ruff-config reconciliation + sync).
+
+---
+
 ## Follow-ups from PR-0 hardening (fact-check post-merge review)
 
 PR #30 shipped the `review-plan-fact-check-by-{codex,claude}` targets +
@@ -77,81 +137,35 @@ loop-status numeric-ordering fix shipped in skill PR #43). Three follow-ups were
 parked during it — two surfaced by call-details' Tier-1, one carried over from
 skill PR #42.
 
-### CommonMark-correct fence tracker shared by the fact extractor + fact-roots parser (`fact-check-nested-fence-tracker`)
+### ✅ CommonMark-correct fence tracker shared by the fact extractor + fact-roots parser (`fact-check-nested-fence-tracker`) — DONE in PR #45
 
-**Status**: parked (skill PR #42 Codex P2) — `extract_active_text` AND
-`parse_fact_roots` in `scripts/extract-plan-facts.py` each track fenced code
-blocks with a naive backtick/tilde `in_fence` toggle. A nested or
-variable-length fence (a four-backtick outer block containing a three-backtick
-inner block, or a tilde fence wrapping a backtick fence) mis-toggles `in_fence`:
-the inner closing fence reads as a re-open, so active facts after it can be
-dropped and a fact-roots block can be mis-classified. PR #42 fixed the common
-case (a single fenced `##` heading); the nested / variable-length case is the
-deeper gap.
-
-**Trigger to pick up**:
-- A plan that uses nested or tilde fences silently drops active facts or
-  mis-parses its `## Fact roots` block.
-
-**Starting requirements**:
-- One CommonMark-correct fence tracker shared by both functions: on an opening
-  fence, store the marker char (backtick vs tilde) AND its run length; only
-  close on a same-marker fence whose length is >= the opener's. Replace both
-  naive toggles with it.
-- Tests: four-backtick-outer / three-backtick-inner; tilde-outer / backtick-inner;
-  a fact after a nested fence still extracted; a fact-roots block after a nested
-  fence still parsed.
-
-**Rough effort**: ~half a day.
+**Status**: ✅ shipped 2026-06-12 — one CommonMark-correct `_FenceTracker`
+(stores the opening fence's marker char + run length; closes only on a same-marker
+fence whose run length ≥ the opener's) now backs both `extract_active_text` and
+`parse_fact_roots` in `scripts/extract-plan-facts.py`, so nested / variable-length
+/ tilde-vs-backtick fences no longer drop active facts or mis-parse a `## Fact
+roots` block. Commit `08f39bc`.
 
 ---
 
-### Surface a malformed LATEST review in `loop-status` (`loop-status-malformed-latest`)
+### ✅ Surface a malformed LATEST review in `loop-status` (`loop-status-malformed-latest`) — DONE in PR #45
 
-**Status**: parked (C4 Bucket B+C Tier-1) — `_load_iters` skips
-malformed / footer-missing review files, so if the *latest* review for a plan is
-malformed (the reviewer didn't emit a valid JSON verdict fence), `make
-loop-status` reports `no-iters` and exits 0 rather than surfacing it. This is by
-design — loop-status is advisory (exit 0 for all non-error states, D-5) — but it
-can mildly mislead a driver who just ran an iteration and sees "no-iters".
-
-**Trigger to pick up**:
-- A reviewer flakes on the JSON fence and `loop-status` silently says no-iters
-  when the driver just ran an iter, often enough to want a distinct signal.
-
-**Starting requirements**:
-- Thread the plan stem (or plan file) into `loop-status.py` so a malformed file
-  *for this plan* is distinguishable from unrelated `/tmp` noise even without a
-  parseable `key`; emit a `malformed-latest` status (non-zero, or a clear notice).
-- Rename / clarify `test_v16_exit_1_on_malformed` (it asserts rc==0 by design).
-- Apply in `scripts/loop-status.py` + `shared/scripts-loop-status.py.tmpl` + the
-  Makefile `loop-status` target + tests, then re-sync downstream.
-
-**Rough effort**: ~half a day.
+**Status**: ✅ shipped 2026-06-12 — `loop-status.py` now takes the plan stem,
+locates the newest review file(s) for the plan by name, and emits a distinct
+`malformed-latest` status (exit 1) when that newest review has no parseable
+verdict fence, instead of silently collapsing to `no-iters` (exit 0). Applied in
+`scripts/loop-status.py` + `shared/scripts-loop-status.py.tmpl` + the Makefile
+`loop-status` target + `tests/test_loop_status.py`. Commit `08f39bc`.
 
 ---
 
-### Exact single-token allowlist for the `review` dispatcher (`review-dispatcher-exact-allowlist`)
+### ✅ Exact single-token allowlist for the `review` dispatcher (`review-dispatcher-exact-allowlist`) — DONE in PR #45
 
-**Status**: parked (C4 Bucket E Tier-1) — the `review` dispatcher's `$(filter)`
-allowlist accepts a *mixed* multi-token value: `MODE='commit junk'` filters to
-`commit` and dispatches instead of resolving to NEEDS-ASK. Shell safety (the
-primary goal) holds — the recipe's `case` only ever sees a clean allowlisted
-token — and real callers pass fixed single-token literals (`/dev-review`,
-`AGENTS.md`, a human), so this is a strictness nit, not a hole.
-
-**Trigger to pick up**:
-- A caller passes a multi-token MODE/ACTOR and the dispatcher silently runs
-  instead of asking.
-
-**Starting requirements**:
-- Require an exact single-token match, e.g.
-  `_REVIEW_MODE = $(and $(filter 1,$(words $(MODE))),$(filter plan commit,$(MODE)))`
-  (exactly one word AND in the allowlist); same for `_REVIEW_ACTOR`.
-- Regression cases: `MODE='commit junk'`, `ACTOR='codex junk'`, both mixed → NEEDS-ASK.
-- Apply in the skill `Makefile` + `shared/Makefile.review.tmpl` + downstream.
-
-**Rough effort**: ~1 hour.
+**Status**: ✅ shipped 2026-06-12 — `_REVIEW_MODE` / `_REVIEW_ACTOR` now require an
+exact single-token match (`$(and $(filter 1,$(words $(MODE))),$(filter plan commit,$(MODE)))`
+and the `ACTOR` analogue), so a mixed value like `MODE='commit junk'` resolves to
+NEEDS-ASK instead of silently dispatching. Applied in the skill `Makefile` +
+`shared/Makefile.review.tmpl`. Commit `08f39bc`.
 
 ---
 
