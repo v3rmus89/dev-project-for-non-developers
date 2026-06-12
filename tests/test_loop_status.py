@@ -29,7 +29,7 @@ _spec.loader.exec_module(_mod)
 _parse_footer = _mod._parse_footer
 classify = _mod.classify
 _load_iters = _mod._load_iters
-_latest_file_for_stem = _mod._latest_file_for_stem
+_latest_files_for_stem = _mod._latest_files_for_stem
 main = _mod.main
 
 
@@ -466,16 +466,41 @@ def test_v16_malformed_latest_masked_by_older_valid_iter(tmp_path, capsys):
     assert "iter-2" in out  # names the newest (bad) file, not the stale iter-1
 
 
-def test_latest_file_for_stem_picks_highest_iter(tmp_path):
-    """_latest_file_for_stem returns the numerically-highest iter file for the
-    stem (so a malformed iter-10 is not masked by a valid iter-9), or None."""
+def test_v16_malformed_sibling_at_top_iter_not_hidden(tmp_path, capsys):
+    """Codex P2: when both reviewers wrote the same latest iter, a malformed
+    sibling (by-claude) must not be hidden behind a valid one (by-codex). Checking
+    only the lexicographically last file at the top iter would miss it."""
+    key = "siblingiter0"
+    stem = "myplan"
+    _write_review(
+        tmp_path,
+        f"plan-review-{stem}-by-codex-iter-2.md",
+        _footer("converged", {"3": 0, "2": 0, "1": 0}, key=key),
+    )
+    (tmp_path / f"plan-review-{stem}-by-claude-iter-2.md").write_text("```json\n{bad}\n```\n")
+    rc = main([key, str(tmp_path), stem])
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "malformed-latest" in out
+
+
+def test_latest_files_for_stem_returns_all_at_top_iter(tmp_path):
+    """_latest_files_for_stem returns every file at the highest iteration for the
+    stem — so a malformed iter-10 is not masked by a valid iter-9, and a malformed
+    sibling at the same top iter is not hidden behind a valid one — or []."""
     stem = "myplan"
     for n in (1, 2, 10):
         (tmp_path / f"plan-review-{stem}-by-codex-iter-{n}.md").write_text("x")
-    latest = _latest_file_for_stem(stem, tmp_path)
-    assert latest is not None
-    assert latest.name == f"plan-review-{stem}-by-codex-iter-10.md"
-    assert _latest_file_for_stem("nosuchstem", tmp_path) is None
+    assert [p.name for p in _latest_files_for_stem(stem, tmp_path)] == [
+        f"plan-review-{stem}-by-codex-iter-10.md"
+    ]
+    # both reviewers at the same top iteration → both returned
+    (tmp_path / f"plan-review-{stem}-by-claude-iter-10.md").write_text("x")
+    assert sorted(p.name for p in _latest_files_for_stem(stem, tmp_path)) == [
+        f"plan-review-{stem}-by-claude-iter-10.md",
+        f"plan-review-{stem}-by-codex-iter-10.md",
+    ]
+    assert _latest_files_for_stem("nosuchstem", tmp_path) == []
 
 
 def test_v16_ignores_consistency_and_commit_files(tmp_path):

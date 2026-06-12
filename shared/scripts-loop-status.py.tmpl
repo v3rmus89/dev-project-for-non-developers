@@ -85,16 +85,20 @@ def _load_iters(key: str, review_dir: Path) -> list[dict]:
     return iters
 
 
-def _latest_file_for_stem(stem: str, review_dir: Path) -> Path | None:
-    """Return the numerically-highest plan-review iter file for *stem*, or None.
+def _latest_files_for_stem(stem: str, review_dir: Path) -> list[Path]:
+    """Return every plan-review file at the HIGHEST iteration for *stem*, or [].
 
     _load_iters drops files whose footer does not parse, so a malformed newest
     review is invisible when filtering by key.  The filename embeds the plan stem
-    (plan-review-<stem>-by-<actor>-iter-<N>.md), so the latest review for a given
-    plan can still be located by name — used to surface a malformed-latest status.
+    (plan-review-<stem>-by-<actor>-iter-<N>.md), so the newest review(s) can be
+    located by name.  When both reviewers wrote the same latest iteration, ALL of
+    them are returned so a malformed sibling is not hidden behind a valid one.
     """
     files = sorted(review_dir.glob(f"plan-review-{stem}-by-*-iter-*.md"), key=_iter_sort_key)
-    return files[-1] if files else None
+    if not files:
+        return []
+    top_iter = _iter_sort_key(files[-1])[0]
+    return [p for p in files if _iter_sort_key(p)[0] == top_iter]
 
 
 def classify(iters: list[dict]) -> tuple[str, str]:
@@ -189,8 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     # still parses.  With the plan stem we find the highest-iter file by name and,
     # if it is malformed, report it distinctly (exit 1) regardless of older iters.
     if stem:
-        latest = _latest_file_for_stem(stem, review_dir)
-        if latest is not None:
+        for latest in _latest_files_for_stem(stem, review_dir):
             try:
                 footer = _parse_footer(latest.read_text())
             except OSError:
@@ -198,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
             if footer.get("status") in ("footer-missing", "malformed"):
                 status = "malformed-latest"
                 rationale = f"latest review for this plan is malformed: {latest.name}"
+                break
 
     print(f"STATUS: {status}")
     print(f"  {rationale}")
