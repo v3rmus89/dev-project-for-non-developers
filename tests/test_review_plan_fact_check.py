@@ -109,6 +109,52 @@ def test_real_excluded_heading_still_excludes(tmp_path):
     )
 
 
+def test_nested_backtick_fence_keeps_following_active_facts(tmp_path):
+    """Regression (C4 follow-up, nested fences): a three-backtick content line
+    inside a four-backtick block is NOT a fence boundary. The old naive in_fence
+    toggle flipped on it, leaving the extractor "inside a fence" after the block,
+    so a real ## heading that exits a historical section was missed and the
+    active facts under it were silently dropped."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Iteration log\n\n"
+        "Historical: `hist_excluded.py`\n\n"
+        "````\n"
+        "```\n"
+        "````\n\n"
+        "## Critical files\n\n"
+        "Active: `active_after.py`\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "active_after.py" in raws, (
+        f"active fact after a nested four/three-backtick fence was dropped: {raws}"
+    )
+    assert "hist_excluded.py" not in raws, f"historical fact must still be excluded: {raws}"
+
+
+def test_nested_tilde_outer_backtick_inner_keeps_following_facts(tmp_path):
+    """Regression (C4 follow-up, mixed-marker fences): a backtick fence inside a
+    tilde fence must not close the tilde block. The old toggle flipped on the
+    inner ``` and dropped active facts after the outer ~~~~ block."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n"
+        "## Iteration log\n\n"
+        "Historical: `hist2.py`\n\n"
+        "~~~~\n"
+        "```\n"
+        "~~~~\n\n"
+        "## Critical files\n\n"
+        "Active: `active_after2.py`\n"
+    )
+    raws = {f["raw"] for f in _extract(plan)["facts"]}
+    assert "active_after2.py" in raws, (
+        f"active fact after a tilde-outer/backtick-inner fence was dropped: {raws}"
+    )
+    assert "hist2.py" not in raws
+
+
 def test_absolute_path_outside_roots_is_unsupported_external():
     """Codex Tier-2 P2 regression: absolute paths outside declared fact roots
     must land in unsupported_external, NOT verified (POSIX `root / abs` drops root)."""
@@ -221,6 +267,37 @@ def test_fact_roots_parsed_in_active_section(tmp_path):
     facts_data = _extract(plan)
     assert facts_data["fact_roots"] == ["/Users/example/repo", "/opt/other"], (
         f"active Fact-roots block must be parsed: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_after_nested_fence_still_parsed(tmp_path):
+    """Regression (C4 follow-up): a nested four/three-backtick fence must close
+    correctly so a real ## Fact roots block AFTER it is still parsed. The old
+    toggle stayed "inside a fence" past the block and skipped it, declaring no
+    roots."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\n````\n```\n````\n\n## Fact roots\n\n- /Users/example/repo\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == ["/Users/example/repo"], (
+        f"Fact-roots after a nested fence must be parsed: {facts_data['fact_roots']}"
+    )
+
+
+def test_fact_roots_inside_nested_fence_not_leaked(tmp_path):
+    """Privacy regression (C4 follow-up): a Fact-roots block shown INSIDE a
+    nested fence is an example, not a declaration. The old toggle flipped on the
+    inner ``` and treated the following lines as outside the fence, leaking the
+    example path as a real read root."""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# Plan\n\n## Scope\n\nExample syntax:\n\n"
+        "````\n```\n## Fact roots\n\n- /should/not/leak\n````\n\nReal work.\n"
+    )
+    facts_data = _extract(plan)
+    assert facts_data["fact_roots"] == [], (
+        f"Fact-roots inside a nested fence must NOT leak: {facts_data['fact_roots']}"
     )
 
 

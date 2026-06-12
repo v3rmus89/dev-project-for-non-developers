@@ -6,7 +6,7 @@ filters by the KEY field in the json verdict footer, and classifies the
 loop state.
 
 Usage:
-  scripts/loop-status.py <KEY> [<review-dir>]
+  scripts/loop-status.py <KEY> [<review-dir>] [<plan-stem>]
   make loop-status PLAN_FILE=docs/plans/<file>.md
 
 Output: STATUS: <classification> followed by a one-line rationale.
@@ -14,7 +14,9 @@ Output: STATUS: <classification> followed by a one-line rationale.
 Exit codes:
   0  — any non-error status (needs-iter, converged, converged-with-polish,
        oscillating, stuck, regressed, no-iters)
-  1  — malformed: last iter footer is missing or invalid JSON
+  1  — malformed: last iter footer is missing or invalid JSON; or
+       malformed-latest: with a <plan-stem>, the newest review for this plan
+       is malformed even if older iters parsed (else masked as no-iters)
 """
 
 from __future__ import annotations
@@ -81,6 +83,22 @@ def _load_iters(key: str, review_dir: Path) -> list[dict]:
             continue
         iters.append(footer)
     return iters
+
+
+def _latest_files_for_stem(stem: str, review_dir: Path) -> list[Path]:
+    """Return every plan-review file at the HIGHEST iteration for *stem*, or [].
+
+    _load_iters drops files whose footer does not parse, so a malformed newest
+    review is invisible when filtering by key.  The filename embeds the plan stem
+    (plan-review-<stem>-by-<actor>-iter-<N>.md), so the newest review(s) can be
+    located by name.  When both reviewers wrote the same latest iteration, ALL of
+    them are returned so a malformed sibling is not hidden behind a valid one.
+    """
+    files = sorted(review_dir.glob(f"plan-review-{stem}-by-*-iter-*.md"), key=_iter_sort_key)
+    if not files:
+        return []
+    top_iter = _iter_sort_key(files[-1])[0]
+    return [p for p in files if _iter_sort_key(p)[0] == top_iter]
 
 
 def classify(iters: list[dict]) -> tuple[str, str]:
@@ -154,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
 
     if not argv:
-        print("Usage: loop-status.py <KEY> [<review-dir>]", file=sys.stderr)
+        print("Usage: loop-status.py <KEY> [<review-dir>] [<plan-stem>]", file=sys.stderr)
         print(
             "  Usually invoked via: make loop-status PLAN_FILE=docs/plans/<file>.md",
             file=sys.stderr,
@@ -163,14 +181,32 @@ def main(argv: list[str] | None = None) -> int:
 
     key = argv[0]
     review_dir = Path(argv[1]) if len(argv) > 1 else Path("/tmp")
+    stem = argv[2] if len(argv) > 2 else None
 
     iters = _load_iters(key, review_dir)
     status, rationale = classify(iters)
 
+    # Surface a malformed LATEST review for THIS plan that _load_iters dropped.
+    # _load_iters skips files whose footer is missing/malformed (no parseable
+    # key), so a malformed newest review is invisible: it collapses to "no-iters"
+    # when it is the only review, OR is masked behind a stale older iter that
+    # still parses.  With the plan stem we find the highest-iter file by name and,
+    # if it is malformed, report it distinctly (exit 1) regardless of older iters.
+    if stem:
+        for latest in _latest_files_for_stem(stem, review_dir):
+            try:
+                footer = _parse_footer(latest.read_text())
+            except OSError:
+                footer = {"status": "footer-missing"}
+            if footer.get("status") in ("footer-missing", "malformed"):
+                status = "malformed-latest"
+                rationale = f"latest review for this plan is malformed: {latest.name}"
+                break
+
     print(f"STATUS: {status}")
     print(f"  {rationale}")
 
-    if status == "malformed":
+    if status in ("malformed", "malformed-latest"):
         return 1
     return 0
 
