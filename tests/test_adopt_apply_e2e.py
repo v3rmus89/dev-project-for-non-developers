@@ -17,6 +17,7 @@ import io as io_module
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -567,3 +568,112 @@ def test_plain_apply_path_unchanged_by_adopt_wiring(tmp_path):
     assert loaded.format_version == 1, (
         f"plain --apply produced format_version={loaded.format_version} (expected v1)"
     )
+
+
+# ─── Bucket C — shared post-apply guidance helper ───
+
+
+def _guidance_output(**kwargs):
+    """Capture `cli._print_post_apply_guidance` stdout for the given flags.
+
+    The helper only reads a few attrs off `args`, so a SimpleNamespace stand-in
+    keeps these unit tests pure (no argparse / filesystem)."""
+    args = SimpleNamespace(
+        language=kwargs.pop("language", "python"),
+        github_review=kwargs.pop("github_review", "none"),
+        github_owner=kwargs.pop("github_owner", "o"),
+        github_repo=kwargs.pop("github_repo", "r"),
+    )
+    old_stdout = sys.stdout
+    sys.stdout = io_module.StringIO()
+    try:
+        cli._print_post_apply_guidance(args, "/tmp/target", **kwargs)
+        return sys.stdout.getvalue()
+    finally:
+        sys.stdout = old_stdout
+
+
+class TestPostApplyGuidanceHelper:
+    """Bucket C / AD3: one shared helper, two callers (v1 + adopt). These pin
+    the adopt-specific adaptations directly; the v1 byte-identity is guarded by
+    the existing test_bootstrap_cli.py guidance tests (regression on extraction)."""
+
+    def test_v1_prints_cd_make_install(self):
+        out = _guidance_output(adopt=False)
+        assert "cd /tmp/target && make install" in out
+        assert "make install-hooks" in out
+
+    def test_adopt_gates_off_cd_make_install_but_keeps_hooks(self):
+        out = _guidance_output(adopt=True)
+        # The greenfield `cd … && make install` line is gated off for adopt …
+        assert "&& make install" not in out
+        # … but the hooks next-step still prints.
+        assert "make install-hooks" in out
+
+    def test_adopt_no_makefile_review_hint_when_not_emitted(self):
+        out = _guidance_output(adopt=True, makefile_review_emitted=False)
+        assert "Makefile.review" not in out
+
+    def test_adopt_makefile_review_hint_names_review_collision(self):
+        out = _guidance_output(
+            adopt=True, makefile_review_emitted=True, colliding_targets=("review",)
+        )
+        assert "include Makefile.review" in out
+        assert "remove your existing review target" in out
+
+    def test_adopt_makefile_review_hint_names_non_review_collision(self):
+        """iter-2 FN2: the hint names the COMPUTED overlap, not a hard-coded
+        `review`. A Makefile colliding only on `status` → the hint says
+        `status`."""
+        out = _guidance_output(
+            adopt=True, makefile_review_emitted=True, colliding_targets=("status",)
+        )
+        assert "include Makefile.review" in out
+        assert "remove your existing status target" in out
+        # Must NOT hard-code a removal instruction for `review`.
+        assert "remove your existing review target" not in out
+
+    def test_adopt_makefile_review_hint_empty_collisions_uses_generic_fallback(self):
+        out = _guidance_output(adopt=True, makefile_review_emitted=True, colliding_targets=())
+        assert "include Makefile.review" in out
+        assert "review or review-plan targets" in out
+
+
+class TestAdoptGuidanceE2E:
+    """Bucket C end-to-end: an adopt apply now prints the same next-steps /
+    gh-repo / token guidance the v1 path does (folds the parked gh-repo mirror
+    item), with the greenfield `make install` gated off."""
+
+    def test_adopt_apply_with_github_review_prints_shared_guidance(self, tmp_path):
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+                "--github-review",
+                "both-docs",
+                "--github-owner",
+                "o",
+                "--github-repo",
+                "r",
+                "--non-interactive",
+            ],
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # next-steps present, but the greenfield install line is gated off.
+        assert "next steps:" in out
+        assert "make install-hooks" in out
+        assert f"cd {tmp_path} && make install" not in out
+        # gh-repo-create + token + both-docs Codex guidance now reach adopt too.
+        assert "gh repo create" in out
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in out
+        assert "codex-github-review-setup.md" in out
+        # Bucket B not exercised here (empty target → base Makefile is a WRITE →
+        # the standalone Makefile.review is dropped), so NO include hint.
+        assert "include Makefile.review" not in out
