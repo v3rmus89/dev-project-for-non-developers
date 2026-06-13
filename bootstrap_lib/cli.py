@@ -935,14 +935,12 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     # planned_files AND the analyses tuple (manifest.plan_adoption_entries raises
     # ValueError for an analysis whose rel_path is absent from planned_files, and
     # silently omits a planned_files entry absent from the analyses).
-    makefile_review_emitted = False
     colliding_targets: tuple[str, ...] = ()
     base_makefile_skipped = any(
         a.rel_path == "Makefile" and a.recommendation.policy == "SKIP"
         for a in adoption_plan.analyses
     )
     if base_makefile_skipped:
-        makefile_review_emitted = True
         colliding_targets = _compute_colliding_targets(target_root, review_fragment)
     else:
         planned_files, adoption_plan = _drop_planned_file(
@@ -971,13 +969,12 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     # duplicate `review` targets. Re-decide on the FINAL Makefile action: drop the
     # standalone iff the skill's Makefile became the active one. [n]ew leaves the
     # owner's Makefile active (skill → Makefile.new), so the standalone stays.
-    if makefile_review_emitted:
+    if MAKEFILE_REVIEW in planned_files:
         final_makefile_policy = next(
             (a.recommendation.policy for a in decided_plan.analyses if a.rel_path == "Makefile"),
             None,
         )
         if final_makefile_policy in ("WRITE", "OVERWRITE"):
-            makefile_review_emitted = False
             colliding_targets = ()
             planned_files, decided_plan = _drop_planned_file(
                 MAKEFILE_REVIEW, planned_files, decided_plan
@@ -999,6 +996,19 @@ def _main_apply_adopt(args, target_root, planned_files, context):
             "adopt-mode: all entries SKIPPED — no manifest written, no files modified.\n"
         )
         return 0
+
+    # Bucket B emitted flag — ground-truth from the FINAL entries (codex round-2
+    # P2). We "emitted" a standalone Makefile.review only if we actually
+    # WRITE/OVERWRITE it: a target that already owns a Makefile.review can SKIP it
+    # (keep theirs) or take [n]ew, leaving no fresh standalone — so the include
+    # hint must not fire. (Pass 2 above separately prevents WRITING a redundant
+    # standalone when the owner overwrites their Makefile.) Keying off the
+    # base-Makefile recommendation alone left this true in the owns-both case.
+    makefile_review_emitted = any(
+        e["path"] == MAKEFILE_REVIEW and e["policy"] in ("WRITE", "OVERWRITE") for e in entries
+    )
+    if not makefile_review_emitted:
+        colliding_targets = ()
 
     m = manifest.Manifest(
         # Resolve to absolute path — mirrors v1's _prepare_apply contract so

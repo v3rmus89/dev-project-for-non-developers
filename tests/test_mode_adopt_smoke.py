@@ -926,3 +926,28 @@ class TestBucketBStandaloneMakefileReview:
         assert "include Makefile.review" in out
         # owner's Makefile untouched + still active
         assert (target / "Makefile").read_bytes().startswith(b".PHONY: test review")
+
+    def test_target_owns_makefile_review_skip_keeps_theirs_no_hint(self, tmpdir_isolated):
+        """Tier-2 codex P2 (round 2): a target that already owns BOTH a Makefile
+        AND a Makefile.review. If the owner SKIPs the existing Makefile.review,
+        no fresh standalone is written — so `makefile_review_emitted` (now
+        ground-truthed from the actual WRITE/OVERWRITE entries) is False and the
+        include hint must NOT fire, and their Makefile.review stays untouched."""
+        target = tmpdir_isolated / "target"
+        self._setup_target_owning_makefile(target)
+        existing_review = b"# my own Makefile.review\nreview:\n\t@echo mine\n"
+        (target / "Makefile.review").write_bytes(existing_review)
+        # Two prompts now (Makefile + Makefile.review, both rule (h) SKIP, mr=True,
+        # in sorted order). Accept the recommended SKIP for both.
+        rc, out, err = run_cli([*self._ADOPT_ARGS, "--out", str(target)], stdin_text="\n\n")
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # Their Makefile.review is untouched (SKIP) …
+        assert (target / "Makefile.review").read_bytes() == existing_review
+        # … no fresh WRITE/OVERWRITE of it in the manifest …
+        loaded = manifest.load_manifest(_extract_manifest_path(out))
+        assert not any(
+            e["path"] == "Makefile.review" and e["policy"] in ("WRITE", "OVERWRITE")
+            for e in loaded.entries
+        )
+        # … and the include hint does NOT fire (we wrote no fresh standalone).
+        assert "include Makefile.review" not in out
