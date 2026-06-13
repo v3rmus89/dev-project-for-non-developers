@@ -662,6 +662,19 @@ def _main_apply_adopt(args, target_root, planned_files):
     # never imports cli).
     from bootstrap_lib import adopt
 
+    # Bucket A: adopt brings the skill into a project that ALREADY has its own
+    # source + tests, so the greenfield-only entrypoint/smoke placeholders
+    # (python: src/main.py, tests/test_smoke.py) are never wanted — suppress
+    # them from the planned set BEFORE analyze so they never become a rule-(a)
+    # WRITE into production code. Greenfield `--apply` keeps them (this filter
+    # is adopt-path-only). Adopt is Python-only today; the constant lists the
+    # node/go stub names too, so this is already correct when their adopt ships.
+    placeholders = render.GREENFIELD_ONLY_PLACEHOLDERS.get(args.language, frozenset())
+    if placeholders:
+        planned_files = {
+            rel: content for rel, content in planned_files.items() if rel not in placeholders
+        }
+
     try:
         adoption_plan = adopt.analyze_target(target_root, planned_files)
     except Exception as e:

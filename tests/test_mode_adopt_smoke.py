@@ -381,7 +381,10 @@ class TestCallDetailsShapedFixture:
 
         # Missing files (rule a) got written — spot-check
         assert (target / "Makefile").exists()
-        assert (target / "src" / "main.py").exists()
+        # Bucket A: the greenfield-only placeholders are SUPPRESSED in adopt
+        # mode (the target already has its own source + tests).
+        assert not (target / "src" / "main.py").exists()
+        assert not (target / "tests" / "test_smoke.py").exists()
 
     def test_call_details_shape_manifest_v2_structure(self, tmpdir_isolated):
         """Verify the v2 manifest: format_version=2; SKIP entries (CLAUDE.md
@@ -460,9 +463,11 @@ class TestCallDetailsShapedFixture:
         # The .new file MUST be removed by restore (WRITE_NEW restore).
         assert not (target / "CLAUDE.md.new").exists()
 
-        # The WRITE'd missing files MUST be removed.
+        # The WRITE'd missing files MUST be removed. (src/main.py is NOT in
+        # this set — Bucket A suppresses it in adopt mode — so spot-check a
+        # genuinely-written rule-(a) file instead.)
         assert not (target / "Makefile").exists()
-        assert not (target / "src" / "main.py").exists()
+        assert not (target / ".editorconfig").exists()
 
     def test_call_details_shape_user_skips_claude_via_stdin(self, tmpdir_isolated):
         """User picks [s]kip on the CLAUDE.md prompt → no .new file written."""
@@ -717,3 +722,79 @@ class TestNeutralizeRoundTrip:
         rc, _o, _e = run_cli(["--restore", str(manifest_p)])
         assert rc == 0
         assert stat.S_IMODE(os.stat(gi).st_mode) == 0o600, "restore must preserve the 0600 mode"
+
+
+# ─── Bucket A — greenfield-only placeholder suppression in adopt mode ────────
+
+
+class TestGreenfieldPlaceholderSuppression:
+    """Bucket A: the greenfield-only entrypoint + smoke placeholders
+    (`src/main.py`, `tests/test_smoke.py`) must NOT land in adopt mode — adopt
+    brings the skill into a project that already has its own source + tests.
+    Greenfield `--apply` keeps them (the filter is adopt-path-only)."""
+
+    def test_constant_names_are_real_planned_files_and_greenfield_keeps_them(self, tmp_path):
+        """The suppressed names must be REAL python planned-file keys (a typo'd
+        constant would silently suppress nothing) AND greenfield render must
+        still include them (suppression is adopt-only, not a render change)."""
+        planned = _planned_files_for("x", tmp_path)
+        for name in render.GREENFIELD_ONLY_PLACEHOLDERS["python"]:
+            assert name in planned, f"{name!r} is not a real python planned-file key"
+        # The mode-agnostic greenfield render KEEPS the placeholders.
+        assert "src/main.py" in planned
+        assert "tests/test_smoke.py" in planned
+
+    def test_adopt_suppresses_placeholders_but_writes_other_creates(self, tmpdir_isolated):
+        """End-to-end: adopt into a target lacking the placeholders → they are
+        NOT written, while the other rule-(a) creates still land."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--non-interactive",
+            ],
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        assert "adopt-mode apply" in out
+        # Suppressed — never written.
+        assert not (target / "src" / "main.py").exists()
+        assert not (target / "tests" / "test_smoke.py").exists()
+        # Other rule-(a) creates still landed.
+        assert (target / "Makefile").exists()
+        assert (target / "pyproject.toml").exists()
+        assert (target / ".editorconfig").exists()
+
+    def test_suppressed_placeholders_absent_from_manifest(self, tmpdir_isolated):
+        """The placeholders must not appear as manifest entries either (they
+        were filtered before plan_adoption_entries, so there is nothing to
+        restore)."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        rc, out, _err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(target),
+                "--non-interactive",
+            ],
+        )
+        assert rc == 0
+        loaded = manifest.load_manifest(_extract_manifest_path(out))
+        paths_in_manifest = {e["path"] for e in loaded.entries}
+        assert "src/main.py" not in paths_in_manifest
+        assert "tests/test_smoke.py" not in paths_in_manifest

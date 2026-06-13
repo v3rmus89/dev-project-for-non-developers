@@ -71,6 +71,23 @@ LANGUAGE_TEMPLATE_MAPS = {
     "go": GO_TEMPLATE_MAP,
 }
 
+# Per-language entrypoint + smoke-test stubs that are meaningful ONLY for a
+# greenfield bootstrap into an empty target: a hello-world entrypoint and a
+# trivial always-pass smoke test. In adopt mode the target already has its own
+# source + tests, so these placeholders are never wanted — `_main_apply_adopt`
+# filters them out of the planned set before analyze (greenfield `--apply`
+# keeps them). The keys here MUST match the template-map keys above.
+#
+# Adopt is Python-only today (`cli._resolve_mode` rejects `--mode=adopt` for
+# node/go), so only the `python` entry is reachable now; the node/go names are
+# listed so suppression is already correct when their adopt ships — no behaviour
+# changes for them until then.
+GREENFIELD_ONLY_PLACEHOLDERS = {
+    "python": frozenset({"src/main.py", "tests/test_smoke.py"}),
+    "nodejs": frozenset({"src/main.ts", "tests/test_smoke.test.ts"}),
+    "go": frozenset({"main.go", "main_test.go"}),
+}
+
 
 def build_env(language):
     loader = jinja2.FileSystemLoader(
