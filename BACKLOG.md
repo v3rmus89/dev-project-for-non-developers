@@ -10,29 +10,26 @@ Newer items at the top.
 
 ## Follow-ups from adopt-mode hardening (PR #48)
 
-### Adopt's `make install-hooks` next-step can name an absent target (owns-a-Makefile subcase) (imp-1)
+### ✅ Adopt's `make install-hooks` next-step can name an absent target (owns-a-Makefile subcase) (imp-1) — DONE in PR #48
 
-**Status**: parked. **Source**: surfaced during PR #48 (adopt-mode hardening) implementation + same-AI Tier-1 self-review.
+**Status**: ✅ DONE in PR #48 (commit folding Tier-2 codex round-4 P2). Initially
+parked as plan-faithful (the plan gates only `make install`), then **folded** when
+the Tier-2 codex round-4 review independently flagged it as a P2 affecting the
+**common** owns-a-Makefile case (e.g. the live bot, whose `install:` registers
+hooks and which has no `install-hooks` target). `_print_post_apply_guidance` now
+gates `make install-hooks` on `base_makefile_written` (the skill's Makefile, which
+defines the recipe, actually landed — WRITE/OVERWRITE, not SKIP); when the target
+owns its Makefile, the line is omitted (and the now-empty `next steps:` header is
+suppressed). **Source**: surfaced during PR #48 implementation; confirmed by Tier-2.
 
-**Why parked**: Bucket C gives the adopt success path the shared
-`_print_post_apply_guidance` helper, which (plan-faithfully) gates off the
-greenfield `cd … && make install` line but still prints `make install-hooks`.
-In the **owns-a-Makefile** adopt subcase the skill's `Makefile` — which defines
-`install-hooks` — is SKIPped, so the target has no `install-hooks` target and
-`make install-hooks` fails with `No rule to make target 'install-hooks'`.
+**Why it was real**: Bucket C gave the adopt success path the shared
+`_print_post_apply_guidance` helper, which gated off the greenfield
+`cd … && make install` line but still printed `make install-hooks`. In the
+owns-a-Makefile subcase the skill's `Makefile` — which defines `install-hooks` —
+is SKIPped, so `make install-hooks` failed with `No rule to make target`.
 (Distinct from "Adopt-mode does not add `pre-commit` to the target's dev
-dependencies" under "PR #7 follow-ups", which is the **no-Makefile** subcase
-where `install-hooks` exists but its `pre-commit install` step fails on a
-missing dep.) The approved plan gates only `make install`, so this was left as
-a follow-up rather than a silent scope expansion.
-
-**Triggers to pick up**: an adopt user whose project owns a Makefile runs the
-suggested `make install-hooks` and hits "No rule to make target", OR the next
-PR that touches `_print_post_apply_guidance`'s adopt next-steps.
-
-**Rough effort**: ~30 min — gate the `make install-hooks` hint on whether the
-skill's `Makefile` actually landed (base Makefile WRITE/OVERWRITE, not SKIP), or
-reword it to "if your project doesn't already register git hooks, run …".
+dependencies" under "PR #7 follow-ups", the **no-Makefile** subcase where
+`install-hooks` exists but its `pre-commit install` step fails on a missing dep.)
 
 ---
 

@@ -371,6 +371,7 @@ from the extraction).
 | 0b9e6ac | 2026-06-13 | Tier-2 r1 folds — codex P2: a 2nd prune pass after `_interactive_decide` so an owner who [o]verwrites their SKIPped Makefile doesn't get a redundant `Makefile.review` + duplicate-target hint ([n]ew keeps it); claude #1: shared `_drop_planned_file` helper makes both prune sites desync-proof; claude #2: path-validate the injected `Makefile.review`. +2 tests. | 1025/4 | Tier-2 claude+codex bots |
 | a85e5d7 | 2026-06-13 | Tier-2 r2 fold — codex round-2 P2: ground-truth `makefile_review_emitted` from the written entries (a WRITE/OVERWRITE of `Makefile.review`), not the base-Makefile recommendation, so an owns-both target whose owner SKIPs/[n]ews their existing `Makefile.review` gets no spurious include hint. +1 test. | 1026/4 | Tier-2 codex |
 | 000440f | 2026-06-13 | Tier-2 r3 fold — codex round-3 P2: gate the emit on the target Makefile NOT already inlining the fragment (the stable SELFTEST-OVERLAP sentinel), so a Makefile byte-identical to / previously bootstrapped by the skill doesn't get a redundant standalone + duplicate-target hint. Root of the emit-edge series; broader re-adopt stays parked. +1 test. | 1027/4 | Tier-2 codex |
+| f10a2de | 2026-06-13 | Tier-2 r4 fold — codex round-4 P2: gate `make install-hooks` on `base_makefile_written` (the skill Makefile landed), so the common owns-a-Makefile case doesn't advertise an install-hooks target the owner lacks (the live bot included). Reverses the earlier BACKLOG park of this item. +2 tests. | 1028/4 | Tier-2 codex |
 
 **Tier-2 review (PR #48).** CI + claude[bot] + codex all ran.
 **Round 1** (on `6231936`) — claude[bot]: approve-with-fixes — 2 imp-2, both folded
@@ -398,8 +399,16 @@ target Makefile not already carrying the SELFTEST-OVERLAP sentinel (a stateless 
 check — NOT the parked re-adopt feature). This closes the root of codex's escalating
 emit-edge series (overwrite / owns-both / already-has-machinery). claude[bot]: a verbatim
 repeat of its round-1/2 imp-3 + imp-2, citing **stale pre-refactor line numbers** — no
-re-analysis; rejected (false positive + redundant, as above). **Convergence**: all 3
-codex findings folded at the root; claude is regurgitating disproven items.
+re-analysis; rejected (false positive + redundant, as above).
+**Round 4** (on `db716d0`) — codex: a P2 on the previously-parked `make install-hooks`
+next-step — in the common owns-a-Makefile case the skill's Makefile (which defines
+`install-hooks`) is SKIPped, so the line names an absent target (the live bot included).
+Re-evaluated and **folded** `(a)` in `f10a2de` (reversing the BACKLOG park), gating the
+line on `base_makefile_written`. All four codex P2s were genuine — interactive-path /
+target-state edges the plan review didn't surface (the two-tier-review point); claude[bot]
+contributed one useful fold (path-validation) then repeated a disproven blocker.
+**Converged**: every codex finding addressed; remaining bot output would be codex's
+broader (parked) re-adopt territory + claude's stale repeats.
 
 **Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
 22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
