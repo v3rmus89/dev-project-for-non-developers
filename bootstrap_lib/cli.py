@@ -2,6 +2,7 @@ import argparse
 import difflib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -811,7 +812,42 @@ def _print_post_apply_guidance(
         print("  (same token works across multiple repos; see CONTRIBUTING.md for details)")
 
 
-def _main_apply_adopt(args, target_root, planned_files):
+# Match a Makefile target definition: a target name at column 0 followed by a
+# `:` that is NOT an assignment operator (`:=` / `::=`). This excludes variable
+# assignments (`VAR := …`, `VAR ?= …` — the latter has no leading colon at all)
+# and leading-`.` directives (`.PHONY`, `.DEFAULT_GOAL`) via the `[A-Za-z_]`
+# first-char class. Recipe lines start with a tab, so they never match at ^.
+_MAKE_TARGET_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:(?![:=])", re.MULTILINE)
+
+
+def _makefile_target_names(text):
+    """Return the set of target names defined in Makefile `text`."""
+    return set(_MAKE_TARGET_RE.findall(text))
+
+
+def _compute_colliding_targets(target_root, review_fragment_bytes):
+    """Return the sorted tuple of target names defined in BOTH the standalone
+    `Makefile.review` fragment and the target's existing `Makefile` (R-B1 /
+    iter-2 FN2).
+
+    These are the names the owner must remove before `include Makefile.review`:
+    GNU Make warns ("overriding recipe for target …") and silently keeps the
+    LAST recipe for a redefined target, so a stale same-named target would
+    shadow the fragment's. Computing the REAL overlap (rather than hard-coding
+    the bot's `review`) keeps the include hint correct for ANY existing Makefile.
+    Returns `()` when the target has no Makefile or nothing overlaps.
+    """
+    target_makefile = Path(target_root) / "Makefile"
+    try:
+        target_text = target_makefile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ()
+    fragment_text = review_fragment_bytes.decode("utf-8", errors="replace")
+    overlap = _makefile_target_names(fragment_text) & _makefile_target_names(target_text)
+    return tuple(sorted(overlap))
+
+
+def _main_apply_adopt(args, target_root, planned_files, context):
     """`--apply --mode=adopt` orchestrator. Pipeline:
 
       1. analyze_target(target_root, planned_files) → AdoptionPlan
@@ -846,6 +882,19 @@ def _main_apply_adopt(args, target_root, planned_files):
             rel: content for rel, content in planned_files.items() if rel not in placeholders
         }
 
+    # Bucket B: the plan-review machinery (the `make review` dispatcher,
+    # review-plan/commit targets, loop helpers) lives inline inside the generated
+    # Makefile via `{% include 'Makefile.review.tmpl' %}`. When the target OWNS a
+    # Makefile, adopt SKIPs it (rule h) — so none of those targets land, yet the
+    # six scripts they call DO (rule a). Provisionally render the fragment as a
+    # standalone `Makefile.review` and add it to the planned set; analyze
+    # classifies it rule-(a) WRITE (the target lacks it). The two-phase prune
+    # after analyze drops it again when the target has no Makefile of its own
+    # (the base Makefile is then itself written — inline include and all).
+    MAKEFILE_REVIEW = "Makefile.review"
+    review_fragment = render.render_makefile_review(context, language=args.language)
+    planned_files = {**planned_files, MAKEFILE_REVIEW: review_fragment}
+
     try:
         adoption_plan = adopt.analyze_target(target_root, planned_files)
     except Exception as e:
@@ -853,6 +902,31 @@ def _main_apply_adopt(args, target_root, planned_files):
         if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
             traceback.print_exc()
         return 1
+
+    # Bucket B two-phase prune (iter-2 FN1). Keep the standalone Makefile.review
+    # ONLY when the target's own Makefile is SKIPped (it owns one — the
+    # fragment's targets otherwise never arrive). When the base Makefile is
+    # itself written (rule-(a) WRITE for a missing Makefile, rule-(b) OVERWRITE
+    # for an empty one), that written Makefile ALREADY inlines the fragment, so
+    # the standalone copy is redundant — drop it. The drop MUST remove
+    # Makefile.review from BOTH planned_files AND the analyses tuple atomically:
+    # manifest.plan_adoption_entries raises ValueError for an analysis whose
+    # rel_path is absent from planned_files, and silently omits a planned_files
+    # entry absent from the analyses.
+    makefile_review_emitted = False
+    colliding_targets: tuple[str, ...] = ()
+    base_makefile_skipped = any(
+        a.rel_path == "Makefile" and a.recommendation.policy == "SKIP"
+        for a in adoption_plan.analyses
+    )
+    if base_makefile_skipped:
+        makefile_review_emitted = True
+        colliding_targets = _compute_colliding_targets(target_root, review_fragment)
+    else:
+        planned_files = {k: v for k, v in planned_files.items() if k != MAKEFILE_REVIEW}
+        adoption_plan = adoption_plan._replace(
+            analyses=tuple(a for a in adoption_plan.analyses if a.rel_path != MAKEFILE_REVIEW)
+        )
 
     # Show the recommendation report BEFORE prompting so the user sees the
     # full per-file picture in one pass.
@@ -929,11 +1003,18 @@ def _main_apply_adopt(args, target_root, planned_files):
     print(f"adopt-mode apply: {n_mutated} mutating entries written to {target_root}")
     print(f"restore manifest: {manifest_p}")
     print(f"to rollback: {_format_restore_hint(manifest_p)}")
-    # Bucket C: give the adopt success path the same next-steps / gh-repo /
-    # token guidance the v1 path prints (folds the parked gh-repo-create mirror
-    # item). Bucket B wires the real makefile_review_emitted / colliding_targets
-    # through; until then they default to False / () (no include hint).
-    _print_post_apply_guidance(args, target_root, adopt=True)
+    # Bucket C: give the adopt success path the same next-steps / gh-repo / token
+    # guidance the v1 path prints (folds the parked gh-repo-create mirror item).
+    # Bucket B: when a standalone Makefile.review was emitted (the target owns a
+    # Makefile), the helper also prints the `include Makefile.review` hint naming
+    # the computed colliding_targets.
+    _print_post_apply_guidance(
+        args,
+        target_root,
+        adopt=True,
+        makefile_review_emitted=makefile_review_emitted,
+        colliding_targets=colliding_targets,
+    )
     return 0
 
 
@@ -1048,7 +1129,7 @@ def main(argv):
     # _interactive_decide IS the consent model; no --overwrite-existing
     # needed (it's actually rejected by _resolve_mode for adopt-mode).
     if args.mode == "adopt":
-        return _main_apply_adopt(args, target_root, planned_files)
+        return _main_apply_adopt(args, target_root, planned_files, context)
 
     if detect.has_collisions(inspection) and not args.overwrite_existing:
         sys.stderr.write(

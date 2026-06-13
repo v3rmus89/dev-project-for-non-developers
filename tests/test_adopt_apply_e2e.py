@@ -677,3 +677,69 @@ class TestAdoptGuidanceE2E:
         # Bucket B not exercised here (empty target → base Makefile is a WRITE →
         # the standalone Makefile.review is dropped), so NO include hint.
         assert "include Makefile.review" not in out
+
+
+# ─── Bucket B — Makefile target-name overlap (colliding_targets) ───
+
+
+def _full_context(**overrides):
+    """A render context matching `cli._build_context`'s shape, for direct
+    render/parse unit tests."""
+    base = {
+        "project_name": "x",
+        "language": "python",
+        "python_version": "3.12",
+        "node_version": "24",
+        "go_version": "1.26",
+        "package_manager": "uv",
+        "enable_smoke": False,
+        "github_owner": "",
+        "github_repo": "",
+        "github_review_mode": "none",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestMakefileTargetOverlap:
+    """`_compute_colliding_targets` drives the include hint (iter-2 FN2): it must
+    extract real target names (not variables / directives) and intersect the
+    fragment with the target's existing Makefile."""
+
+    def test_target_names_extracts_targets_not_vars_or_directives(self):
+        text = (
+            ".PHONY: a b\n"
+            "PYTHON := ./venv/bin/python\n"
+            "ARGS ?= --prod\n"
+            "build: deps\n\tgcc\n"
+            "review:\t## dispatch\n\t@echo hi\n"
+            "check: lint test\n"
+        )
+        names = cli._makefile_target_names(text)
+        assert names == {"build", "review", "check"}
+        assert "PYTHON" not in names
+        assert "ARGS" not in names
+        assert ".PHONY" not in names
+
+    def test_compute_colliding_targets_intersects(self, tmp_path):
+        (tmp_path / "Makefile").write_bytes(
+            b"test:\n\tpytest\n\nreview:\n\t@echo old\n\nrun:\n\tpython app.py\n"
+        )
+        fragment = b"review:\n\t@echo dispatch\n\nloop-status:\n\t@echo status\n"
+        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)
+
+    def test_compute_colliding_targets_no_makefile_returns_empty(self, tmp_path):
+        assert cli._compute_colliding_targets(tmp_path, b"review:\n\t@echo x\n") == ()
+
+    def test_real_fragment_vs_bot_shape_only_review_collides(self, tmp_path):
+        """R-B1 ground truth: against a bot-shaped Makefile (a bare `review:` and
+        an older `review-plan:`), the REAL rendered fragment collides ONLY on
+        `review` — `review-plan` is superseded by the fragment's
+        `review-plan-by-{codex,claude}`, so it does NOT name-collide."""
+        from bootstrap_lib import render
+
+        fragment = render.render_makefile_review(_full_context(), language="python")
+        (tmp_path / "Makefile").write_bytes(
+            b"review:\n\t@echo old\n\nreview-plan:\n\t@echo old-plan\n\ntest:\n\tpytest\n"
+        )
+        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)

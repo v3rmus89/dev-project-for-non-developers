@@ -798,3 +798,96 @@ class TestGreenfieldPlaceholderSuppression:
         paths_in_manifest = {e["path"] for e in loaded.entries}
         assert "src/main.py" not in paths_in_manifest
         assert "tests/test_smoke.py" not in paths_in_manifest
+
+
+# ─── Bucket B — standalone Makefile.review delivery in adopt mode ────────────
+
+
+class TestBucketBStandaloneMakefileReview:
+    """Bucket B: the plan-review machinery is inlined into the generated
+    Makefile via `{% include 'Makefile.review.tmpl' %}`. When the target OWNS a
+    Makefile (adopt SKIPs it) the machinery never lands while the scripts it
+    calls do — so deliver it as a standalone `Makefile.review` WRITE + an
+    `include` hint naming the colliding targets. When the target has NO Makefile,
+    the written base Makefile already inlines the fragment, so the standalone
+    copy is dropped."""
+
+    _ADOPT_ARGS = (
+        "--apply",
+        "--mode",
+        "adopt",
+        "--language",
+        "python",
+        "--project-name",
+        "x",
+    )
+
+    def _setup_target_owning_makefile(self, target_root):
+        """A non-trivial existing Makefile (rule (h) SKIP, manual_review=True)
+        that defines a `review:` target — the exact name that collides with the
+        fragment's `review` dispatcher (R-B1)."""
+        target_root.mkdir()
+        (target_root / "Makefile").write_bytes(
+            b".PHONY: test review\n\ntest:\n\tpytest\n\nreview:\n\t@echo old review\n"
+        )
+
+    def test_owns_makefile_emits_standalone_review_and_include_hint(self, tmpdir_isolated):
+        target = tmpdir_isolated / "target"
+        self._setup_target_owning_makefile(target)
+        # The existing Makefile is the only manual-review prompt (rule (h) SKIP).
+        # Accept the recommended SKIP with "r\n" so the target keeps its Makefile.
+        rc, out, err = run_cli([*self._ADOPT_ARGS, "--out", str(target)], stdin_text="r\n")
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # Base Makefile SKIPped — untouched.
+        assert (target / "Makefile").read_bytes().startswith(b".PHONY: test review")
+        # Standalone Makefile.review WRITTEN, carrying the review dispatcher.
+        review = target / "Makefile.review"
+        assert review.exists(), (
+            "standalone Makefile.review must be written when the target owns a Makefile"
+        )
+        assert b"review:" in review.read_bytes()
+        # The scripts the machinery calls also landed (rule (a) WRITE) — they now
+        # have a home (the previously-orphaned-scripts bug).
+        assert (target / "scripts" / "loop-status.py").exists()
+        # Include hint printed, naming the REAL collision (`review`).
+        assert "include Makefile.review" in out
+        assert "remove your existing review target" in out
+
+    def test_owns_makefile_review_is_in_manifest_and_restore_deletes_it(self, tmpdir_isolated):
+        """R-3: Makefile.review is a rule-(a) WRITE → it is in the v2 manifest and
+        restore deletes it; the target's own Makefile is untouched throughout."""
+        target = tmpdir_isolated / "target"
+        self._setup_target_owning_makefile(target)
+        original_makefile = (target / "Makefile").read_bytes()
+
+        rc, out, _err = run_cli([*self._ADOPT_ARGS, "--out", str(target)], stdin_text="r\n")
+        assert rc == 0
+        assert (target / "Makefile.review").exists()
+        loaded = manifest.load_manifest(_extract_manifest_path(out))
+        entry = next(e for e in loaded.entries if e["path"] == "Makefile.review")
+        assert entry["policy"] == "WRITE"
+
+        rc, _o, _e = run_cli(["--restore", str(_extract_manifest_path(out))])
+        assert rc == 0
+        assert not (target / "Makefile.review").exists(), "WRITE → restore must delete it"
+        assert (target / "Makefile").read_bytes() == original_makefile, "owner Makefile untouched"
+
+    def test_no_makefile_drops_standalone_review(self, tmpdir_isolated):
+        """Fixture B: target has its own source but NO Makefile → the base
+        Makefile is a rule-(a) WRITE that inlines the fragment, so the standalone
+        copy is dropped (not written, not in manifest, no include hint)."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "src").mkdir()
+        (target / "src" / "app.py").write_bytes(b"# the target's real entrypoint\n")
+
+        rc, out, err = run_cli([*self._ADOPT_ARGS, "--out", str(target), "--non-interactive"])
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # Base Makefile written (it inlines the review fragment) …
+        assert (target / "Makefile").exists()
+        assert b"review:" in (target / "Makefile").read_bytes()
+        # … and NO redundant standalone Makefile.review.
+        assert not (target / "Makefile.review").exists()
+        assert "include Makefile.review" not in out
+        loaded = manifest.load_manifest(_extract_manifest_path(out))
+        assert "Makefile.review" not in {e["path"] for e in loaded.entries}

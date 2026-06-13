@@ -165,6 +165,21 @@ def planned_paths(language, github_review_mode="none", enable_smoke=False, packa
     return paths
 
 
+def render_makefile_review(context, language="python"):
+    """Render the plan-review machinery fragment (`shared/Makefile.review.tmpl`)
+    as a standalone file's bytes.
+
+    Byte-equivalent to what `{% include 'Makefile.review.tmpl' %}` emits inside
+    the generated `Makefile` (same Jinja env + same context) — adopt mode writes
+    this as a standalone `Makefile.review` when the target owns its own Makefile
+    (which adopt SKIPs, so the inline include never lands). `tests/
+    test_selftest_overlap.py` + the Bucket B parity test lock the standalone and
+    inline forms together so they cannot drift (R-B2).
+    """
+    env = build_env(language)
+    return env.get_template("Makefile.review.tmpl").render(**context).encode("utf-8")
+
+
 def render_all(context, language="python"):
     env = build_env(language)
     mode = context.get("github_review_mode", "none")
