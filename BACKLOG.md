@@ -8,6 +8,34 @@ Newer items at the top.
 
 ---
 
+## Follow-ups from adopt-mode hardening (PR #48)
+
+### Adopt's `make install-hooks` next-step can name an absent target (owns-a-Makefile subcase) (imp-1)
+
+**Status**: parked. **Source**: surfaced during PR #48 (adopt-mode hardening) implementation + same-AI Tier-1 self-review.
+
+**Why parked**: Bucket C gives the adopt success path the shared
+`_print_post_apply_guidance` helper, which (plan-faithfully) gates off the
+greenfield `cd … && make install` line but still prints `make install-hooks`.
+In the **owns-a-Makefile** adopt subcase the skill's `Makefile` — which defines
+`install-hooks` — is SKIPped, so the target has no `install-hooks` target and
+`make install-hooks` fails with `No rule to make target 'install-hooks'`.
+(Distinct from "Adopt-mode does not add `pre-commit` to the target's dev
+dependencies" under "PR #7 follow-ups", which is the **no-Makefile** subcase
+where `install-hooks` exists but its `pre-commit install` step fails on a
+missing dep.) The approved plan gates only `make install`, so this was left as
+a follow-up rather than a silent scope expansion.
+
+**Triggers to pick up**: an adopt user whose project owns a Makefile runs the
+suggested `make install-hooks` and hits "No rule to make target", OR the next
+PR that touches `_print_post_apply_guidance`'s adopt next-steps.
+
+**Rough effort**: ~30 min — gate the `make install-hooks` hint on whether the
+skill's `Makefile` actually landed (base Makefile WRITE/OVERWRITE, not SKIP), or
+reword it to "if your project doesn't already register git hooks, run …".
+
+---
+
 ## Follow-ups from the #46 / #50 Tier-2 review
 
 ### `loop-status` malformed-latest: a keyless foreign file at a higher iter still masks a valid latest (`loop-status-malformed-latest-keyless-foreign`)
@@ -381,9 +409,9 @@ cancel).
 
 ## Follow-ups from the info-architecture refactor
 
-### Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2)
+### ✅ Mirror the gh-repo-create hint into adopt-mode's `_main_apply_adopt` success path (imp-2) — DONE in PR #48
 
-**Status**: parked. **Source**: scoped out of the info-architecture refactor PR (`refactor/tighten-info-architecture`, 2026-05-21).
+**Status**: ✅ DONE in PR #48 (Bucket C, commit `7841564`) — extracted into the shared `_print_post_apply_guidance` helper, called from BOTH the v1 and adopt success paths. **Source**: scoped out of the info-architecture refactor PR (`refactor/tighten-info-architecture`, 2026-05-21).
 
 **Why parked**: that PR added the gh-repo-create hint to the **v1**
 `--apply` post-apply success block in `bootstrap_lib/cli.py` (inside
@@ -739,9 +767,9 @@ plan-vs-repo factual mismatches.
 
 ## PR #7 follow-ups
 
-### Adopt-mode skips the greenfield smoke placeholders for an existing project (imp-2)
+### ✅ Adopt-mode skips the greenfield smoke placeholders for an existing project (imp-2) — DONE in PR #48
 
-**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details` (recorded during skill PR #8).
+**Status**: ✅ DONE in PR #48 (Bucket A, commit `c936920`) — `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language) is filtered from the adopt planned set in `_main_apply_adopt` before analyze. **Source**: PR #7 adopt-mode trial against `call-details` (recorded during skill PR #8).
 
 **Why parked**: an `--apply --mode=adopt` run emitted the greenfield smoke
 placeholders `src/main.py` (`print("hello from <project>")`) and

@@ -368,6 +368,17 @@ from the extraction).
 | c936920 | 2026-06-13 | Bucket A — suppress greenfield-only placeholders (`src/main.py`, `tests/test_smoke.py`) in adopt: `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language; node/go listed) + a filter in `_main_apply_adopt` before `analyze_target`. Greenfield `--apply` unchanged. | 1008/4 | same-AI self-review, clean |
 | 7841564 | 2026-06-13 | Bucket C — extract `_print_post_apply_guidance(args, target_root, *, adopt, makefile_review_emitted=False, colliding_targets=())`, called from BOTH v1 + adopt paths (AD3); gate `cd … && make install` on adopt; dormant include-hint branch. v1 output byte-identical. | 1015/4 | same-AI self-review, clean; v1 regression tests green |
 | 88b6ba0 | 2026-06-13 | Bucket B — standalone `Makefile.review` WRITE when the target owns a Makefile; two-phase prune of BOTH `planned_files` + `analyses` when the base Makefile is not SKIPped (iter-2 FN1); computed `colliding_targets` (iter-2 FN2); `render.render_makefile_review` + R-B2 selftest-overlap parity guard. | 1023/4 | same-AI self-review, clean |
+| 0b9e6ac | 2026-06-13 | Tier-2 folds — codex P2: a 2nd prune pass after `_interactive_decide` so an owner who [o]verwrites their SKIPped Makefile doesn't get a redundant `Makefile.review` + duplicate-target hint ([n]ew keeps it); claude #1: shared `_drop_planned_file` helper makes both prune sites desync-proof; claude #2: path-validate the injected `Makefile.review`. +2 tests. | 1025/4 | Tier-2 claude+codex bots |
+
+**Tier-2 review (PR #48).** CI + claude[bot] + codex all ran on `6231936`.
+claude[bot]: approve-with-fixes — 2 imp-2, both folded `(a)`: path-validate the
+injected `Makefile.review` (its suggested sync-assertion #1 referenced a
+non-existent field `analysis.policy`, so addressed instead by the shared
+`_drop_planned_file` helper — sync by construction). codex: 1 P2, folded `(a)` —
+a real interactive-path bug: an owner who [o]verwrites the SKIPped Makefile makes
+the skill's inline-include Makefile the active one, so the standalone
+`Makefile.review` + its include hint were redundant/harmful; fixed by re-deciding
+on the FINAL Makefile action (commit `0b9e6ac`) with `[o]`/`[n]` regression tests.
 
 **Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
 22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
@@ -384,12 +395,17 @@ removal) is an owner step, not something adopt performs.
 
 ## Lessons surfaced (this PR)
 
-_None — the three same-AI Tier-1 self-reviews surfaced no new mistake-class and there
-was no approach-changing push-back. One design observation parked, not a lesson:
-adopt's `make install-hooks` next-step can name a target absent in the owns-a-Makefile
-subcase (the skill's `Makefile`, which defines it, is SKIPped). Plan-faithful — the
-plan gates only `make install` — so it is left as a candidate BACKLOG follow-up, not a
-silent scope expansion._
+- **Tier-1 (self-review)**: none — no new mistake-class, no approach-changing push-back.
+- **Tier-2 (codex P2)**: new mistake-class → `LESSONS.md` 2026-06-13 — *a gate keyed on
+  the analyze-phase recommendation can be invalidated by the interactive decide phase*
+  (the owner can `[o]verwrite` a SKIPped Makefile). Folded `(a)` in commit `0b9e6ac`.
+- **Tier-2 (claude #1)**: its suggested sync-assertion cited a non-existent field
+  (`analysis.policy`) — caught before folding (the 2026-05-17 "verify the reviewer's
+  suggested fix" lesson holding); addressed via the shared `_drop_planned_file` helper.
+- One design observation parked (BACKLOG "Follow-ups from adopt-mode hardening (PR #48)"),
+  not a lesson: adopt's `make install-hooks` next-step can name a target absent in the
+  owns-a-Makefile subcase (the skill's `Makefile`, which defines it, is SKIPped) —
+  plan-faithful (the plan gates only `make install`), so left as a follow-up.
 
 ## Critical files to read before each iter's review
 
