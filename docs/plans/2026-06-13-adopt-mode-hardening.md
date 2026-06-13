@@ -372,6 +372,7 @@ from the extraction).
 | a85e5d7 | 2026-06-13 | Tier-2 r2 fold — codex round-2 P2: ground-truth `makefile_review_emitted` from the written entries (a WRITE/OVERWRITE of `Makefile.review`), not the base-Makefile recommendation, so an owns-both target whose owner SKIPs/[n]ews their existing `Makefile.review` gets no spurious include hint. +1 test. | 1026/4 | Tier-2 codex |
 | 000440f | 2026-06-13 | Tier-2 r3 fold — codex round-3 P2: gate the emit on the target Makefile NOT already inlining the fragment (the stable SELFTEST-OVERLAP sentinel), so a Makefile byte-identical to / previously bootstrapped by the skill doesn't get a redundant standalone + duplicate-target hint. Root of the emit-edge series; broader re-adopt stays parked. +1 test. | 1027/4 | Tier-2 codex |
 | f10a2de | 2026-06-13 | Tier-2 r4 fold — codex round-4 P2: gate `make install-hooks` on `base_makefile_written` (the skill Makefile landed), so the common owns-a-Makefile case doesn't advertise an install-hooks target the owner lacks (the live bot included). Reverses the earlier BACKLOG park of this item. +2 tests. | 1028/4 | Tier-2 codex |
+| 961f415 | 2026-06-13 | Tier-2 r5 fold — codex round-5 P2: the adopt `make install-hooks` next-step carries its own `cd {target}` (the deps-install line that would have cd'd in is gated off for adopt; bootstrap runs from outside the target). v1 byte-identical. | 1028/4 | Tier-2 codex |
 
 **Tier-2 review (PR #48).** CI + claude[bot] + codex all ran.
 **Round 1** (on `6231936`) — claude[bot]: approve-with-fixes — 2 imp-2, both folded
@@ -404,11 +405,15 @@ re-analysis; rejected (false positive + redundant, as above).
 next-step — in the common owns-a-Makefile case the skill's Makefile (which defines
 `install-hooks`) is SKIPped, so the line names an absent target (the live bot included).
 Re-evaluated and **folded** `(a)` in `f10a2de` (reversing the BACKLOG park), gating the
-line on `base_makefile_written`. All four codex P2s were genuine — interactive-path /
+line on `base_makefile_written`. The codex P2s were all genuine — interactive-path /
 target-state edges the plan review didn't surface (the two-tier-review point); claude[bot]
 contributed one useful fold (path-validation) then repeated a disproven blocker.
-**Converged**: every codex finding addressed; remaining bot output would be codex's
-broader (parked) re-adopt territory + claude's stale repeats.
+**Round 5** (on `c516b11`) — claude[bot] re-analyzed and flipped to **✅ Approve** ("no
+critical issues; previous Tier-2 findings properly addressed"). codex: a 5th P2 — the adopt
+`make install-hooks` step needed its own `cd {target}` (the deps-install line that would
+have cd'd was gated off) — folded `(a)` in `961f415`.
+**Final**: 5 codex P2s all folded; claude[bot] **✅ Approve**; CI green. The broader
+re-adopt / upgrade-delta feature stays parked (BACKLOG).
 
 **Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
 22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
