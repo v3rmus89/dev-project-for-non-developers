@@ -370,6 +370,7 @@ from the extraction).
 | 88b6ba0 | 2026-06-13 | Bucket B — standalone `Makefile.review` WRITE when the target owns a Makefile; two-phase prune of BOTH `planned_files` + `analyses` when the base Makefile is not SKIPped (iter-2 FN1); computed `colliding_targets` (iter-2 FN2); `render.render_makefile_review` + R-B2 selftest-overlap parity guard. | 1023/4 | same-AI self-review, clean |
 | 0b9e6ac | 2026-06-13 | Tier-2 r1 folds — codex P2: a 2nd prune pass after `_interactive_decide` so an owner who [o]verwrites their SKIPped Makefile doesn't get a redundant `Makefile.review` + duplicate-target hint ([n]ew keeps it); claude #1: shared `_drop_planned_file` helper makes both prune sites desync-proof; claude #2: path-validate the injected `Makefile.review`. +2 tests. | 1025/4 | Tier-2 claude+codex bots |
 | a85e5d7 | 2026-06-13 | Tier-2 r2 fold — codex round-2 P2: ground-truth `makefile_review_emitted` from the written entries (a WRITE/OVERWRITE of `Makefile.review`), not the base-Makefile recommendation, so an owns-both target whose owner SKIPs/[n]ews their existing `Makefile.review` gets no spurious include hint. +1 test. | 1026/4 | Tier-2 codex |
+| 000440f | 2026-06-13 | Tier-2 r3 fold — codex round-3 P2: gate the emit on the target Makefile NOT already inlining the fragment (the stable SELFTEST-OVERLAP sentinel), so a Makefile byte-identical to / previously bootstrapped by the skill doesn't get a redundant standalone + duplicate-target hint. Root of the emit-edge series; broader re-adopt stays parked. +1 test. | 1027/4 | Tier-2 codex |
 
 **Tier-2 review (PR #48).** CI + claude[bot] + codex all ran.
 **Round 1** (on `6231936`) — claude[bot]: approve-with-fixes — 2 imp-2, both folded
@@ -390,6 +391,15 @@ its re-raised imp-2 sync-assertion stays rejected (redundant with `_drop_planned
 which the same review's positive notes credit as "correctly synchronizes"). The triage
 discipline's "verify the premise before folding" (LESSONS 2026-05-17) caught the
 false-positive blocker.
+**Round 3** (on `8e557bb`) — codex: a *third* P2, folded `(a)` in `000440f` — a target
+whose Makefile is byte-identical to / previously bootstrapped by the skill already
+inlines the fragment, so emitting a standalone duplicates it; gated the emit on the
+target Makefile not already carrying the SELFTEST-OVERLAP sentinel (a stateless content
+check — NOT the parked re-adopt feature). This closes the root of codex's escalating
+emit-edge series (overwrite / owns-both / already-has-machinery). claude[bot]: a verbatim
+repeat of its round-1/2 imp-3 + imp-2, citing **stale pre-refactor line numbers** — no
+re-analysis; rejected (false positive + redundant, as above). **Convergence**: all 3
+codex findings folded at the root; claude is regurgitating disproven items.
 
 **Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
 22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
