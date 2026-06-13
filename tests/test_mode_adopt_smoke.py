@@ -891,3 +891,38 @@ class TestBucketBStandaloneMakefileReview:
         assert "include Makefile.review" not in out
         loaded = manifest.load_manifest(_extract_manifest_path(out))
         assert "Makefile.review" not in {e["path"] for e in loaded.entries}
+
+    def test_owner_overwrites_makefile_drops_standalone_review(self, tmpdir_isolated):
+        """Tier-2 codex P2: pass 1 keyed on the Makefile RECOMMENDATION (SKIP),
+        but the owner can answer [o]verwrite. The skill's Makefile (which inlines
+        the fragment) then becomes the active one, so the standalone Makefile.review
+        must be DROPPED and the include hint suppressed — else duplicate `review`
+        targets once the owner includes it."""
+        target = tmpdir_isolated / "target"
+        self._setup_target_owning_makefile(target)
+        # The Makefile is the only prompt (rule (h) SKIP). [o] + typed OVERWRITE.
+        rc, out, err = run_cli(
+            [*self._ADOPT_ARGS, "--out", str(target)], stdin_text="o\nOVERWRITE\n"
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # Skill Makefile written (it inlines the review fragment) …
+        assert b"review:" in (target / "Makefile").read_bytes()
+        # … so NO redundant standalone + NO include hint + not in manifest.
+        assert not (target / "Makefile.review").exists()
+        assert "include Makefile.review" not in out
+        loaded = manifest.load_manifest(_extract_manifest_path(out))
+        assert "Makefile.review" not in {e["path"] for e in loaded.entries}
+
+    def test_owner_picks_new_for_makefile_keeps_standalone_review(self, tmpdir_isolated):
+        """The [n]ew counterpart of the codex-P2 case: the skill's Makefile goes
+        to Makefile.new and the owner's Makefile stays ACTIVE (no inline fragment),
+        so the standalone Makefile.review is KEPT and the include hint still fires."""
+        target = tmpdir_isolated / "target"
+        self._setup_target_owning_makefile(target)
+        rc, out, err = run_cli([*self._ADOPT_ARGS, "--out", str(target)], stdin_text="n\n")
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        assert (target / "Makefile.new").exists()  # skill's Makefile as .new (inactive)
+        assert (target / "Makefile.review").exists()  # standalone KEPT
+        assert "include Makefile.review" in out
+        # owner's Makefile untouched + still active
+        assert (target / "Makefile").read_bytes().startswith(b".PHONY: test review")

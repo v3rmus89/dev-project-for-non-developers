@@ -847,6 +847,22 @@ def _compute_colliding_targets(target_root, review_fragment_bytes):
     return tuple(sorted(overlap))
 
 
+def _drop_planned_file(rel_path, planned_files, plan):
+    """Remove `rel_path` from BOTH the planned_files dict AND the plan's
+    `analyses` tuple, returning the new `(planned_files, plan)` pair.
+
+    `manifest.plan_adoption_entries` requires every non-SKIP analysis to have a
+    matching planned_files entry (it raises `ValueError` otherwise) and only
+    writes paths present in the analyses — so the two MUST be pruned together.
+    Centralising the drop here makes that synchronisation structural: the two
+    prune sites in `_main_apply_adopt` (recommendation-keyed pass 1, and the
+    post-decision pass 2) cannot desync the two structures.
+    """
+    new_planned = {k: v for k, v in planned_files.items() if k != rel_path}
+    new_plan = plan._replace(analyses=tuple(a for a in plan.analyses if a.rel_path != rel_path))
+    return new_planned, new_plan
+
+
 def _main_apply_adopt(args, target_root, planned_files, context):
     """`--apply --mode=adopt` orchestrator. Pipeline:
 
@@ -892,6 +908,12 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     # after analyze drops it again when the target has no Makefile of its own
     # (the base Makefile is then itself written — inline include and all).
     MAKEFILE_REVIEW = "Makefile.review"
+    # This planned file is injected AFTER render_all + the CLI-layer path-safety
+    # sweep in main(), so validate it here too: the skill's two-layer path-safety
+    # invariant requires every planned-file write to pass the CLI-layer check. The
+    # name is a constant today (always safe), but the check keeps the invariant
+    # intact and future-proofs it if the name ever derives from something else.
+    paths.validate_target_path(target_root, MAKEFILE_REVIEW)
     review_fragment = render.render_makefile_review(context, language=args.language)
     planned_files = {**planned_files, MAKEFILE_REVIEW: review_fragment}
 
@@ -903,16 +925,16 @@ def _main_apply_adopt(args, target_root, planned_files, context):
             traceback.print_exc()
         return 1
 
-    # Bucket B two-phase prune (iter-2 FN1). Keep the standalone Makefile.review
-    # ONLY when the target's own Makefile is SKIPped (it owns one — the
-    # fragment's targets otherwise never arrive). When the base Makefile is
-    # itself written (rule-(a) WRITE for a missing Makefile, rule-(b) OVERWRITE
-    # for an empty one), that written Makefile ALREADY inlines the fragment, so
-    # the standalone copy is redundant — drop it. The drop MUST remove
-    # Makefile.review from BOTH planned_files AND the analyses tuple atomically:
-    # manifest.plan_adoption_entries raises ValueError for an analysis whose
-    # rel_path is absent from planned_files, and silently omits a planned_files
-    # entry absent from the analyses.
+    # Bucket B prune, pass 1 — recommendation-keyed (iter-2 FN1); pass 2 below
+    # re-checks against the owner's actual decision (codex P2). Keep the
+    # standalone Makefile.review ONLY when the target's own Makefile is SKIPped
+    # (it owns one — the fragment's targets otherwise never arrive). When the
+    # base Makefile is itself written (rule-(a) WRITE for a missing Makefile,
+    # rule-(b) OVERWRITE for an empty one), that written Makefile ALREADY inlines
+    # the fragment, so the standalone copy is redundant — drop it from BOTH
+    # planned_files AND the analyses tuple (manifest.plan_adoption_entries raises
+    # ValueError for an analysis whose rel_path is absent from planned_files, and
+    # silently omits a planned_files entry absent from the analyses).
     makefile_review_emitted = False
     colliding_targets: tuple[str, ...] = ()
     base_makefile_skipped = any(
@@ -923,9 +945,8 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         makefile_review_emitted = True
         colliding_targets = _compute_colliding_targets(target_root, review_fragment)
     else:
-        planned_files = {k: v for k, v in planned_files.items() if k != MAKEFILE_REVIEW}
-        adoption_plan = adoption_plan._replace(
-            analyses=tuple(a for a in adoption_plan.analyses if a.rel_path != MAKEFILE_REVIEW)
+        planned_files, adoption_plan = _drop_planned_file(
+            MAKEFILE_REVIEW, planned_files, adoption_plan
         )
 
     # Show the recommendation report BEFORE prompting so the user sees the
@@ -941,6 +962,26 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     except _AdoptionAbort as e:
         sys.stderr.write(f"{e}\n")
         return 2
+
+    # Bucket B prune, pass 2 (codex P2). Pass 1 keyed on the Makefile
+    # RECOMMENDATION, but the owner is prompted on their own Makefile and can
+    # turn a SKIP into [o]verwrite (or [n]ew). If they OVERWRITE/WRITE the active
+    # Makefile with the skill's — which inlines the fragment via `{% include %}` —
+    # a standalone Makefile.review is redundant AND the include hint would create
+    # duplicate `review` targets. Re-decide on the FINAL Makefile action: drop the
+    # standalone iff the skill's Makefile became the active one. [n]ew leaves the
+    # owner's Makefile active (skill → Makefile.new), so the standalone stays.
+    if makefile_review_emitted:
+        final_makefile_policy = next(
+            (a.recommendation.policy for a in decided_plan.analyses if a.rel_path == "Makefile"),
+            None,
+        )
+        if final_makefile_policy in ("WRITE", "OVERWRITE"):
+            makefile_review_emitted = False
+            colliding_targets = ()
+            planned_files, decided_plan = _drop_planned_file(
+                MAKEFILE_REVIEW, planned_files, decided_plan
+            )
 
     try:
         entries, created_dirs = manifest.plan_adoption_entries(
