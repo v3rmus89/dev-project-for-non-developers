@@ -603,12 +603,22 @@ class TestPostApplyGuidanceHelper:
         assert "cd /tmp/target && make install" in out
         assert "make install-hooks" in out
 
-    def test_adopt_gates_off_cd_make_install_but_keeps_hooks(self):
-        out = _guidance_output(adopt=True)
+    def test_adopt_gates_off_cd_make_install_keeps_hooks_when_makefile_written(self):
+        # base_makefile_written=True (no target Makefile → the skill's landed),
+        # so `make install-hooks` is a real target.
+        out = _guidance_output(adopt=True, base_makefile_written=True)
         # The greenfield `cd … && make install` line is gated off for adopt …
         assert "&& make install" not in out
-        # … but the hooks next-step still prints.
+        # … but the hooks next-step still prints (the skill Makefile defines it).
         assert "make install-hooks" in out
+
+    def test_adopt_owned_makefile_omits_install_hooks(self):
+        # base_makefile_written=False (target owns its Makefile, SKIP): the
+        # skill's install-hooks recipe never landed, so don't advertise it
+        # (Tier-2 codex round-4 P2). With nothing left, no "next steps:" header.
+        out = _guidance_output(adopt=True, base_makefile_written=False)
+        assert "make install-hooks" not in out
+        assert "next steps:" not in out
 
     def test_adopt_no_makefile_review_hint_when_not_emitted(self):
         out = _guidance_output(adopt=True, makefile_review_emitted=False)

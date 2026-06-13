@@ -648,6 +648,7 @@ def _print_post_apply_guidance(
     adopt,
     makefile_review_emitted=False,
     colliding_targets=(),
+    base_makefile_written=False,
 ):
     """Print the shared post-apply guidance: next-steps + gh-repo-create hint +
     both-docs Codex hint + the CLAUDE_CODE_OAUTH_TOKEN secret step.
@@ -663,6 +664,10 @@ def _print_post_apply_guidance(
       - the greenfield `cd … && make install` next-step is gated off — an adopt
         target already has its own install flow; the skill must not imply it
         created one;
+      - `make install-hooks` is gated on `base_makefile_written` in adopt mode:
+        that target lives in the skill's Makefile, which only lands when we
+        WRITE/OVERWRITE it; when the target owns its Makefile (SKIP) the target
+        has no such recipe, so advertising it would fail (Tier-2 codex round-4);
       - when `makefile_review_emitted` is True, print the Bucket B
         `include Makefile.review` hint and name `colliding_targets` (the
         computed fragment-vs-target Makefile target overlap) as the ones to
@@ -675,10 +680,22 @@ def _print_post_apply_guidance(
     (iter-2 FN2); both are values the caller already computed.
     """
     if args.language in ("python", "nodejs", "go"):
-        print("next steps:")
+        steps = []
         if not adopt:
-            print(f"  cd {target_root} && make install")
-        print("  make install-hooks  # registers git hooks, requires .git/")
+            # Greenfield writes the language Makefile; adopt targets have their
+            # own install flow, so the skill must not imply it created one.
+            steps.append(f"  cd {target_root} && make install")
+        if not adopt or base_makefile_written:
+            # `make install-hooks` is defined by the skill's Makefile — only
+            # advertise it when that Makefile actually landed (greenfield always;
+            # adopt only when the base Makefile was WRITE/OVERWRITE). Advertising
+            # it for an owned-Makefile SKIP would name a non-existent target
+            # (Tier-2 codex round-4 P2).
+            steps.append("  make install-hooks  # registers git hooks, requires .git/")
+        if steps:
+            print("next steps:")
+            for step in steps:
+                print(step)
 
     if makefile_review_emitted:
         # Bucket B: a standalone Makefile.review carries the plan-review
@@ -1035,6 +1052,12 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     )
     if not makefile_review_emitted:
         colliding_targets = ()
+    # Whether the skill's Makefile (which defines `install-hooks`) actually
+    # landed — gates the `make install-hooks` next-step so adopt never advertises
+    # a target absent from the owner's own Makefile (Tier-2 codex round-4 P2).
+    base_makefile_written = any(
+        e["path"] == "Makefile" and e["policy"] in ("WRITE", "OVERWRITE") for e in entries
+    )
 
     m = manifest.Manifest(
         # Resolve to absolute path — mirrors v1's _prepare_apply contract so
@@ -1091,6 +1114,7 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         adopt=True,
         makefile_review_emitted=makefile_review_emitted,
         colliding_targets=colliding_targets,
+        base_makefile_written=base_makefile_written,
     )
     return 0
 

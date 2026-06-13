@@ -852,6 +852,9 @@ class TestBucketBStandaloneMakefileReview:
         # Include hint printed, naming the REAL collision (`review`).
         assert "include Makefile.review" in out
         assert "remove your existing review target" in out
+        # Tier-2 codex round-4: the skill's Makefile was SKIPped (owner owns one),
+        # so its `install-hooks` recipe never landed — don't advertise it.
+        assert "make install-hooks" not in out
 
     def test_owns_makefile_review_is_in_manifest_and_restore_deletes_it(self, tmpdir_isolated):
         """R-3: Makefile.review is a rule-(a) WRITE → it is in the v2 manifest and
