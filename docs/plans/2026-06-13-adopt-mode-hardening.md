@@ -365,11 +365,31 @@ from the extraction).
 
 | Commit | Date | Summary | check | Tier-1 |
 |--------|------|---------|-------|--------|
-| _pending_ | | | | |
+| c936920 | 2026-06-13 | Bucket A — suppress greenfield-only placeholders (`src/main.py`, `tests/test_smoke.py`) in adopt: `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language; node/go listed) + a filter in `_main_apply_adopt` before `analyze_target`. Greenfield `--apply` unchanged. | 1008/4 | same-AI self-review, clean |
+| 7841564 | 2026-06-13 | Bucket C — extract `_print_post_apply_guidance(args, target_root, *, adopt, makefile_review_emitted=False, colliding_targets=())`, called from BOTH v1 + adopt paths (AD3); gate `cd … && make install` on adopt; dormant include-hint branch. v1 output byte-identical. | 1015/4 | same-AI self-review, clean; v1 regression tests green |
+| 88b6ba0 | 2026-06-13 | Bucket B — standalone `Makefile.review` WRITE when the target owns a Makefile; two-phase prune of BOTH `planned_files` + `analyses` when the base Makefile is not SKIPped (iter-2 FN1); computed `colliding_targets` (iter-2 FN2); `render.render_makefile_review` + R-B2 selftest-overlap parity guard. | 1023/4 | same-AI self-review, clean |
+
+**Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
+22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
+policy table matches the Context ground truth exactly; `colliding_targets == ('review',)`.
+Step 2 (`cp -R` throwaway copy, scripted-stdin apply + restore) — clean: 16 mutating
+entries; include hint named `review`; originals (`Makefile`/`pyproject.toml`/`CLAUDE.md`)
+untouched; `.gitignore` carried the NEUTRALIZE block + the command became git-visible;
+restore reversed everything (2 restored / 14 removed) with `.gitignore` byte-identical.
+Step 3 (live bot) — **skipped by decision**: step 2's `cp -R` copy was byte-identical to
+the live bot (same files + `.git`), so it already validated adopt against the bot's exact
+content + full restore; re-running on the production tree (launchd job live) adds ~zero
+signal. The marginal-only check (`make -n review` after the manual `include` + target
+removal) is an owner step, not something adopt performs.
 
 ## Lessons surfaced (this PR)
 
-_pending_
+_None — the three same-AI Tier-1 self-reviews surfaced no new mistake-class and there
+was no approach-changing push-back. One design observation parked, not a lesson:
+adopt's `make install-hooks` next-step can name a target absent in the owns-a-Makefile
+subcase (the skill's `Makefile`, which defines it, is SKIPped). Plan-faithful — the
+plan gates only `make install` — so it is left as a candidate BACKLOG follow-up, not a
+silent scope expansion._
 
 ## Critical files to read before each iter's review
 
