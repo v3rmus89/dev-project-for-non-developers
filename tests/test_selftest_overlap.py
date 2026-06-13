@@ -148,6 +148,27 @@ def test_overlap_makefile_review_section():
         pytest.fail(f"Makefile review-section drift:\n{diff}")
 
 
+def test_standalone_makefile_review_matches_inline_fragment():
+    """R-B2 (adopt-mode Bucket B): `render.render_makefile_review` must produce
+    the SAME fragment bytes that `{% include 'Makefile.review.tmpl' %}` inlines
+    into the generated Makefile. Adopt writes the standalone `Makefile.review`
+    when the target owns a Makefile; it cannot be allowed to drift from the
+    inline form. Compare the sentinel-delimited SELFTEST-OVERLAP block (the
+    fragment's own body) across both render paths."""
+    standalone = render.render_makefile_review(SKILL_REPO_CONTEXT, language="python").decode()
+    inline_makefile = render.render_all(SKILL_REPO_CONTEXT, language="python")["Makefile"].decode()
+
+    def _block(text):
+        lines = text.splitlines()
+        begin = next(i for i, line in enumerate(lines) if "SELFTEST-OVERLAP-BEGIN" in line)
+        end = next(i for i, line in enumerate(lines) if "SELFTEST-OVERLAP-END" in line)
+        return "\n".join(lines[begin : end + 1])
+
+    assert _block(standalone) == _block(inline_makefile), (
+        "standalone Makefile.review fragment drifted from the inline Makefile include"
+    )
+
+
 def test_overlap_dev_review_command():
     """V-21 (S4): the dogfood `.claude/commands/dev-review.md` must equal the
     rendered `shared/claude-commands-dev-review.md.tmpl`. The template carries no

@@ -17,6 +17,7 @@ import io as io_module
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -567,3 +568,190 @@ def test_plain_apply_path_unchanged_by_adopt_wiring(tmp_path):
     assert loaded.format_version == 1, (
         f"plain --apply produced format_version={loaded.format_version} (expected v1)"
     )
+
+
+# ─── Bucket C — shared post-apply guidance helper ───
+
+
+def _guidance_output(**kwargs):
+    """Capture `cli._print_post_apply_guidance` stdout for the given flags.
+
+    The helper only reads a few attrs off `args`, so a SimpleNamespace stand-in
+    keeps these unit tests pure (no argparse / filesystem)."""
+    args = SimpleNamespace(
+        language=kwargs.pop("language", "python"),
+        github_review=kwargs.pop("github_review", "none"),
+        github_owner=kwargs.pop("github_owner", "o"),
+        github_repo=kwargs.pop("github_repo", "r"),
+    )
+    old_stdout = sys.stdout
+    sys.stdout = io_module.StringIO()
+    try:
+        cli._print_post_apply_guidance(args, "/tmp/target", **kwargs)
+        return sys.stdout.getvalue()
+    finally:
+        sys.stdout = old_stdout
+
+
+class TestPostApplyGuidanceHelper:
+    """Bucket C / AD3: one shared helper, two callers (v1 + adopt). These pin
+    the adopt-specific adaptations directly; the v1 byte-identity is guarded by
+    the existing test_bootstrap_cli.py guidance tests (regression on extraction)."""
+
+    def test_v1_prints_cd_make_install(self):
+        out = _guidance_output(adopt=False)
+        assert "cd /tmp/target && make install" in out
+        assert "make install-hooks" in out
+
+    def test_adopt_gates_off_cd_make_install_keeps_hooks_when_makefile_written(self):
+        # base_makefile_written=True (no target Makefile → the skill's landed),
+        # so `make install-hooks` is a real target.
+        out = _guidance_output(adopt=True, base_makefile_written=True)
+        # The greenfield deps-install line is gated off for adopt …
+        assert "&& make install\n" not in out
+        # … but the hooks next-step still prints, WITH its own cd into the target
+        # (codex round-5) since the deps-install line that would have cd'd is gone.
+        assert "cd /tmp/target && make install-hooks" in out
+
+    def test_adopt_owned_makefile_omits_install_hooks(self):
+        # base_makefile_written=False (target owns its Makefile, SKIP): the
+        # skill's install-hooks recipe never landed, so don't advertise it
+        # (Tier-2 codex round-4 P2). With nothing left, no "next steps:" header.
+        out = _guidance_output(adopt=True, base_makefile_written=False)
+        assert "make install-hooks" not in out
+        assert "next steps:" not in out
+
+    def test_adopt_no_makefile_review_hint_when_not_emitted(self):
+        out = _guidance_output(adopt=True, makefile_review_emitted=False)
+        assert "Makefile.review" not in out
+
+    def test_adopt_makefile_review_hint_names_review_collision(self):
+        out = _guidance_output(
+            adopt=True, makefile_review_emitted=True, colliding_targets=("review",)
+        )
+        assert "include Makefile.review" in out
+        assert "remove your existing review target" in out
+
+    def test_adopt_makefile_review_hint_names_non_review_collision(self):
+        """iter-2 FN2: the hint names the COMPUTED overlap, not a hard-coded
+        `review`. A Makefile colliding only on `status` → the hint says
+        `status`."""
+        out = _guidance_output(
+            adopt=True, makefile_review_emitted=True, colliding_targets=("status",)
+        )
+        assert "include Makefile.review" in out
+        assert "remove your existing status target" in out
+        # Must NOT hard-code a removal instruction for `review`.
+        assert "remove your existing review target" not in out
+
+    def test_adopt_makefile_review_hint_empty_collisions_uses_generic_fallback(self):
+        out = _guidance_output(adopt=True, makefile_review_emitted=True, colliding_targets=())
+        assert "include Makefile.review" in out
+        assert "review or review-plan targets" in out
+
+
+class TestAdoptGuidanceE2E:
+    """Bucket C end-to-end: an adopt apply now prints the same next-steps /
+    gh-repo / token guidance the v1 path does (folds the parked gh-repo mirror
+    item), with the greenfield `make install` gated off."""
+
+    def test_adopt_apply_with_github_review_prints_shared_guidance(self, tmp_path):
+        rc, out, err = run_cli(
+            [
+                "--apply",
+                "--mode",
+                "adopt",
+                "--language",
+                "python",
+                "--project-name",
+                "x",
+                "--out",
+                str(tmp_path),
+                "--github-review",
+                "both-docs",
+                "--github-owner",
+                "o",
+                "--github-repo",
+                "r",
+                "--non-interactive",
+            ],
+        )
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        # next-steps present, but the greenfield deps-install line is gated off;
+        # install-hooks prints with its own cd into the target (codex round-5).
+        assert "next steps:" in out
+        assert f"cd {tmp_path} && make install-hooks" in out
+        assert f"cd {tmp_path} && make install\n" not in out
+        # gh-repo-create + token + both-docs Codex guidance now reach adopt too.
+        assert "gh repo create" in out
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in out
+        assert "codex-github-review-setup.md" in out
+        # Bucket B not exercised here (empty target → base Makefile is a WRITE →
+        # the standalone Makefile.review is dropped), so NO include hint.
+        assert "include Makefile.review" not in out
+
+
+# ─── Bucket B — Makefile target-name overlap (colliding_targets) ───
+
+
+def _full_context(**overrides):
+    """A render context matching `cli._build_context`'s shape, for direct
+    render/parse unit tests."""
+    base = {
+        "project_name": "x",
+        "language": "python",
+        "python_version": "3.12",
+        "node_version": "24",
+        "go_version": "1.26",
+        "package_manager": "uv",
+        "enable_smoke": False,
+        "github_owner": "",
+        "github_repo": "",
+        "github_review_mode": "none",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestMakefileTargetOverlap:
+    """`_compute_colliding_targets` drives the include hint (iter-2 FN2): it must
+    extract real target names (not variables / directives) and intersect the
+    fragment with the target's existing Makefile."""
+
+    def test_target_names_extracts_targets_not_vars_or_directives(self):
+        text = (
+            ".PHONY: a b\n"
+            "PYTHON := ./venv/bin/python\n"
+            "ARGS ?= --prod\n"
+            "build: deps\n\tgcc\n"
+            "review:\t## dispatch\n\t@echo hi\n"
+            "check: lint test\n"
+        )
+        names = cli._makefile_target_names(text)
+        assert names == {"build", "review", "check"}
+        assert "PYTHON" not in names
+        assert "ARGS" not in names
+        assert ".PHONY" not in names
+
+    def test_compute_colliding_targets_intersects(self, tmp_path):
+        (tmp_path / "Makefile").write_bytes(
+            b"test:\n\tpytest\n\nreview:\n\t@echo old\n\nrun:\n\tpython app.py\n"
+        )
+        fragment = b"review:\n\t@echo dispatch\n\nloop-status:\n\t@echo status\n"
+        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)
+
+    def test_compute_colliding_targets_no_makefile_returns_empty(self, tmp_path):
+        assert cli._compute_colliding_targets(tmp_path, b"review:\n\t@echo x\n") == ()
+
+    def test_real_fragment_vs_bot_shape_only_review_collides(self, tmp_path):
+        """R-B1 ground truth: against a bot-shaped Makefile (a bare `review:` and
+        an older `review-plan:`), the REAL rendered fragment collides ONLY on
+        `review` — `review-plan` is superseded by the fragment's
+        `review-plan-by-{codex,claude}`, so it does NOT name-collide."""
+        from bootstrap_lib import render
+
+        fragment = render.render_makefile_review(_full_context(), language="python")
+        (tmp_path / "Makefile").write_bytes(
+            b"review:\n\t@echo old\n\nreview-plan:\n\t@echo old-plan\n\ntest:\n\tpytest\n"
+        )
+        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)

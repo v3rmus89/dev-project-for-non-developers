@@ -2,6 +2,7 @@ import argparse
 import difflib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -640,7 +641,275 @@ def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
             first = False
 
 
-def _main_apply_adopt(args, target_root, planned_files):
+def _print_post_apply_guidance(
+    args,
+    target_root,
+    *,
+    adopt,
+    makefile_review_emitted=False,
+    colliding_targets=(),
+    base_makefile_written=False,
+):
+    """Print the shared post-apply guidance: next-steps + gh-repo-create hint +
+    both-docs Codex hint + the CLAUDE_CODE_OAUTH_TOKEN secret step.
+
+    Called from BOTH the v1 `--apply` success path and `_main_apply_adopt`
+    (Bucket C / AD3) — a single source of truth so the two paths cannot drift
+    (that drift is exactly what created the parked "mirror the gh-repo-create
+    hint into adopt" BACKLOG item this folds).
+
+    For `adopt=False` the output is byte-identical to the pre-extraction v1
+    block (the v1 guidance tests in test_bootstrap_cli.py are the regression
+    guard). Adopt adaptations:
+      - the greenfield `cd … && make install` next-step is gated off — an adopt
+        target already has its own install flow; the skill must not imply it
+        created one;
+      - `make install-hooks` is gated on `base_makefile_written` in adopt mode:
+        that target lives in the skill's Makefile, which only lands when we
+        WRITE/OVERWRITE it; when the target owns its Makefile (SKIP) the target
+        has no such recipe, so advertising it would fail (Tier-2 codex round-4);
+      - when `makefile_review_emitted` is True, print the Bucket B
+        `include Makefile.review` hint and name `colliding_targets` (the
+        computed fragment-vs-target Makefile target overlap) as the ones to
+        remove, so the advice is correct for ANY existing Makefile rather than
+        hard-coded to the bot's `review`.
+
+    `makefile_review_emitted` / `colliding_targets` are explicit because the
+    helper cannot otherwise tell an emitted `Makefile.review` from a
+    pre-existing or dropped one (iter-1 FN6) nor recompute the overlap
+    (iter-2 FN2); both are values the caller already computed.
+    """
+    if args.language in ("python", "nodejs", "go"):
+        steps = []
+        if not adopt:
+            # Greenfield writes the language Makefile; adopt targets have their
+            # own install flow, so the skill must not imply it created one.
+            steps.append(f"  cd {target_root} && make install")
+        if not adopt or base_makefile_written:
+            # `make install-hooks` is defined by the skill's Makefile — only
+            # advertise it when that Makefile actually landed (greenfield always;
+            # adopt only when the base Makefile was WRITE/OVERWRITE). Advertising
+            # it for an owned-Makefile SKIP would name a non-existent target
+            # (Tier-2 codex round-4). In adopt the `cd … && make install` line
+            # above is gated off, so the hooks step carries its own `cd` —
+            # bootstrap is usually run from outside the target (Tier-2 codex
+            # round-5). Greenfield keeps the bare form (the install line above
+            # already cd'd in) so its output stays byte-identical.
+            if adopt:
+                steps.append(
+                    f"  cd {target_root} && make install-hooks  "
+                    "# registers git hooks, requires .git/"
+                )
+            else:
+                steps.append("  make install-hooks  # registers git hooks, requires .git/")
+        if steps:
+            print("next steps:")
+            for step in steps:
+                print(step)
+
+    if makefile_review_emitted:
+        # Bucket B: a standalone Makefile.review carries the plan-review
+        # machinery into a target that owns its own Makefile (which adopt
+        # SKIPs, so the inline `{% include %}` never lands). Tell the owner to
+        # wire it in and which of their targets the fragment redefines — GNU
+        # Make silently uses the last recipe (with an override warning).
+        print("")
+        print("plan-review machinery: a standalone Makefile.review was written.")
+        print(f"  wire it in — add this line to {target_root}/Makefile:")
+        print("    include Makefile.review")
+        if colliding_targets:
+            names = ", ".join(colliding_targets)
+            print(
+                f"  first remove your existing {names} target(s) — Makefile.review "
+                "defines the same name(s), so GNU Make would override yours (with a warning)"
+            )
+        else:
+            print(
+                "  if your Makefile already defines review or review-plan targets, "
+                "remove them — the fragment supersedes them"
+            )
+        print(
+            "  note: Makefile.review's review-plan-by-codex / review-plan-by-claude "
+            "supersede any older single-direction review-plan target you may have"
+        )
+
+    if args.github_review not in (None, "none"):
+        # gh-repo-create hint. Two detection states: (a) the target is not in
+        # a git work tree → it needs `git init` first; (b) it IS in one but
+        # has no remote → only remote creation is needed.
+        #
+        # `has_git` is derived from `git rev-parse --is-inside-work-tree`, not
+        # a filesystem `.git` check. Only git itself is authoritative: a
+        # `.git` path check misclassifies linked worktrees / `--separate-git-dir`
+        # layouts (`.git` is a FILE), a subdirectory of an existing parent
+        # repo (no local `.git` — would wrongly suggest a nested `git init`),
+        # and a stray non-gitlink file named `.git`. git is a hard prereq;
+        # gh is optional, so this never shells out to gh. Detection fails
+        # open: any error → treat as "no git" and print the full hint; apply
+        # still succeeds.
+        has_git = False
+        has_remote = False
+        try:
+            inside = subprocess.run(
+                ["git", "-C", str(target_root), "rev-parse", "--is-inside-work-tree"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            has_git = inside.returncode == 0 and inside.stdout.strip() == "true"
+        except (OSError, subprocess.SubprocessError):
+            # FileNotFoundError (git missing) is a subclass of OSError;
+            # SubprocessError covers TimeoutExpired (not an OSError subclass).
+            has_git = False
+        if has_git:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(target_root), "remote"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+                has_remote = result.returncode == 0 and bool(result.stdout.strip())
+            except (OSError, subprocess.SubprocessError):
+                has_remote = False
+
+        if not has_remote:
+            # Safe-pattern hint: `git status` + explicit `git add <path>` —
+            # never bulk-add (`git add -A` / `git add .`), which can stage
+            # secrets or throwaway files (LESSONS.md). Visibility is shown as
+            # two explicit alternatives (no shell-metacharacter placeholder).
+            print("")
+            if not has_git:
+                print("create the GitHub repo + push:")
+                print(f"  cd {target_root}")
+                print("  git init")
+                print("  git status --short                 # review what's about to be staged")
+                print(
+                    "  git add <path1> <path2> ...        # stage explicitly per `git status` output"
+                )
+                print("  git commit -m 'initial bootstrap'")
+                print("  # choose ONE — copy the line for the visibility you want:")
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --private    # private (recommended for new code with secrets)"
+                )
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --public     # public (anyone can see)"
+                )
+            else:
+                print("your repo isn't on GitHub yet — create the remote + push:")
+                print(f"  cd {target_root}")
+                print("  git status --short                 # review uncommitted changes first")
+                print("  git add <path1> <path2> ...        # stage explicitly")
+                print("  git commit -m 'initial bootstrap'  # only if there are pending changes")
+                print("  # choose ONE — copy the line for the visibility you want:")
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --private    # private (recommended for new code with secrets)"
+                )
+                print(
+                    f"  gh repo create {args.github_owner}/{args.github_repo} "
+                    "--source=. --push --public     # public (anyone can see)"
+                )
+            print("  (requires `gh` CLI authenticated; no default — pick deliberately)")
+
+        if args.github_review == "both-docs":
+            # Codex GitHub review is a one-time web-UI step, orthogonal to
+            # repo creation — print it whenever both-docs, whether or not the
+            # target already has a remote.
+            print("")
+            print("  enable Codex GitHub review for this repo (one-time, web-UI):")
+            print(f"    see {target_root}/docs/codex-github-review-setup.md")
+
+        # Surface the required-secret step right where the user sees the
+        # other next-steps — most discoverable spot before they push to
+        # GitHub. Without this secret, the emitted claude-review workflow
+        # runs but the action fails auth and no review is posted.
+        print("")
+        print("after pushing to GitHub, set the CLAUDE_CODE_OAUTH_TOKEN repo secret:")
+        print("  1. install https://github.com/apps/claude on your account")
+        print("  2. run `claude setup-token` (one-time per user)")
+        print(
+            "  3. add the token as repo secret CLAUDE_CODE_OAUTH_TOKEN "
+            "via Settings → Secrets and variables → Actions"
+        )
+        print("  (same token works across multiple repos; see CONTRIBUTING.md for details)")
+
+
+# Match a Makefile target definition: a target name at column 0 followed by a
+# `:` that is NOT an assignment operator (`:=` / `::=`). This excludes variable
+# assignments (`VAR := …`, `VAR ?= …` — the latter has no leading colon at all)
+# and leading-`.` directives (`.PHONY`, `.DEFAULT_GOAL`) via the `[A-Za-z_]`
+# first-char class. Recipe lines start with a tab, so they never match at ^.
+_MAKE_TARGET_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*)\s*:(?![:=])", re.MULTILINE)
+
+
+def _makefile_target_names(text):
+    """Return the set of target names defined in Makefile `text`."""
+    return set(_MAKE_TARGET_RE.findall(text))
+
+
+def _compute_colliding_targets(target_root, review_fragment_bytes):
+    """Return the sorted tuple of target names defined in BOTH the standalone
+    `Makefile.review` fragment and the target's existing `Makefile` (R-B1 /
+    iter-2 FN2).
+
+    These are the names the owner must remove before `include Makefile.review`:
+    GNU Make warns ("overriding recipe for target …") and silently keeps the
+    LAST recipe for a redefined target, so a stale same-named target would
+    shadow the fragment's. Computing the REAL overlap (rather than hard-coding
+    the bot's `review`) keeps the include hint correct for ANY existing Makefile.
+    Returns `()` when the target has no Makefile or nothing overlaps.
+    """
+    target_makefile = Path(target_root) / "Makefile"
+    try:
+        target_text = target_makefile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ()
+    fragment_text = review_fragment_bytes.decode("utf-8", errors="replace")
+    overlap = _makefile_target_names(fragment_text) & _makefile_target_names(target_text)
+    return tuple(sorted(overlap))
+
+
+# The plan-review fragment carries this sentinel comment (it delimits the
+# SELFTEST-OVERLAP block that tests/test_selftest_overlap.py guards, so it cannot
+# silently disappear). Its presence in a target's Makefile means that Makefile
+# already inlines the review machinery — e.g. a project previously bootstrapped
+# greenfield by this skill — so a standalone Makefile.review + its include hint
+# would be redundant and duplicate the inline targets.
+_REVIEW_MACHINERY_SENTINEL = "SELFTEST-OVERLAP-BEGIN: shared/Makefile.review.tmpl"
+
+
+def _makefile_has_review_machinery(target_root):
+    """True if the target's existing Makefile already inlines the plan-review
+    fragment (detected via the fragment's stable SELFTEST-OVERLAP sentinel)."""
+    try:
+        text = (Path(target_root) / "Makefile").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return _REVIEW_MACHINERY_SENTINEL in text
+
+
+def _drop_planned_file(rel_path, planned_files, plan):
+    """Remove `rel_path` from BOTH the planned_files dict AND the plan's
+    `analyses` tuple, returning the new `(planned_files, plan)` pair.
+
+    `manifest.plan_adoption_entries` requires every non-SKIP analysis to have a
+    matching planned_files entry (it raises `ValueError` otherwise) and only
+    writes paths present in the analyses — so the two MUST be pruned together.
+    Centralising the drop here makes that synchronisation structural: the two
+    prune sites in `_main_apply_adopt` (recommendation-keyed pass 1, and the
+    post-decision pass 2) cannot desync the two structures.
+    """
+    new_planned = {k: v for k, v in planned_files.items() if k != rel_path}
+    new_plan = plan._replace(analyses=tuple(a for a in plan.analyses if a.rel_path != rel_path))
+    return new_planned, new_plan
+
+
+def _main_apply_adopt(args, target_root, planned_files, context):
     """`--apply --mode=adopt` orchestrator. Pipeline:
 
       1. analyze_target(target_root, planned_files) → AdoptionPlan
@@ -662,6 +931,38 @@ def _main_apply_adopt(args, target_root, planned_files):
     # never imports cli).
     from bootstrap_lib import adopt
 
+    # Bucket A: adopt brings the skill into a project that ALREADY has its own
+    # source + tests, so the greenfield-only entrypoint/smoke placeholders
+    # (python: src/main.py, tests/test_smoke.py) are never wanted — suppress
+    # them from the planned set BEFORE analyze so they never become a rule-(a)
+    # WRITE into production code. Greenfield `--apply` keeps them (this filter
+    # is adopt-path-only). Adopt is Python-only today; the constant lists the
+    # node/go stub names too, so this is already correct when their adopt ships.
+    placeholders = render.GREENFIELD_ONLY_PLACEHOLDERS.get(args.language, frozenset())
+    if placeholders:
+        planned_files = {
+            rel: content for rel, content in planned_files.items() if rel not in placeholders
+        }
+
+    # Bucket B: the plan-review machinery (the `make review` dispatcher,
+    # review-plan/commit targets, loop helpers) lives inline inside the generated
+    # Makefile via `{% include 'Makefile.review.tmpl' %}`. When the target OWNS a
+    # Makefile, adopt SKIPs it (rule h) — so none of those targets land, yet the
+    # six scripts they call DO (rule a). Provisionally render the fragment as a
+    # standalone `Makefile.review` and add it to the planned set; analyze
+    # classifies it rule-(a) WRITE (the target lacks it). The two-phase prune
+    # after analyze drops it again when the target has no Makefile of its own
+    # (the base Makefile is then itself written — inline include and all).
+    MAKEFILE_REVIEW = "Makefile.review"
+    # This planned file is injected AFTER render_all + the CLI-layer path-safety
+    # sweep in main(), so validate it here too: the skill's two-layer path-safety
+    # invariant requires every planned-file write to pass the CLI-layer check. The
+    # name is a constant today (always safe), but the check keeps the invariant
+    # intact and future-proofs it if the name ever derives from something else.
+    paths.validate_target_path(target_root, MAKEFILE_REVIEW)
+    review_fragment = render.render_makefile_review(context, language=args.language)
+    planned_files = {**planned_files, MAKEFILE_REVIEW: review_fragment}
+
     try:
         adoption_plan = adopt.analyze_target(target_root, planned_files)
     except Exception as e:
@@ -669,6 +970,35 @@ def _main_apply_adopt(args, target_root, planned_files):
         if os.environ.get("DEV_PROJECT_SETUP_TRACEBACK"):
             traceback.print_exc()
         return 1
+
+    # Bucket B prune, pass 1 — recommendation-keyed (iter-2 FN1); pass 2 below
+    # re-checks against the owner's actual decision (codex P2). Keep the
+    # standalone Makefile.review ONLY when the target's own Makefile is SKIPped
+    # (it owns one — the fragment's targets otherwise never arrive). When the
+    # base Makefile is itself written (rule-(a) WRITE for a missing Makefile,
+    # rule-(b) OVERWRITE for an empty one), that written Makefile ALREADY inlines
+    # the fragment, so the standalone copy is redundant — drop it from BOTH
+    # planned_files AND the analyses tuple (manifest.plan_adoption_entries raises
+    # ValueError for an analysis whose rel_path is absent from planned_files, and
+    # silently omits a planned_files entry absent from the analyses).
+    colliding_targets: tuple[str, ...] = ()
+    base_makefile_skipped = any(
+        a.rel_path == "Makefile" and a.recommendation.policy == "SKIP"
+        for a in adoption_plan.analyses
+    )
+    # Keep the standalone ONLY when the target owns a Makefile (SKIP) that does
+    # NOT already inline the review machinery. A Makefile byte-identical to — or
+    # previously bootstrapped by — the skill already carries the fragment inline
+    # (codex round-3 P2), so a standalone would be redundant and the include hint
+    # would duplicate those targets; drop it in that case too. (The broader
+    # re-adopt / upgrade-delta feature stays parked — this is just the stateless
+    # "active Makefile already has the machinery" check, not prior-state tracking.)
+    if base_makefile_skipped and not _makefile_has_review_machinery(target_root):
+        colliding_targets = _compute_colliding_targets(target_root, review_fragment)
+    else:
+        planned_files, adoption_plan = _drop_planned_file(
+            MAKEFILE_REVIEW, planned_files, adoption_plan
+        )
 
     # Show the recommendation report BEFORE prompting so the user sees the
     # full per-file picture in one pass.
@@ -683,6 +1013,25 @@ def _main_apply_adopt(args, target_root, planned_files):
     except _AdoptionAbort as e:
         sys.stderr.write(f"{e}\n")
         return 2
+
+    # Bucket B prune, pass 2 (codex P2). Pass 1 keyed on the Makefile
+    # RECOMMENDATION, but the owner is prompted on their own Makefile and can
+    # turn a SKIP into [o]verwrite (or [n]ew). If they OVERWRITE/WRITE the active
+    # Makefile with the skill's — which inlines the fragment via `{% include %}` —
+    # a standalone Makefile.review is redundant AND the include hint would create
+    # duplicate `review` targets. Re-decide on the FINAL Makefile action: drop the
+    # standalone iff the skill's Makefile became the active one. [n]ew leaves the
+    # owner's Makefile active (skill → Makefile.new), so the standalone stays.
+    if MAKEFILE_REVIEW in planned_files:
+        final_makefile_policy = next(
+            (a.recommendation.policy for a in decided_plan.analyses if a.rel_path == "Makefile"),
+            None,
+        )
+        if final_makefile_policy in ("WRITE", "OVERWRITE"):
+            colliding_targets = ()
+            planned_files, decided_plan = _drop_planned_file(
+                MAKEFILE_REVIEW, planned_files, decided_plan
+            )
 
     try:
         entries, created_dirs = manifest.plan_adoption_entries(
@@ -700,6 +1049,25 @@ def _main_apply_adopt(args, target_root, planned_files):
             "adopt-mode: all entries SKIPPED — no manifest written, no files modified.\n"
         )
         return 0
+
+    # Bucket B emitted flag — ground-truth from the FINAL entries (codex round-2
+    # P2). We "emitted" a standalone Makefile.review only if we actually
+    # WRITE/OVERWRITE it: a target that already owns a Makefile.review can SKIP it
+    # (keep theirs) or take [n]ew, leaving no fresh standalone — so the include
+    # hint must not fire. (Pass 2 above separately prevents WRITING a redundant
+    # standalone when the owner overwrites their Makefile.) Keying off the
+    # base-Makefile recommendation alone left this true in the owns-both case.
+    makefile_review_emitted = any(
+        e["path"] == MAKEFILE_REVIEW and e["policy"] in ("WRITE", "OVERWRITE") for e in entries
+    )
+    if not makefile_review_emitted:
+        colliding_targets = ()
+    # Whether the skill's Makefile (which defines `install-hooks`) actually
+    # landed — gates the `make install-hooks` next-step so adopt never advertises
+    # a target absent from the owner's own Makefile (Tier-2 codex round-4 P2).
+    base_makefile_written = any(
+        e["path"] == "Makefile" and e["policy"] in ("WRITE", "OVERWRITE") for e in entries
+    )
 
     m = manifest.Manifest(
         # Resolve to absolute path — mirrors v1's _prepare_apply contract so
@@ -745,6 +1113,19 @@ def _main_apply_adopt(args, target_root, planned_files):
     print(f"adopt-mode apply: {n_mutated} mutating entries written to {target_root}")
     print(f"restore manifest: {manifest_p}")
     print(f"to rollback: {_format_restore_hint(manifest_p)}")
+    # Bucket C: give the adopt success path the same next-steps / gh-repo / token
+    # guidance the v1 path prints (folds the parked gh-repo-create mirror item).
+    # Bucket B: when a standalone Makefile.review was emitted (the target owns a
+    # Makefile), the helper also prints the `include Makefile.review` hint naming
+    # the computed colliding_targets.
+    _print_post_apply_guidance(
+        args,
+        target_root,
+        adopt=True,
+        makefile_review_emitted=makefile_review_emitted,
+        colliding_targets=colliding_targets,
+        base_makefile_written=base_makefile_written,
+    )
     return 0
 
 
@@ -859,7 +1240,7 @@ def main(argv):
     # _interactive_decide IS the consent model; no --overwrite-existing
     # needed (it's actually rejected by _resolve_mode for adopt-mode).
     if args.mode == "adopt":
-        return _main_apply_adopt(args, target_root, planned_files)
+        return _main_apply_adopt(args, target_root, planned_files, context)
 
     if detect.has_collisions(inspection) and not args.overwrite_existing:
         sys.stderr.write(
@@ -898,112 +1279,5 @@ def main(argv):
     print(f"apply successful: wrote {len(planned_files)} files to {target_root}")
     print(f"restore manifest: {manifest_p}")
     print(f"to rollback: {_format_restore_hint(manifest_p)}")
-    if args.language in ("python", "nodejs", "go"):
-        print("next steps:")
-        print(f"  cd {target_root} && make install")
-        print("  make install-hooks  # registers git hooks, requires .git/")
-    if args.github_review not in (None, "none"):
-        # gh-repo-create hint. Two detection states: (a) the target is not in
-        # a git work tree → it needs `git init` first; (b) it IS in one but
-        # has no remote → only remote creation is needed.
-        #
-        # `has_git` is derived from `git rev-parse --is-inside-work-tree`, not
-        # a filesystem `.git` check. Only git itself is authoritative: a
-        # `.git` path check misclassifies linked worktrees / `--separate-git-dir`
-        # layouts (`.git` is a FILE), a subdirectory of an existing parent
-        # repo (no local `.git` — would wrongly suggest a nested `git init`),
-        # and a stray non-gitlink file named `.git`. git is a hard prereq;
-        # gh is optional, so this never shells out to gh. Detection fails
-        # open: any error → treat as "no git" and print the full hint; apply
-        # still succeeds.
-        has_git = False
-        has_remote = False
-        try:
-            inside = subprocess.run(
-                ["git", "-C", str(target_root), "rev-parse", "--is-inside-work-tree"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-            has_git = inside.returncode == 0 and inside.stdout.strip() == "true"
-        except (OSError, subprocess.SubprocessError):
-            # FileNotFoundError (git missing) is a subclass of OSError;
-            # SubprocessError covers TimeoutExpired (not an OSError subclass).
-            has_git = False
-        if has_git:
-            try:
-                result = subprocess.run(
-                    ["git", "-C", str(target_root), "remote"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=5,
-                )
-                has_remote = result.returncode == 0 and bool(result.stdout.strip())
-            except (OSError, subprocess.SubprocessError):
-                has_remote = False
-
-        if not has_remote:
-            # Safe-pattern hint: `git status` + explicit `git add <path>` —
-            # never bulk-add (`git add -A` / `git add .`), which can stage
-            # secrets or throwaway files (LESSONS.md). Visibility is shown as
-            # two explicit alternatives (no shell-metacharacter placeholder).
-            print("")
-            if not has_git:
-                print("create the GitHub repo + push:")
-                print(f"  cd {target_root}")
-                print("  git init")
-                print("  git status --short                 # review what's about to be staged")
-                print(
-                    "  git add <path1> <path2> ...        # stage explicitly per `git status` output"
-                )
-                print("  git commit -m 'initial bootstrap'")
-                print("  # choose ONE — copy the line for the visibility you want:")
-                print(
-                    f"  gh repo create {args.github_owner}/{args.github_repo} "
-                    "--source=. --push --private    # private (recommended for new code with secrets)"
-                )
-                print(
-                    f"  gh repo create {args.github_owner}/{args.github_repo} "
-                    "--source=. --push --public     # public (anyone can see)"
-                )
-            else:
-                print("your repo isn't on GitHub yet — create the remote + push:")
-                print(f"  cd {target_root}")
-                print("  git status --short                 # review uncommitted changes first")
-                print("  git add <path1> <path2> ...        # stage explicitly")
-                print("  git commit -m 'initial bootstrap'  # only if there are pending changes")
-                print("  # choose ONE — copy the line for the visibility you want:")
-                print(
-                    f"  gh repo create {args.github_owner}/{args.github_repo} "
-                    "--source=. --push --private    # private (recommended for new code with secrets)"
-                )
-                print(
-                    f"  gh repo create {args.github_owner}/{args.github_repo} "
-                    "--source=. --push --public     # public (anyone can see)"
-                )
-            print("  (requires `gh` CLI authenticated; no default — pick deliberately)")
-
-        if args.github_review == "both-docs":
-            # Codex GitHub review is a one-time web-UI step, orthogonal to
-            # repo creation — print it whenever both-docs, whether or not the
-            # target already has a remote.
-            print("")
-            print("  enable Codex GitHub review for this repo (one-time, web-UI):")
-            print(f"    see {target_root}/docs/codex-github-review-setup.md")
-
-        # Surface the required-secret step right where the user sees the
-        # other next-steps — most discoverable spot before they push to
-        # GitHub. Without this secret, the emitted claude-review workflow
-        # runs but the action fails auth and no review is posted.
-        print("")
-        print("after pushing to GitHub, set the CLAUDE_CODE_OAUTH_TOKEN repo secret:")
-        print("  1. install https://github.com/apps/claude on your account")
-        print("  2. run `claude setup-token` (one-time per user)")
-        print(
-            "  3. add the token as repo secret CLAUDE_CODE_OAUTH_TOKEN "
-            "via Settings → Secrets and variables → Actions"
-        )
-        print("  (same token works across multiple repos; see CONTRIBUTING.md for details)")
+    _print_post_apply_guidance(args, target_root, adopt=False)
     return 0

@@ -365,11 +365,82 @@ from the extraction).
 
 | Commit | Date | Summary | check | Tier-1 |
 |--------|------|---------|-------|--------|
-| _pending_ | | | | |
+| c936920 | 2026-06-13 | Bucket A — suppress greenfield-only placeholders (`src/main.py`, `tests/test_smoke.py`) in adopt: `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language; node/go listed) + a filter in `_main_apply_adopt` before `analyze_target`. Greenfield `--apply` unchanged. | 1008/4 | same-AI self-review, clean |
+| 7841564 | 2026-06-13 | Bucket C — extract `_print_post_apply_guidance(args, target_root, *, adopt, makefile_review_emitted=False, colliding_targets=())`, called from BOTH v1 + adopt paths (AD3); gate `cd … && make install` on adopt; dormant include-hint branch. v1 output byte-identical. | 1015/4 | same-AI self-review, clean; v1 regression tests green |
+| 88b6ba0 | 2026-06-13 | Bucket B — standalone `Makefile.review` WRITE when the target owns a Makefile; two-phase prune of BOTH `planned_files` + `analyses` when the base Makefile is not SKIPped (iter-2 FN1); computed `colliding_targets` (iter-2 FN2); `render.render_makefile_review` + R-B2 selftest-overlap parity guard. | 1023/4 | same-AI self-review, clean |
+| 0b9e6ac | 2026-06-13 | Tier-2 r1 folds — codex P2: a 2nd prune pass after `_interactive_decide` so an owner who [o]verwrites their SKIPped Makefile doesn't get a redundant `Makefile.review` + duplicate-target hint ([n]ew keeps it); claude #1: shared `_drop_planned_file` helper makes both prune sites desync-proof; claude #2: path-validate the injected `Makefile.review`. +2 tests. | 1025/4 | Tier-2 claude+codex bots |
+| a85e5d7 | 2026-06-13 | Tier-2 r2 fold — codex round-2 P2: ground-truth `makefile_review_emitted` from the written entries (a WRITE/OVERWRITE of `Makefile.review`), not the base-Makefile recommendation, so an owns-both target whose owner SKIPs/[n]ews their existing `Makefile.review` gets no spurious include hint. +1 test. | 1026/4 | Tier-2 codex |
+| 000440f | 2026-06-13 | Tier-2 r3 fold — codex round-3 P2: gate the emit on the target Makefile NOT already inlining the fragment (the stable SELFTEST-OVERLAP sentinel), so a Makefile byte-identical to / previously bootstrapped by the skill doesn't get a redundant standalone + duplicate-target hint. Root of the emit-edge series; broader re-adopt stays parked. +1 test. | 1027/4 | Tier-2 codex |
+| f10a2de | 2026-06-13 | Tier-2 r4 fold — codex round-4 P2: gate `make install-hooks` on `base_makefile_written` (the skill Makefile landed), so the common owns-a-Makefile case doesn't advertise an install-hooks target the owner lacks (the live bot included). Reverses the earlier BACKLOG park of this item. +2 tests. | 1028/4 | Tier-2 codex |
+| 961f415 | 2026-06-13 | Tier-2 r5 fold — codex round-5 P2: the adopt `make install-hooks` next-step carries its own `cd {target}` (the deps-install line that would have cd'd in is gated off for adopt; bootstrap runs from outside the target). v1 byte-identical. | 1028/4 | Tier-2 codex |
+
+**Tier-2 review (PR #48).** CI + claude[bot] + codex all ran.
+**Round 1** (on `6231936`) — claude[bot]: approve-with-fixes — 2 imp-2, both folded
+`(a)`: path-validate the injected `Makefile.review` (its suggested sync-assertion #1
+referenced a non-existent field `analysis.policy`, so addressed instead by the shared
+`_drop_planned_file` helper — sync by construction). codex: 1 P2, folded `(a)` — a real
+interactive-path bug: an owner who [o]verwrites the SKIPped Makefile makes the skill's
+inline-include Makefile the active one, so the standalone `Makefile.review` + its hint
+were redundant/harmful; fixed by re-deciding on the FINAL Makefile action (`0b9e6ac`)
+with `[o]`/`[n]` regression tests.
+**Round 2** (on `30e361f`) — codex: a *distinct* P2, folded `(a)` in `a85e5d7` — the
+emitted flag keyed on the base-Makefile SKIP stayed true when a target owns BOTH a
+`Makefile` and a `Makefile.review` and the owner SKIPs/[n]ews the latter; ground-truthed
+the flag from the written entries (+test). claude[bot]: re-raised the round-1 P2 as an
+imp-3 "not addressed" — **verified false positive** via a live `[o]verwrite` repro (no
+standalone, no hint, inline-fragment Makefile written; the `0b9e6ac` pass-2 works), and
+its re-raised imp-2 sync-assertion stays rejected (redundant with `_drop_planned_file`,
+which the same review's positive notes credit as "correctly synchronizes"). The triage
+discipline's "verify the premise before folding" (LESSONS 2026-05-17) caught the
+false-positive blocker.
+**Round 3** (on `8e557bb`) — codex: a *third* P2, folded `(a)` in `000440f` — a target
+whose Makefile is byte-identical to / previously bootstrapped by the skill already
+inlines the fragment, so emitting a standalone duplicates it; gated the emit on the
+target Makefile not already carrying the SELFTEST-OVERLAP sentinel (a stateless content
+check — NOT the parked re-adopt feature). This closes the root of codex's escalating
+emit-edge series (overwrite / owns-both / already-has-machinery). claude[bot]: a verbatim
+repeat of its round-1/2 imp-3 + imp-2, citing **stale pre-refactor line numbers** — no
+re-analysis; rejected (false positive + redundant, as above).
+**Round 4** (on `db716d0`) — codex: a P2 on the previously-parked `make install-hooks`
+next-step — in the common owns-a-Makefile case the skill's Makefile (which defines
+`install-hooks`) is SKIPped, so the line names an absent target (the live bot included).
+Re-evaluated and **folded** `(a)` in `f10a2de` (reversing the BACKLOG park), gating the
+line on `base_makefile_written`. The codex P2s were all genuine — interactive-path /
+target-state edges the plan review didn't surface (the two-tier-review point); claude[bot]
+contributed one useful fold (path-validation) then repeated a disproven blocker.
+**Round 5** (on `c516b11`) — claude[bot] re-analyzed and flipped to **✅ Approve** ("no
+critical issues; previous Tier-2 findings properly addressed"). codex: a 5th P2 — the adopt
+`make install-hooks` step needed its own `cd {target}` (the deps-install line that would
+have cd'd was gated off) — folded `(a)` in `961f415`.
+**Final**: 5 codex P2s all folded; claude[bot] **✅ Approve**; CI green. The broader
+re-adopt / upgrade-delta feature stays parked (BACKLOG).
+
+**Bot acceptance (gated).** Step 1 (read-only `analyze_target` harness) — clean:
+22 planned files (23 pre-hardening − 2 suppressed placeholders + 1 `Makefile.review`);
+policy table matches the Context ground truth exactly; `colliding_targets == ('review',)`.
+Step 2 (`cp -R` throwaway copy, scripted-stdin apply + restore) — clean: 16 mutating
+entries; include hint named `review`; originals (`Makefile`/`pyproject.toml`/`CLAUDE.md`)
+untouched; `.gitignore` carried the NEUTRALIZE block + the command became git-visible;
+restore reversed everything (2 restored / 14 removed) with `.gitignore` byte-identical.
+Step 3 (live bot) — **skipped by decision**: step 2's `cp -R` copy was byte-identical to
+the live bot (same files + `.git`), so it already validated adopt against the bot's exact
+content + full restore; re-running on the production tree (launchd job live) adds ~zero
+signal. The marginal-only check (`make -n review` after the manual `include` + target
+removal) is an owner step, not something adopt performs.
 
 ## Lessons surfaced (this PR)
 
-_pending_
+- **Tier-1 (self-review)**: none — no new mistake-class, no approach-changing push-back.
+- **Tier-2 (codex P2)**: new mistake-class → `LESSONS.md` 2026-06-13 — *a gate keyed on
+  the analyze-phase recommendation can be invalidated by the interactive decide phase*
+  (the owner can `[o]verwrite` a SKIPped Makefile). Folded `(a)` in commit `0b9e6ac`.
+- **Tier-2 (claude #1)**: its suggested sync-assertion cited a non-existent field
+  (`analysis.policy`) — caught before folding (the 2026-05-17 "verify the reviewer's
+  suggested fix" lesson holding); addressed via the shared `_drop_planned_file` helper.
+- One design observation parked (BACKLOG "Follow-ups from adopt-mode hardening (PR #48)"),
+  not a lesson: adopt's `make install-hooks` next-step can name a target absent in the
+  owns-a-Makefile subcase (the skill's `Makefile`, which defines it, is SKIPped) —
+  plan-faithful (the plan gates only `make install`), so left as a follow-up.
 
 ## Critical files to read before each iter's review
 

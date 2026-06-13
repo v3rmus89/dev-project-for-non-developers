@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-06-13: A gate keyed on the analyze-phase recommendation can be invalidated by the interactive decide phase
+
+**Trigger**: PR #48 (adopt-mode hardening) Tier-2 codex P2 — Bucket B decided whether to emit the standalone `Makefile.review` (and its `include` hint) from the Makefile's *recommendation* (`SKIP`), computed before `_interactive_decide`. But adopt prompts the owner on their own Makefile, and `[o]verwrite` turns the active Makefile into the skill's (which inlines the fragment) — leaving the standalone redundant and the hint duplicate-target-inducing. The gate read pre-decision state to decide a post-decision fact.
+
+**Rule**: In the adopt pipeline (analyze → report → **decide** → plan → apply), any branch whose correctness depends on a file's FINAL action must read the *decided* plan (or be re-checked after `_interactive_decide`), never the analyze-phase recommendation. Recommendations are owner-overridable defaults ([r]/[s]/[n]/[o]); only the decided policy is load-bearing for what gets written. (Paired note: claude[bot]'s suggested sync-assertion cited a non-existent `analysis.policy` field — the 2026-05-17 "verify the reviewer's suggested fix" lesson holding; it was addressed by a shared helper instead.)
+
+**Status**: Active
+
+---
+
 ### 2026-06-09: A plan that proposes Makefile-embedded prompt text must keep that text shell-safe
 
 **Trigger**: Plan-review-loop guardrails plan, iter-1 FN1 — the C1 calibration text proposed for the plan-review prompt used backticks around `make check`, which become shell command substitution once the prompt is built as a double-quoted Makefile arg (`@PROMPT="…"`). The existing no-backtick regression test guarded only the Tier-1 commit-review prompt, so the plan-review prompts were an unguarded gap and the backticks slipped into the plan.
