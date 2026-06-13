@@ -847,6 +847,25 @@ def _compute_colliding_targets(target_root, review_fragment_bytes):
     return tuple(sorted(overlap))
 
 
+# The plan-review fragment carries this sentinel comment (it delimits the
+# SELFTEST-OVERLAP block that tests/test_selftest_overlap.py guards, so it cannot
+# silently disappear). Its presence in a target's Makefile means that Makefile
+# already inlines the review machinery — e.g. a project previously bootstrapped
+# greenfield by this skill — so a standalone Makefile.review + its include hint
+# would be redundant and duplicate the inline targets.
+_REVIEW_MACHINERY_SENTINEL = "SELFTEST-OVERLAP-BEGIN: shared/Makefile.review.tmpl"
+
+
+def _makefile_has_review_machinery(target_root):
+    """True if the target's existing Makefile already inlines the plan-review
+    fragment (detected via the fragment's stable SELFTEST-OVERLAP sentinel)."""
+    try:
+        text = (Path(target_root) / "Makefile").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return _REVIEW_MACHINERY_SENTINEL in text
+
+
 def _drop_planned_file(rel_path, planned_files, plan):
     """Remove `rel_path` from BOTH the planned_files dict AND the plan's
     `analyses` tuple, returning the new `(planned_files, plan)` pair.
@@ -940,7 +959,14 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         a.rel_path == "Makefile" and a.recommendation.policy == "SKIP"
         for a in adoption_plan.analyses
     )
-    if base_makefile_skipped:
+    # Keep the standalone ONLY when the target owns a Makefile (SKIP) that does
+    # NOT already inline the review machinery. A Makefile byte-identical to — or
+    # previously bootstrapped by — the skill already carries the fragment inline
+    # (codex round-3 P2), so a standalone would be redundant and the include hint
+    # would duplicate those targets; drop it in that case too. (The broader
+    # re-adopt / upgrade-delta feature stays parked — this is just the stateless
+    # "active Makefile already has the machinery" check, not prior-state tracking.)
+    if base_makefile_skipped and not _makefile_has_review_machinery(target_root):
         colliding_targets = _compute_colliding_targets(target_root, review_fragment)
     else:
         planned_files, adoption_plan = _drop_planned_file(

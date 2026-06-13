@@ -951,3 +951,23 @@ class TestBucketBStandaloneMakefileReview:
         )
         # … and the include hint does NOT fire (we wrote no fresh standalone).
         assert "include Makefile.review" not in out
+
+    def test_target_makefile_already_has_machinery_drops_standalone(self, tmpdir_isolated):
+        """Tier-2 codex round-3 P2: a target whose Makefile already inlines the
+        review machinery (carries the fragment's SELFTEST-OVERLAP sentinel — e.g.
+        a project previously bootstrapped by this skill) must NOT get a redundant
+        standalone Makefile.review or an include hint (they would duplicate the
+        inline targets)."""
+        target = tmpdir_isolated / "target"
+        target.mkdir()
+        (target / "Makefile").write_bytes(
+            b".PHONY: test\ntest:\n\tpytest\n\n"
+            b"# SELFTEST-OVERLAP-BEGIN: shared/Makefile.review.tmpl\n"
+            b"review:\n\t@echo dispatch\n"
+            b"# SELFTEST-OVERLAP-END: shared/Makefile.review.tmpl\n"
+        )
+        # rule (h) SKIP (differs from skill render), mr=True → accept SKIP.
+        rc, out, err = run_cli([*self._ADOPT_ARGS, "--out", str(target)], stdin_text="r\n")
+        assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
+        assert not (target / "Makefile.review").exists()
+        assert "include Makefile.review" not in out
