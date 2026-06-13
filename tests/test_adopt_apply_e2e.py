@@ -607,10 +607,11 @@ class TestPostApplyGuidanceHelper:
         # base_makefile_written=True (no target Makefile → the skill's landed),
         # so `make install-hooks` is a real target.
         out = _guidance_output(adopt=True, base_makefile_written=True)
-        # The greenfield `cd … && make install` line is gated off for adopt …
-        assert "&& make install" not in out
-        # … but the hooks next-step still prints (the skill Makefile defines it).
-        assert "make install-hooks" in out
+        # The greenfield deps-install line is gated off for adopt …
+        assert "&& make install\n" not in out
+        # … but the hooks next-step still prints, WITH its own cd into the target
+        # (codex round-5) since the deps-install line that would have cd'd is gone.
+        assert "cd /tmp/target && make install-hooks" in out
 
     def test_adopt_owned_makefile_omits_install_hooks(self):
         # base_makefile_written=False (target owns its Makefile, SKIP): the
@@ -676,10 +677,11 @@ class TestAdoptGuidanceE2E:
             ],
         )
         assert rc == 0, f"expected success, got rc={rc}; stderr={err!r}"
-        # next-steps present, but the greenfield install line is gated off.
+        # next-steps present, but the greenfield deps-install line is gated off;
+        # install-hooks prints with its own cd into the target (codex round-5).
         assert "next steps:" in out
-        assert "make install-hooks" in out
-        assert f"cd {tmp_path} && make install" not in out
+        assert f"cd {tmp_path} && make install-hooks" in out
+        assert f"cd {tmp_path} && make install\n" not in out
         # gh-repo-create + token + both-docs Codex guidance now reach adopt too.
         assert "gh repo create" in out
         assert "CLAUDE_CODE_OAUTH_TOKEN" in out

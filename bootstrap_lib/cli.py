@@ -690,8 +690,18 @@ def _print_post_apply_guidance(
             # advertise it when that Makefile actually landed (greenfield always;
             # adopt only when the base Makefile was WRITE/OVERWRITE). Advertising
             # it for an owned-Makefile SKIP would name a non-existent target
-            # (Tier-2 codex round-4 P2).
-            steps.append("  make install-hooks  # registers git hooks, requires .git/")
+            # (Tier-2 codex round-4). In adopt the `cd … && make install` line
+            # above is gated off, so the hooks step carries its own `cd` —
+            # bootstrap is usually run from outside the target (Tier-2 codex
+            # round-5). Greenfield keeps the bare form (the install line above
+            # already cd'd in) so its output stays byte-identical.
+            if adopt:
+                steps.append(
+                    f"  cd {target_root} && make install-hooks  "
+                    "# registers git hooks, requires .git/"
+                )
+            else:
+                steps.append("  make install-hooks  # registers git hooks, requires .git/")
         if steps:
             print("next steps:")
             for step in steps:
