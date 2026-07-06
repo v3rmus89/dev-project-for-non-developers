@@ -101,6 +101,20 @@ entries through Jinja even though they are byte-verbatim copies of `scripts/*.py
   the source file (the property becomes structural rather than hand-synced);
   (c) the existing executable-bit/shebang assertions keep firing against the same
   rel-paths.
+- Retarget the shared-template SCAN tests (Tier-2 codex P1, verified): the six
+  deleted `scripts-*.tmpl` names are members of
+  `tests/test_shared_templates.py::SHARED_TEMPLATES_TO_SCAN`, and
+  `test_shared_template_renders_without_undefined_error` +
+  `test_no_boxette_isms_in_shared_templates` call `get_template()` on each — after
+  deletion those raise `TemplateNotFound` and turn `make check` red. Drop the six
+  script entries from `SHARED_TEMPLATES_TO_SCAN` (the verbatim files are no longer
+  Jinja templates, so "renders without undefined" and "no boxette-isms in a
+  *rendered template*" no longer apply); the byte-equality property from the bullet
+  above is their replacement coverage.
+- Grep-the-suite discipline (Tier-2 meta): this enumeration is necessary but NOT
+  verified-exhaustive. Before implementing Bucket A, grep the full `tests/` tree for
+  each deleted template basename (`scripts-run-with-clean-env.py.tmpl`, …) and
+  retarget every hit; the two scan tests above are the ones known at plan time.
 - Verify the executable-bit path end-to-end: generated `scripts/*.py` must keep mode
   0755 via `manifest.default_mode_for` — the lookup over the
   `manifest.EXECUTABLE_TARGETS` set, the same single mechanism Bucket B extends for
@@ -154,6 +168,14 @@ template's macro-sourced copies and ab-replay's hand-mirror; shell-quoting hazar
   substitution output is not re-parsed as shell syntax, so backticks / `$(` / quotes
   in prompt files are inert data — the 2026-06-09 hazard class is structurally
   eliminated, not merely tested against.
+- Fail-loud propagation (Tier-2 codex P2, verified): make's default shell has no
+  `-e`, and recipe commands are `;`-chained, so a bare `PROMPT="$$(helper …)";
+  codex exec … "$$PROMPT"` would swallow the helper's exit-2 and invoke the CLI
+  with an empty prompt — defeating the whole point of the fail-loud helper. Every
+  helper invocation MUST guard the substitution: `PROMPT="$$(helper …)" || exit
+  $$?` (or split the assignment onto its own `&&`-joined line). A regression test
+  asserts each review recipe's helper call carries the guard (grep the rendered
+  recipe for `scripts/render-review-prompt.py` NOT followed by an un-guarded `;`).
 - Retire the `tier1_prompt` macro. `shared/CONTRIBUTING.md.tmpl` (and the dogfood
   `CONTRIBUTING.md`) stop inlining the Tier-1 prompt text; they instead document
   BOTH manual-subagent variants exactly as today's two macro call sites do
@@ -191,9 +213,22 @@ template's macro-sourced copies and ab-replay's hand-mirror; shell-quoting hazar
   retarget from rendered recipe strings to the prompt files; (d) a fact-check
   data-flow test proving sample verification JSON demonstrably reaches the built
   prompt for BOTH the codex and claude fact-check recipes (iter-1 FN1 — the
-  regression this whole placeholder design exists to prevent). The
-  `tests/test_makefile_review_targets.py` recipe suite keeps its behavioral coverage
-  (`REVIEW_RESOLVE=1` dispatcher hook unchanged).
+  regression this whole placeholder design exists to prevent).
+- `tests/test_makefile_review_targets.py` is TWO test classes, not one — retarget
+  the prompt-shape half (Tier-2 codex P1, verified): the `REVIEW_RESOLVE=1`
+  dispatcher-resolution tests are unaffected and keep their coverage, BUT
+  `test_tier1_prompt_has_no_backticks_in_rendered_recipe` (greps the rendered
+  recipe for `"Review commit`) and `test_plan_review_prompt_has_calibration_and_is_shell_safe`
+  (greps for `"Review the plan file at`) assert on inline prompt text that Bucket B
+  moves OUT of the recipe — they turn `make check` red as written. Rewrite both to
+  validate the helper/prompt-file path: the shell-safety + calibration + no-backtick
+  properties they check now live in the prompt FILES (assert against the files),
+  and the recipe-side assertion becomes "the recipe invokes
+  `scripts/render-review-prompt.py` with the right prompt file + guard" (shares the P2
+  guard test above). Same grep-the-suite discipline as Bucket A: before
+  implementing, grep `tests/` for every inline lead-phrase
+  (`"Review commit`, `"Review the plan file at`, `"Read the plan file`,
+  `"Interpret these fact-check`) and retarget every hit.
 - Downstream migration: extend `scripts/migrate-selftest-block.py` to also copy the
   `prompts/` files and the new helper when it re-syncs the sentinel block (today it
   moves only the Makefile block; without this, a migrated downstream Makefile would
@@ -264,19 +299,35 @@ keeps each diff reviewable as pure movement).
 - Repo-wide reference sweep (iter-1 FN5 — the surface is 12 files, not two): every
   repo-local `docs/plans/2026-*` reference updates to the `archive/` path —
   markdown links (`CLAUDE.md`, `BACKLOG.md`, `docs/usage.md`,
-  `docs/design-notes/2026-06-01-continue-thread-ab-result.md`), docstring/comment
-  citations (`bootstrap_lib/adopt.py:3`, `tests/test_stack_suggest.py:15`), and the
-  `DEFAULT_PLAN` constants (`scripts/ab-replay.py:58`, `scripts/verify-v13-5.py:78`).
+  `docs/design-notes/2026-06-01-continue-thread-ab-result.md` — 4), docstring/comment
+  citations (`bootstrap_lib/adopt.py:3`, `tests/test_stack_suggest.py:15`,
+  `scripts/ab_replay_lib.py:3` — 3), and the `DEFAULT_PLAN` constants
+  (`scripts/ab-replay.py:58`, `scripts/verify-v13-5.py:78` — 2) = 9 touched; with
+  the 3 deliberately-untouched files below that is the 12-file total.
   Two reference classes are deliberately UNTOUCHED: the generic example path in
   `CONTRIBUTING.md:220` / `shared/CONTRIBUTING.md.tmpl:271` (a placeholder
   illustration, not a real file) and the external GitHub URL at `README.md:27`
   (points at a different repository).
-- The moved plans' own relative links are rewritten one directory deeper (iter-2
-  FN1 — verified: 4 plan files carry `../`-form links today, e.g. a
-  two-levels-up Makefile link in `docs/plans/2026-06-01-continue-thread-ab-measurement.md`
-  and a parent-relative README link in
-  `docs/plans/2026-05-15-skill-pr2-nodejs-language.md`; after the move those
-  resolve one level too shallow).
+- The moved plans' own relative links are rewritten one directory deeper — ALL
+  relative forms, not only `../`-style (Tier-2 codex P1, verified). Two sub-classes,
+  both flagged by the general link test below:
+  - `../`-form links (iter-2 FN1 — 4 plan files, e.g. a two-levels-up Makefile
+    link in `docs/plans/2026-06-01-continue-thread-ab-measurement.md`, a
+    parent-relative README link in `docs/plans/2026-05-15-skill-pr2-nodejs-language.md`):
+    each needs one more `../` after the move.
+  - bare-filename links that are ALREADY broken today (Tier-2 codex P1): e.g.
+    `[Makefile](Makefile)` and `[CLAUDE.md](CLAUDE.md)` in
+    `docs/plans/2026-05-27-skill-pr10-harvest-plan-tango-improvements.md:421,428`
+    resolve to `docs/plans/Makefile` NOW (never existed) and
+    `docs/plans/archive/Makefile` after the move; `[…](README.md)` in
+    `docs/plans/2026-05-15-skill-pr2-nodejs-language.md:137` resolves correctly to
+    `docs/plans/README.md` today but breaks on move. These must be normalized to
+    repo-root-relative (a two-levels-up Makefile path, a one-level-up README path
+    post-move) as part of the sweep — NOT exempted, or the test bakes existing rot
+    into permanent exceptions.
+    The general link test would fail `make check` on the bare-filename breaks the
+    FIRST time it runs (before the move even matters), so the sweep must precede or
+    accompany the test in the same commit.
 - New link-existence test, GENERAL form (iter-2 FN1): for every tracked markdown
   file, each markdown-link-form reference to an in-repo path — not only
   `docs/plans/…` targets — must resolve to an existing file relative to the
@@ -392,7 +443,8 @@ keeps each diff reviewable as pure movement).
 | Prompt-file placeholder drift (a recipe stops exporting a var the file needs) | Helper fails loud on an unresolved registry token; a test enumerates each prompt file's tokens against the recipe-provided set; the fact-check data-flow test proves the `{VERIFICATION_JSON}` file-backed token end-to-end |
 | Adopt-mode planned-set counts pinned in tests silently absorb the new `prompts/` files | Bucket B's PR updates those fixtures explicitly; reviewer instructed to check each count delta equals (prompt files + 1 helper) |
 | cli split churns `git blame` on the hottest file | Accepted cost; AD6's pure-movement commits keep `git log --follow` usable |
-| Archived-plan paths break in-tree references (12 files at plan time, not just the two script constants) — AND the moved plans' own `../`-form relative links break one level deeper (4 files at plan time) | Bucket D sweeps every repo-local `docs/plans/` reference and rewrites the moved plans' relative links in the same commit; the general link-existence test + `DEFAULT_PLAN` existence assertions lock both classes permanently |
+| Archived-plan paths break in-tree references (12 files at plan time, not just the two script constants) — AND the moved plans' own relative links break: `../`-form (4 files) one level deeper, PLUS bare-filename links already broken today (Tier-2 codex P1) | Bucket D sweeps every repo-local `docs/plans/` reference and rewrites ALL relative-link forms (incl. normalizing the pre-existing bare-filename breaks) in the same commit; the general link-existence test + `DEFAULT_PLAN` existence assertions lock both classes permanently |
+| Plan under-enumerates which tests break when a bucket deletes/changes a string (three surfaced at Tier-2: scan list, Makefile prompt-shape tests, bare links) | Buckets A + B carry an explicit grep-the-suite step (every deleted template basename, every inline prompt lead-phrase) so the implementer retargets ALL consumers, not only the ones named at plan time; `make check` is the backstop |
 | De-citation deletes a comment a test pins (docstring assertions) | Pre-edit grep of test assertions for docstring fragments (LESSONS.md 2026-05-25 discipline); `make check` gates |
 | Downstream repos (e.g. call-details) re-sync the Makefile block but lack `prompts/` | `scripts/migrate-selftest-block.py` extended in the same PR to carry the prompt files + helper; its dry-run diff shows the new files; the new fixture test (the script's first coverage) gates dry-run, `--apply`, helper exec-bit, and migrated-target resolution |
 
@@ -401,9 +453,13 @@ keeps each diff reviewable as pure movement).
 - Every bucket: `make check` green (full suite; no skips beyond the pre-existing
   environment-gated ones).
 - Bucket A: byte-equality property test (rendered output == `scripts/` source);
+  the retargeted `SHARED_TEMPLATES_TO_SCAN` tests green (no `TemplateNotFound`);
   generated-project smoke tests still execute the shipped scripts (exec bit).
 - Bucket B: `make preflight-review-tooling`; one live fact-check run against this
-  plan; recipe tests in `tests/test_makefile_review_targets.py`; placeholder
+  plan; the `REVIEW_RESOLVE=1` dispatcher tests in
+  `tests/test_makefile_review_targets.py` unchanged AND its two prompt-shape tests
+  retargeted to the prompt files (green, not red); the fail-loud-guard test (every
+  recipe's `scripts/render-review-prompt.py` call carries `|| exit $$?`); placeholder
   enumeration test; the retargeted simplify-wording test green;
   `tests/test_selftest_overlap.py` byte-identity between repo `Makefile` block and
   rendered `shared/Makefile.review.tmpl` unchanged in mechanism.
@@ -434,13 +490,14 @@ to duplicate into).
 | 1.5 | Claude self-check (1 pass) | 2026-07-05 | 0 imp-3 (3 doc-drifts, all fixed) | (i) plan-count ambiguity fixed — 18 pre-existing plans + this file = 19 in-dir; Context and Bucket D now both say so; (ii) iter-0.5 row's proposed-file enumeration made explicit (6 prompt-file tokens + 3 modules + 3 singles = 12; the checker's "11" was a miscount the glossed wording invited); (iii) exec-bit mechanism unified (`default_mode_for` reading `EXECUTABLE_TARGETS` — one mechanism, previously described from two angles). Between 1.5 and 2, one user scope addition folded: the dormant `/simplify` rule merges into the Tier-1 prompt focus (Bucket B bullet + AD7). **Pass 2** (post-folds, pre-iter-2, required for `loop-ack`): 1 sequencing nit — the `/simplify` fold inserted AD7 before AD6; reordered, numbering preserved. 9 explicit cross-checks clean (plan counts, prompt arithmetic, token registry, split-table disjointness, verbatim-six, sweep surface, D-before-E naming, log↔evidence mapping). Cap reached (2 passes). |
 | 2 | Codex | 2026-07-05 | 0/3/1 | **converged** — 0 imp-3; all 4 findings folded (a). FN1 (imp-2, archived plans' own `../`-form relative links break — premise verified, 4 plan files): sweep rewrites them + link test generalized to ALL in-repo markdown links. FN2 (imp-2): the inline-prompt assertion would have missed the consistency/fact-check texts — test now pins helper invocation per target + all four lead phrases gone. FN3 (imp-2): migration extension gains an acceptance fixture — the script's FIRST test coverage (verified: none exists). FN4 (imp-1): "never fired" softened to "no evidence in shipped PR records" — decision unchanged. Second user scope addition folded after iter 2: adopted-project sync runbook (`docs/usage.md`) + `--mode=upgrade` BACKLOG entry with concrete trigger (Bucket D). **Stop: 0 imp-3, all imp-2/1 folded — README stop rule; no ritual iter 3.** |
 | 2.5 | Claude self-check (1 pass) | 2026-07-05 | 0 imp-3 (0 contradictions, 1 soft ambiguity) | **Internally consistent** — 9 cross-checks reconcile (plan counts, log↔evidence arithmetic, token registry, verbatim-six, sweep surface, exec-bit mechanism, split graph, D-before-E naming, 12-proposed-files arithmetic). Soft ambiguity tidied: Bucket B's opener scoped "nine" to the Makefile with the template + ab-replay copies named separately. After the pass, folded together: third user scope input (mixed-ownership files → `--mode=upgrade` BACKLOG entry rewritten to the region-based ownership model; runbook names the section-safe channel + its dry-run-diff caveat) and one fact-check prose-noise reword (the quoted parent-relative README-link example). Stopped at 1 pass. |
+| T2 | Codex Tier-2 (PR #49, ready-for-review) | 2026-07-06 | 3 P1 / 1 P2 | **all 4 folded (a)** — premises verified against cited files before folding (all correct). All four are one meta-class: the plan's test-surgery enumeration was incomplete, so `make check` would go red for an implementer following it verbatim. P1a: archive sweep must cover bare-filename links (already broken today) + all `../`-forms, not just `../`. P1b: `test_makefile_review_targets.py` prompt-shape tests grep inline prompt text Bucket B removes — retarget them (dispatcher tests unaffected). P1c: six `scripts-*.tmpl` in `SHARED_TEMPLATES_TO_SCAN` → `TemplateNotFound` after Bucket A deletes them — drop the entries. P2: `;`-chained recipes swallow the fail-loud helper's exit-2 → guard every `PROMPT="$$(…)"` with `|| exit $$?`. Added grep-the-suite discipline to Buckets A/B so a THIRD under-enumeration can't surface at impl. claude[bot] Tier-2 errored twice (infra) — no cross-check landed; re-trigger optional. |
 
 ## Evidence table — what was folded and where
 
 | Iter | Finding | Decision | Where folded |
 |------|---------|----------|--------------|
 | 1 | FN1 (imp-3): fact-check prompt extraction loses the in-recipe `$$(cat …)` verification-JSON expansion | (a) fold | Bucket B prompt-file bullet (`{VERIFICATION_JSON}` placeholder), helper bullet (file-backed token via `NAME_FILE`), AD2, test-surgery item (d) data-flow test, risk table placeholder row |
-| 1 | FN2 (imp-3): flat module graph can't support the moves — `_main_apply_adopt` calls adopt-UI + guidance helpers | (a) fold | Bucket C "Import-cycle rule" rewritten as a layered graph (`cli → apply_pipeline → {adopt_ui, guidance}`; leaves import base layer only) |
+| 1 | FN2 (imp-3): flat module graph can't support the moves — `_main_apply_adopt` calls adopt-UI + guidance helpers | (a) fold | Bucket C "Import-cycle rule" rewritten as a layered graph (`cli → {apply_pipeline, guidance, adopt_ui}` direct edges; `apply_pipeline → {adopt_ui, guidance}`; `adopt_ui`/`guidance` are leaves importing only the base layer) |
 | 1 | FN3 (imp-3): Bucket D verification named a `--help` smoke the current verifier doesn't implement (exit 4, verified) and a rename that happens in Bucket E | (a) fold | Bucket D bullets + Verification: replaced with `DEFAULT_PLAN` existence assertions + link-existence test; rename stays pure Bucket E scope (no argparse addition — keeps AD6's pure-rename framing) |
 | 1 | FN4 (imp-2): CONTRIBUTING migration dropped the plan-bound Tier-1 subagent variant | (a) fold | Bucket B CONTRIBUTING bullet: both variants documented with their substitution sets + discoverability test |
 | 1 | FN5 (imp-2): archive move breaks more in-tree links than the two script constants | (a) fold | Bucket D repo-wide sweep bullet (12-file surface, two deliberately-untouched classes named), link-existence test, Scope row 4, risk table archive row |
@@ -456,6 +513,11 @@ to duplicate into).
 | 2 | FN4 (imp-1): "/simplify never fired" claim exceeds recorded evidence | (a) fold — softened to "no evidence in shipped PR records"; decision unchanged | Scope row 2, Bucket B `/simplify` bullet, AD7 |
 | — | user request (2026-07-05): pipeline-change propagation to N adopted projects | (a) fold — runbook documented now; `--mode=upgrade` engine parked with explicit trigger | Bucket D runbook + BACKLOG-entry bullets, NOT-in-scope row, Scope row 4 |
 | — | user request (2026-07-05): mixed-ownership files (project details + shared rules in one CLAUDE.md) defeat per-file upgrade hashing | (a) fold — BACKLOG entry rewritten to the three-class region-based ownership model; runbook marks the section-safe channel + its in-section-edit caveat | Bucket D BACKLOG-entry bullet, runbook bullet |
+| T2 | codex P1a: archive/link test would fail `make check` on bare-filename links (already broken today) not covered by the `../`-only rewrite | (a) fold — verified `2026-05-27...:421,428` + `2026-05-15-pr2...:137` | Bucket D relative-link bullet (both sub-classes), archive risk row |
+| T2 | codex P1b: `test_makefile_review_targets.py` prompt-shape tests grep inline prompt text Bucket B removes → red `make check` | (a) fold — verified the two tests + their needles | Bucket B new test-surgery bullet (two-class split), Bucket B verification implied |
+| T2 | codex P1c: six `scripts-*.tmpl` in `SHARED_TEMPLATES_TO_SCAN` → `TemplateNotFound` after Bucket A deletes them | (a) fold — verified list membership + the two parametrized tests | Bucket A scan-retarget bullet + grep-the-suite bullet |
+| T2 | codex P2: `;`-chained recipe swallows the helper's fail-loud exit-2, invoking the CLI with an empty prompt | (a) fold — verified make's default non-`-e` shell + recipe style | Bucket B fail-loud-propagation bullet (`|| exit $$?` guard + test) |
+| T2 | meta (Tier-2 pattern): plan's test-surgery enumeration is necessary but not verified-exhaustive | (a) fold — grep-the-suite discipline added | Buckets A + B grep bullets, new risk row |
 
 ## Implementation log (this PR)
 
@@ -472,7 +534,8 @@ plan merge)
 - `bootstrap_lib/cli.py` (the split target — full file)
 - `Makefile` + `shared/Makefile.review.tmpl` (prompt embeddings, sentinel block)
 - `tests/test_selftest_overlap.py` (byte-identity pairs + sentinel-block test)
-- `tests/test_shared_templates.py` (macro/prompt shape tests being retargeted)
+- `tests/test_shared_templates.py` (macro/prompt shape tests + `SHARED_TEMPLATES_TO_SCAN` — both retargeted)
+- `tests/test_makefile_review_targets.py` (dispatcher tests unchanged; prompt-shape tests retargeted — Tier-2 P1b)
 - `scripts/migrate-selftest-block.py` (downstream migration path)
 - `scripts/ab-replay.py` + `scripts/ab_replay_lib.py` (third prompt copy being retired; the literal-brace constraint)
 - `docs/plans/README.md` (archive convention lands there)
