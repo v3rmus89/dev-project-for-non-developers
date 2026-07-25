@@ -1345,3 +1345,26 @@ consumes PLAN_FILE/ITERATION (or MODE/ACTOR) from an untrusted source.
 **Done in PR #35** (not parked): the `.gitignore` MODE-preservation half of the
 codex re-review — NEUTRALIZE now captures `mode_before` and apply+restore chmod
 to it, so a private (e.g. 0600) ignore file is never loosened to 0644.
+
+---
+
+### Migrate `claude-review.yml` off `claude-code-action@beta` (imp-2)
+
+**Status**: parked 2026-07-25 — the workflow now pins `model: claude-sonnet-5`
+explicitly (both `.github/workflows/claude-review.yml` and
+`shared/claude-review.yml.tmpl`), after the `@beta` action's built-in default
+model (`claude-sonnet-4-20250514`, retired 2026-06-15) started returning 404 on
+every `pull_request` run — first observed on PR #50, where auth succeeded (the
+2026-07-13 CLAUDE_CODE_OAUTH_TOKEN refresh worked) but the model lookup failed.
+The pin fixes the break; `@beta` remains a deprecated moving tag whose other
+defaults can drift the same way.
+
+**Trigger to pick up**: the next change that touches the claude-review workflow
+template for any other reason, OR the next `@beta`-attributable breakage.
+
+**Starting requirements**: migrate to `anthropics/claude-code-action@v1` — the
+input surface differs from `@beta` (e.g. `direct_prompt` was renamed; verify the
+current input set against the v1 `action.yml` rather than bumping the tag
+blind), so it needs the template + dogfood byte-identity pass and a live PR
+smoke. Consider `fallback_model` at the same time (weigh silent degradation vs
+no-review-at-all for an advisory bot).
