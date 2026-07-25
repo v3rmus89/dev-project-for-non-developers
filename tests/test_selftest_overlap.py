@@ -10,15 +10,16 @@ context must match the committed dogfood copies byte-for-byte.
    SELFTEST-OVERLAP-BEGIN/END sentinel comments) vs the rendered
    shared/Makefile.review.tmpl.
 
-6+ Script byte-identity checks (Tier-1 review F7 on PR-0):
-   Each scripts/*.py that is shipped as a verbatim shared/*.tmpl must
-   stay byte-identical so that a future edit to one without the other
-   is caught immediately.
+6+ Verbatim-ship checks (pre-expansion Bucket A; supersedes the Tier-1 F7
+   byte-identity pairs): every SHARED_VERBATIM_MAP source exists non-empty,
+   and render_all's output for each verbatim rel-path is byte-equal to that
+   single working copy — there is no second template copy left to drift.
 """
 
 from __future__ import annotations
 
 import difflib
+import functools
 import os
 import subprocess
 from pathlib import Path
@@ -26,16 +27,6 @@ from pathlib import Path
 import pytest
 
 from bootstrap_lib import render
-
-# Pairs that must stay byte-identical: (scripts/<name>.py, shared/<tmpl-name>.tmpl)
-_SCRIPT_TEMPLATE_PAIRS = [
-    ("scripts/run-with-clean-env.py", "scripts-run-with-clean-env.py.tmpl"),
-    ("scripts/loop-status.py", "scripts-loop-status.py.tmpl"),
-    ("scripts/extract-plan-facts.py", "scripts-extract-plan-facts.py.tmpl"),
-    ("scripts/extract-codex-session-id.py", "scripts-extract-codex-session-id.py.tmpl"),
-    ("scripts/verify-plan-facts.py", "scripts-verify-plan-facts.py.tmpl"),
-    ("scripts/propagate-shared-rules.py", "scripts-propagate-shared-rules.py.tmpl"),
-]
 
 # scripts/*.py that the review recipes exec directly and that must carry the
 # executable bit in the skill repo (the bootstrap sets it via EXECUTABLE_TARGETS
@@ -222,23 +213,41 @@ def test_dev_review_command_is_not_git_ignored():
     )
 
 
-@pytest.mark.parametrize("script_rel,tmpl_name", _SCRIPT_TEMPLATE_PAIRS)
-def test_script_template_byte_identity(script_rel, tmpl_name):
-    """Each scripts/*.py verbatim template must be byte-identical to its
-    shared/*.tmpl counterpart — edits to one without the other cause drift."""
-    script_text = (SKILL_ROOT / script_rel).read_text(encoding="utf-8")
-    tmpl_text = (SKILL_ROOT / "shared" / tmpl_name).read_text(encoding="utf-8")
-    if script_text != tmpl_text:
-        diff = "\n".join(
-            difflib.unified_diff(
-                script_text.splitlines(),
-                tmpl_text.splitlines(),
-                fromfile=f"scripts/{script_rel.split('/')[-1]}",
-                tofile=f"shared/{tmpl_name}",
-                lineterm="",
-            )
-        )
-        pytest.fail(f"{script_rel} vs {tmpl_name} byte-identity drift:\n{diff}")
+@functools.lru_cache(maxsize=1)
+def _rendered_all():
+    """One full render for the verbatim checks below (each parametrized case
+    reads from the same output dict)."""
+    return render.render_all(SKILL_REPO_CONTEXT, language="python")
+
+
+def test_verbatim_map_disjoint_from_template_map():
+    """A rel-path present in BOTH shared maps would ship one output file from
+    two different sources — the exact two-copy state Bucket A removed. Guard
+    the disjointness structurally."""
+    overlap = set(render.SHARED_VERBATIM_MAP) & set(render.SHARED_TEMPLATE_MAP)
+    assert not overlap, f"rel-paths in both SHARED maps: {sorted(overlap)}"
+
+
+@pytest.mark.parametrize("rel_out,src_rel", sorted(render.SHARED_VERBATIM_MAP.items()))
+def test_verbatim_source_exists_and_non_empty(rel_out, src_rel):
+    """Every SHARED_VERBATIM_MAP source must exist and be non-empty: the map
+    ships raw bytes from the single working copy, so a missing or truncated
+    source would ship a missing/empty file to every generated project."""
+    src = SKILL_ROOT / src_rel
+    assert src.is_file(), f"verbatim source missing: {src_rel} (ships as {rel_out})"
+    assert src.stat().st_size > 0, f"verbatim source empty: {src_rel}"
+
+
+@pytest.mark.parametrize("rel_out,src_rel", sorted(render.SHARED_VERBATIM_MAP.items()))
+def test_verbatim_render_output_byte_equal_to_source(rel_out, src_rel):
+    """render_all's bytes for each verbatim rel-path must equal the working
+    copy's bytes exactly. Replaces the retired _SCRIPT_TEMPLATE_PAIRS
+    hand-synced byte-identity check: with one copy the identity is structural,
+    and this asserts the ship path really is verbatim (raw read, no Jinja)."""
+    output = _rendered_all()
+    assert rel_out in output, f"{rel_out} missing from render_all output"
+    src_bytes = (SKILL_ROOT / src_rel).read_bytes()
+    assert output[rel_out] == src_bytes, f"{rel_out}: rendered bytes differ from {src_rel}"
 
 
 @pytest.mark.parametrize("script_rel", _EXECUTABLE_SCRIPTS)

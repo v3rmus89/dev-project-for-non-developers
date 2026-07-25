@@ -12,10 +12,11 @@ confirm zero failures post-merge.
 - `scripts/extract-plan-facts.py` — fact extractor for plan Markdown
 - `scripts/verify-plan-facts.py` — deterministic verifier (no AI, no subprocess)
 
-### Shared templates
+### Verbatim shipping (post pre-expansion Bucket A)
 
-- `shared/scripts-extract-plan-facts.py.tmpl`
-- `shared/scripts-verify-plan-facts.py.tmpl`
+Both scripts ship to generated projects byte-for-byte from the working
+copies above, via the verbatim map in `bootstrap_lib/render.py` — their
+shared/ template twins were removed in the pre-expansion refactor.
 
 ### Key functions
 

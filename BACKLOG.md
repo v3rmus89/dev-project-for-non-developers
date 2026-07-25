@@ -106,8 +106,9 @@ tests (gap 3) were fixed in the PR-0-hardening PR. The two below are deferred.
 `not_verifiable` (documented in its docstring). Catching a semantic flag
 conflict (e.g. `--apply` + `--dry-run`, mutually exclusive in
 `bootstrap_lib/_flags.py`) needs either (a) importing the CLI-under-test's
-parser — impossible, because the script ships to downstream projects via
-`shared/scripts-verify-plan-facts.py.tmpl` and must stay stdlib-only (no
+parser — impossible, because the script ships to downstream projects verbatim
+from its single working copy `scripts/verify-plan-facts.py` (`SHARED_VERBATIM_MAP`
+in `bootstrap_lib/render.py`) and must stay stdlib-only (no
 `bootstrap_lib` dependency), or (b) executing the CLI — which violates the
 no-execute safety boundary (iter-4 FN1). Generic, safe flag-semantics
 verification is a genuine design problem, not a quick addition.

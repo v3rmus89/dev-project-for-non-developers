@@ -19,12 +19,23 @@ SHARED_TEMPLATE_MAP = {
     "docs/codex-github-review-setup.md": "docs-codex-github-review-setup.md.tmpl",
     ".editorconfig": "editorconfig.tmpl",
     ".claude/commands/dev-review.md": "claude-commands-dev-review.md.tmpl",
-    "scripts/run-with-clean-env.py": "scripts-run-with-clean-env.py.tmpl",
-    "scripts/loop-status.py": "scripts-loop-status.py.tmpl",
-    "scripts/extract-plan-facts.py": "scripts-extract-plan-facts.py.tmpl",
-    "scripts/extract-codex-session-id.py": "scripts-extract-codex-session-id.py.tmpl",
-    "scripts/verify-plan-facts.py": "scripts-verify-plan-facts.py.tmpl",
-    "scripts/propagate-shared-rules.py": "scripts-propagate-shared-rules.py.tmpl",
+}
+
+# Files shipped byte-for-byte from their single working copy in this repo:
+# output rel-path -> skill-repo-relative source path. No shared/ template twin,
+# no Jinja pass (a literal `{{` in a source stays literal; verbatim files never
+# meet StrictUndefined). Source paths are ARBITRARY repo-relative paths --
+# nothing here may assume a `scripts/` prefix (Bucket B ships `prompts/*.txt`
+# through this same map). Together with the template maps in this module these
+# are the complete inventory of files the skill ships (docs/usage.md
+# "Shipped-file inventory").
+SHARED_VERBATIM_MAP = {
+    "scripts/run-with-clean-env.py": "scripts/run-with-clean-env.py",
+    "scripts/loop-status.py": "scripts/loop-status.py",
+    "scripts/extract-plan-facts.py": "scripts/extract-plan-facts.py",
+    "scripts/extract-codex-session-id.py": "scripts/extract-codex-session-id.py",
+    "scripts/verify-plan-facts.py": "scripts/verify-plan-facts.py",
+    "scripts/propagate-shared-rules.py": "scripts/propagate-shared-rules.py",
 }
 
 PYTHON_TEMPLATE_MAP = {
@@ -141,7 +152,7 @@ def planned_paths(language, github_review_mode="none", enable_smoke=False, packa
 
     Mirrors `render_all`'s key selection exactly — applies the same
     `_emit_in_mode` / `_emit_python_in_pm_mode` filters to the template-map
-    keys — but renders nothing (no Jinja, no context dict). The interactive
+    AND verbatim-map keys — but renders nothing (no Jinja, no context dict). The interactive
     intake (`bootstrap_lib.intake`) uses this for its greenfield
     collision check.
 
@@ -152,6 +163,9 @@ def planned_paths(language, github_review_mode="none", enable_smoke=False, packa
     """
     paths = set()
     for rel_out in SHARED_TEMPLATE_MAP:
+        if _emit_in_mode(rel_out, github_review_mode, enable_smoke):
+            paths.add(rel_out)
+    for rel_out in SHARED_VERBATIM_MAP:
         if _emit_in_mode(rel_out, github_review_mode, enable_smoke):
             paths.add(rel_out)
     try:
@@ -192,6 +206,11 @@ def render_all(context, language="python"):
         if not _emit_in_mode(rel_out, mode, enable_smoke):
             continue
         output[rel_out] = env.get_template(tmpl_name).render(**context).encode("utf-8")
+
+    for rel_out, src_rel in SHARED_VERBATIM_MAP.items():
+        if not _emit_in_mode(rel_out, mode, enable_smoke):
+            continue
+        output[rel_out] = (SKILL_ROOT / src_rel).read_bytes()
 
     try:
         lang_map = LANGUAGE_TEMPLATE_MAPS[language]
