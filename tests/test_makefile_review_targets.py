@@ -1063,6 +1063,52 @@ def test_fact_check_verification_json_reaches_prompt(tmp_path, actor):
     )
 
 
+@pytest.mark.parametrize("actor", ["codex", "claude"])
+def test_fact_check_ambient_verification_json_is_shadowed(tmp_path, actor):
+    """Tier-2 codex P2 (PR #52): the helper prefers env NAME over NAME_FILE,
+    and the recipe's substitution inherits the outer environment — so an
+    ambient exported VERIFICATION_JSON would silently replace the
+    deterministic verifier output. The recipes pin VERIFICATION_JSON=""
+    inside the substitution (empty counts as unset → falls through to the
+    file). Prove a stale export never reaches the prompt."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug=f"fact_check_shadow_{actor}")
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    env["VERIFICATION_JSON"] = "STALE_EXPORTED_VALUE"
+    verify_out = tmp_path / f"verify-shadow-{actor}.json"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            f"review-plan-fact-check-by-{actor}",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"FACT_CHECK_FACTS_OUT={tmp_path}/facts-shadow-{actor}.json",
+            f"FACT_CHECK_VERIFY_OUT={verify_out}",
+            f"PLAN_FACT_CHECK_OUT_CODEX={tmp_path}/fc-shadow-{actor}.md",
+            f"PLAN_FACT_CHECK_OUT_CLAUDE={tmp_path}/fc-shadow-{actor}.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + "\n" + result.stdout
+    log = json.loads(argv_log.read_text())
+    cli_argv = [e["argv"] for e in log if e["cli"] == actor and e["argv"] != ["--version"]]
+    assert cli_argv, f"{actor} was never invoked"
+    prompt = cli_argv[-1][-1]
+    assert "STALE_EXPORTED_VALUE" not in prompt, (
+        "ambient VERIFICATION_JSON export leaked into the prompt — the "
+        'recipe\'s VERIFICATION_JSON="" pin is missing or broken'
+    )
+    assert verify_out.read_text().rstrip("\n") in prompt, (
+        "the verifier's file-backed JSON must still reach the prompt"
+    )
+
+
 def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):
     """CLI failure must not be swallowed by the fact-check target."""
     target = _bootstrap_fixture(tmp_path)

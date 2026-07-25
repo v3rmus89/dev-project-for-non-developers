@@ -394,7 +394,7 @@ review-plan-fact-check-by-codex:	## Pre-pass: fact-check active plan sections ag
 	  { echo "codex CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
 	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
 	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
-	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON="" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  codex exec \
 	    -C "$(CURDIR)" \
@@ -415,7 +415,7 @@ review-plan-fact-check-by-claude:	## Pre-pass: fact-check active plan sections a
 	  { echo "claude CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
 	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
 	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
-	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON="" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude \
 	    --print \

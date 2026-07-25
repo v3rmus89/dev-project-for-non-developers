@@ -146,6 +146,56 @@ def test_apply_then_review_resolves_end_to_end(tmp_path):
     assert "review-plan-by-codex" in resolved, resolved
 
 
+def test_symlinked_prompts_dir_escape_is_refused(tmp_path):
+    """Tier-2 codex P1 (PR #52): a downstream whose prompts/ is a symlink
+    pointing OUTSIDE the project must be refused loudly (exit 2) in BOTH
+    modes — --apply would otherwise write through it to an unrelated path,
+    and even dry-run reads through it."""
+    target, _stale_marker = _make_stale_downstream(tmp_path)
+    outside = tmp_path / "outside-project"
+    outside.mkdir()
+    (target / "prompts").symlink_to(outside, target_is_directory=True)
+
+    for extra in ([], ["--apply"]):
+        result = _run_migrate(target / "Makefile", *extra)
+        assert result.returncode == 2, (extra, result.returncode, result.stdout, result.stderr)
+        assert "refusing" in result.stderr, result.stderr
+        assert list(outside.iterdir()) == [], f"escape wrote outside the project ({extra})"
+
+
+def test_symlinked_helper_file_escape_is_refused(tmp_path):
+    """Same class, file form: scripts/render-review-prompt.py as a symlink to
+    a file outside the project must be refused, and the pointee untouched."""
+    target, _stale_marker = _make_stale_downstream(tmp_path)
+    pointee = tmp_path / "outside-file.py"
+    pointee.write_text("ORIGINAL OUTSIDE CONTENT")
+    (target / HELPER_REL).symlink_to(pointee)
+
+    result = _run_migrate(target / "Makefile", "--apply")
+    assert result.returncode == 2, (result.returncode, result.stdout, result.stderr)
+    assert "refusing" in result.stderr, result.stderr
+    assert pointee.read_text() == "ORIGINAL OUTSIDE CONTENT", "pointee was overwritten"
+
+
+def test_helper_mode_only_drift_is_detected_and_repaired(tmp_path):
+    """Tier-2 codex P2 (PR #52): a byte-identical helper that lost its exec
+    bit breaks every rewired recipe (permission denied), so mode drift IS
+    drift — dry-run names it, --apply repairs to 0755."""
+    target = _bootstrap_fixture(tmp_path)
+    helper = target / HELPER_REL
+    helper.chmod(0o644)
+
+    dry = _run_migrate(target / "Makefile")
+    assert dry.returncode == 1, (dry.returncode, dry.stdout, dry.stderr)
+    assert f"{HELPER_REL} (mode)" in dry.stdout, dry.stdout
+    assert (helper.stat().st_mode & 0o777) == 0o644, "dry-run must not chmod"
+
+    applied = _run_migrate(target / "Makefile", "--apply")
+    assert applied.returncode == 0, (applied.returncode, applied.stdout, applied.stderr)
+    assert (helper.stat().st_mode & 0o777) == 0o755
+    assert _run_migrate(target / "Makefile").returncode == 0, "must be in sync after repair"
+
+
 def test_in_sync_target_is_a_noop_exit_0(tmp_path):
     """A freshly bootstrapped project already matches the skill repo (block +
     files) — the migration must report in-sync and exit 0."""
