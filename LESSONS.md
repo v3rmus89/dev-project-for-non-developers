@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-26: Deleting a named construct must sweep live guidance docs for forward-pointing references, not just the surfaces the plan names
+
+**Trigger**: Bucket B Tier-1 (commit `cda3b51`) imp-2 — retiring the `tier1_prompt` macro updated every surface the plan enumerated (Makefile, template, CONTRIBUTING tmpl + dogfood, tests), but the Active rule at `LESSONS.md` "2026-05-19: Tier-1 commit review must use the SAME AI" still instructed future sessions to "pass the canonical Tier-1 prompt from `shared/Makefile.review.tmpl`'s `tier1_prompt` macro" — a live pointer at a construct that no longer existed. LESSONS.md is read and applied at every session start, so the drift would have misdirected the next Tier-1-via-subagent session.
+
+**Rule**: Before deleting or renaming a named construct (macro, function, file, make target), grep ALL live guidance surfaces — `LESSONS.md` Active rules, `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `BACKLOG.md` triggers — for forward-pointing references, and retarget every hit in the same commit. Past-tense mentions inside a lesson's **Trigger** are historical record and stay; a **Rule** that names the construct is a live instruction and must move with it. The plan's enumerated surface list is a floor, not the sweep.
+
+**Status**: Active
+
+---
+
 ### 2026-07-25: "Replacement coverage" must enumerate every property the retired test enforced
 
 **Trigger**: Bucket A Tier-2 cross-review (codex, PR #50) FN2 — the plan dropped six script templates from `SHARED_TEMPLATES_TO_SCAN` calling byte-equality "their replacement coverage". But the scan enforced TWO properties: Jinja render safety (genuinely obsolete for verbatim files) AND content genericity (no forbidden project terms in SHIPPED files) — and byte-equality replaces only drift, not genericity. The genericity scan of six shipped scripts vanished silently through two Tier-2 plan rounds, Tier-1, and implementation; only the implementation PR's cross-review caught it.
@@ -177,7 +187,7 @@ solved structurally.
 
 **Trigger**: PR #6 Impl Step 2-3 — I used `make review-commit-by-codex` for Tier-1 (Codex reviewing Claude's commits). User push-back: *"our rule is tier 1 commit review should be done by the same AI but just new subagent, no? only tier 2 review we have cross review"*. The rule was implicit in the workflow (same-author = same-AI Tier-1; Tier-2 = cross-AI via GitHub bots) but CLAUDE.md's "or" wording made both targets look equivalent. I'd separately defaulted to Codex because the `review-commit-by-claude` make target hits the `--permission-mode plan` exit-declined bug (BACKLOG f).
 
-**Rule**: When the implementer is Claude (this session), Tier-1 commit review uses a **fresh Claude subagent**, not Codex. Invoke via the `Agent` tool with `subagent_type: general-purpose` (or `claude` default) and pass the canonical Tier-1 prompt from `shared/Makefile.review.tmpl`'s `tier1_prompt` macro. The Codex Tier-1 target (`make review-commit-by-codex`) is for when Codex is the implementer (symmetric). Cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector on PR open / draft→ready). If `review-commit-by-claude` is broken (e.g. the plan-mode bug), use the Agent-tool subagent as the immediate workaround; fix the make target separately. CLAUDE.md's current "or" wording for the Tier-1 targets is too permissive — tightening it to explicit same-AI/cross-AI split is tracked in BACKLOG.md as a PR #6 follow-up.
+**Rule**: When the implementer is Claude (this session), Tier-1 commit review uses a **fresh Claude subagent**, not Codex. Invoke via the `Agent` tool with `subagent_type: general-purpose` (or `claude` default) and pass the canonical Tier-1 prompt: read `prompts/commit-review-plan-bound.txt` substituting `{COMMIT_REF}` + `{PLAN_FILE}` (or `prompts/commit-review-unbound.txt` substituting only `{COMMIT_REF}` when no plan is in flight) — the same files the Makefile recipes render via `scripts/render-review-prompt.py`. The Codex Tier-1 target (`make review-commit-by-codex`) is for when Codex is the implementer (symmetric). Cross-AI review only fires at Tier-2 (claude[bot] + chatgpt-codex-connector on PR open / draft→ready). If `review-commit-by-claude` is broken (e.g. the plan-mode bug), use the Agent-tool subagent as the immediate workaround; fix the make target separately. CLAUDE.md's current "or" wording for the Tier-1 targets is too permissive — tightening it to explicit same-AI/cross-AI split is tracked in BACKLOG.md as a PR #6 follow-up.
 
 **Status**: Active
 
