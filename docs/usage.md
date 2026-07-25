@@ -510,7 +510,7 @@ PR #1 of the skill itself uses Boxette's `make review-plan` (Codex direction onl
 
 ## Shipped-file inventory
 
-The complete inventory of files a bootstrap/adopt run can write lives in
+The inventory of files `render_all` plans and writes lives in
 `bootstrap_lib/render.py`, in its maps — `shared/` alone is NOT the full list:
 
 - `SHARED_TEMPLATE_MAP` + the per-language `*_TEMPLATE_MAP`s — files rendered
@@ -518,9 +518,17 @@ The complete inventory of files a bootstrap/adopt run can write lives in
 - `SHARED_VERBATIM_MAP` — files shipped byte-for-byte from their single
   working copy in this repo (today: the six `scripts/*.py` helpers). These
   deliberately have no `shared/` template twin — the working file IS the
-  shipped source, so an edit lands in one place and cannot drift.
+  shipped source, so an edit lands in one place and cannot drift. Sources are
+  validated as repo-relative (absolute paths, `..`, and symlink escapes are
+  rejected at render time).
 
-To see the exact file set for a given configuration, run `--dry-run`.
+One adopt-mode path lives OUTSIDE the maps: when the target owns its own
+`Makefile`, `--mode=adopt` injects a standalone `Makefile.review` after
+`render_all` (see `bootstrap_lib/cli.py`), and per-file adopt policies can
+write `.new` companions for mapped paths. `--dry-run` shows the exact
+`render_all` set; adopt's conditional additions appear in the adopt run's own
+recommendation report (adopt requires `--apply`, so they never show in
+`--dry-run` output).
 
 ## Reference
 

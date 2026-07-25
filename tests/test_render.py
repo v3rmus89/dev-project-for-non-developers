@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from bootstrap_lib import render
+from bootstrap_lib.paths import PathSafetyError
 
 
 def _context(language, github_review_mode="none", enable_smoke=False, package_manager=None):
@@ -107,3 +108,22 @@ def test_planned_paths_equals_render_all_keys(
         package_manager=package_manager,
     )
     assert planned == rendered
+
+
+def test_render_all_rejects_absolute_verbatim_source(monkeypatch):
+    """Tier-2 fold (PR #50 FN1): pathlib `/` silently REPLACES the left side
+    when the right side is absolute, so an absolute SHARED_VERBATIM_MAP source
+    would read from outside the repo and ship that file to every generated
+    project. render_all must fail loud instead."""
+    monkeypatch.setitem(render.SHARED_VERBATIM_MAP, "docs/evil.txt", "/etc/hosts")
+    with pytest.raises(PathSafetyError):
+        render.render_all(_context("python"), language="python")
+
+
+def test_render_all_rejects_traversal_verbatim_source(monkeypatch):
+    """Tier-2 fold (PR #50 FN1): a `..` source escapes SKILL_ROOT the same
+    way. validate_target_path resolves the candidate before the containment
+    check, so symlink escapes are covered by the same guard."""
+    monkeypatch.setitem(render.SHARED_VERBATIM_MAP, "docs/evil.txt", "../outside.txt")
+    with pytest.raises(PathSafetyError):
+        render.render_all(_context("python"), language="python")

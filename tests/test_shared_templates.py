@@ -83,6 +83,23 @@ def test_no_boxette_isms_in_shared_templates(tmpl):
         assert literal not in lower, f"forbidden literal {literal!r} in {tmpl}"
 
 
+@pytest.mark.parametrize("rel_out,src_rel", sorted(render.SHARED_VERBATIM_MAP.items()))
+def test_no_boxette_isms_in_verbatim_sources(rel_out, src_rel):
+    """Tier-2 fold (PR #50 FN2): dropping the six scripts from
+    SHARED_TEMPLATES_TO_SCAN removed the only genericity scan of their
+    CONTENT — byte-equality guards drift, not project-specific leakage.
+    Scan every verbatim source with the same forbidden-terms list the
+    rendered templates get, so a future paste into a shipped script (or a
+    Bucket B prompt file) fails loud."""
+    text = (render.SKILL_ROOT / src_rel).read_text(encoding="utf-8").lower()
+    for term in FORBIDDEN_TERMS:
+        assert not re.search(term, text, re.IGNORECASE), (
+            f"forbidden term {term!r} in verbatim source {src_rel}"
+        )
+    for literal in FORBIDDEN_LITERAL:
+        assert literal not in text, f"forbidden literal {literal!r} in {src_rel}"
+
+
 def test_claude_review_yml_parses_as_yaml():
     rendered = _render("claude-review.yml.tmpl", _context(github_review_mode="claude"))
     data = yaml.safe_load(rendered)

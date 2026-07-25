@@ -27,8 +27,10 @@ SHARED_TEMPLATE_MAP = {
 # meet StrictUndefined). Source paths are ARBITRARY repo-relative paths --
 # nothing here may assume a `scripts/` prefix (Bucket B ships `prompts/*.txt`
 # through this same map). Together with the template maps in this module these
-# are the complete inventory of files the skill ships (docs/usage.md
-# "Shipped-file inventory").
+# are the complete render_all inventory of shipped files; the one addition
+# OUTSIDE the maps is adopt mode's conditionally injected standalone
+# Makefile.review (bootstrap_lib/cli.py) -- see docs/usage.md
+# "Shipped-file inventory".
 SHARED_VERBATIM_MAP = {
     "scripts/run-with-clean-env.py": "scripts/run-with-clean-env.py",
     "scripts/loop-status.py": "scripts/loop-status.py",
@@ -210,7 +212,12 @@ def render_all(context, language="python"):
     for rel_out, src_rel in SHARED_VERBATIM_MAP.items():
         if not _emit_in_mode(rel_out, mode, enable_smoke):
             continue
-        output[rel_out] = (SKILL_ROOT / src_rel).read_bytes()
+        # Enforce the map's repo-relative source contract: pathlib `/` would
+        # silently REPLACE SKILL_ROOT for an absolute src_rel, and `..` or a
+        # symlink could escape the repo -- any of those would ship an
+        # out-of-repo file to every generated project.
+        src = validate_target_path(SKILL_ROOT, src_rel)
+        output[rel_out] = src.read_bytes()
 
     try:
         lang_map = LANGUAGE_TEMPLATE_MAPS[language]
