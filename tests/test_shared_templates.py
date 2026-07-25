@@ -577,3 +577,17 @@ def test_shared_claude_md_non_python_languages_unaffected_by_package_manager():
             assert "uv run python" not in rendered, f"language={lang} pm={pm_kwargs}"
             # pip-mode python wording must NOT leak either:
             assert "Install dev deps into venv" not in rendered, f"language={lang} pm={pm_kwargs}"
+
+
+def test_claude_review_workflow_pins_model():
+    """PR #51 regression lock: the @beta action's built-in default model
+    (claude-sonnet-4-20250514) retired 2026-06-15 and 404'd every Tier-2 run;
+    the explicit `model` input on the Run Claude review step is the fix's
+    load-bearing invariant. Byte-identity alone would still pass if BOTH the
+    dogfood workflow and the template lost the pin together - this asserts
+    the pin exists and names the intended model."""
+    rendered = _render("claude-review.yml.tmpl", _context(github_review_mode="claude"))
+    data = yaml.safe_load(rendered)
+    steps = data["jobs"]["claude-review"]["steps"]
+    step = next(s for s in steps if s.get("name") == "Run Claude review")
+    assert step["with"]["model"] == "claude-sonnet-5"
