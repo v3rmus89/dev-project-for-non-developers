@@ -1,21 +1,3 @@
-{# Tier-1 commit-review prompt — single source of truth used by both
-   Makefile recipes below AND CONTRIBUTING.md's subagent template.
-   Drift between call sites is impossible by construction (one macro,
-   imported from both surfaces). Defensive prose: no backticks or
-   $(...) inside the prompt body — those would trigger shell command
-   substitution when the rendered prompt is passed as a double-quoted
-   shell arg. Single quotes around 'git log ...' are literal prompt
-   characters, not shell quotes.
-
-   Signature: tier1_prompt(commit_ref, plan_file=None). The plan_file
-   arg is optional; treats None AND empty string AS unbound (per the
-   PR #5 Codex Tier-2 lesson: a literal '<PLAN_FILE>' placeholder text
-   would be non-empty, so the macro is invoked from CONTRIBUTING via
-   TWO explicit variants — "with plan binding" passes the real path,
-   "code-correctness only" passes no second arg). #}
-{%- macro tier1_prompt(commit_ref, plan_file=None) -%}
-Review commit {{ commit_ref }} on this branch. Run 'git log -1 --stat {{ commit_ref }}' and 'git show {{ commit_ref }}' to see the diff, then VERIFY against the actual codebase — not just the diff. This is a Tier-1 code review. Focus on: tests that pass for the wrong reason, plan-impl drift (does the commit match what the plan says?), missing-await / sys.path / module-init bugs that the diff alone cannot reveal, contract bugs the author may have missed (function callers? config consumers?), missing edge-case coverage, semantic-boundary mismatches between docs and code, regressions in nearby code touched by the commit's imports/exports. {% if plan_file %}Check this commit against {{ plan_file }}'s plan body; flag any deviation as plan-impl drift findings. {% else %}No plan binding; limit findings to code-correctness, do not infer a plan file by mtime. {% endif %}Return findings ordered by importance (3=blocker, 2=improvement, 1=polish). For each finding: file:line, importance, what is wrong, why it matters, concrete suggested fix, AND identify any other files where the same fix should apply for consistency. Do NOT edit files. If there are no importance-3 findings, say so explicitly. ALSO output a suggested implementation-log row for this commit. Use this exact table-row shape (no backticks; the literal pipe characters and angle-bracket placeholders): | short-sha | one-line what landed | deviations from plan, or 'none' | issues faced, or 'none' |. The driver will append this to the plan's Implementation log section.
-{%- endmacro -%}
 # ── Plan-review automation ──────────────────────────────────────────────────
 # Hand-written in PR #1 to be byte-identical to what
 # shared/Makefile.review.tmpl renders for this repo's own context. The
@@ -131,7 +113,7 @@ review-plan-by-codex:	## Codex skeptical review of a plan file (PLAN_FILE=docs/p
 	@mkdir -p "$(SNAP_DIR)"; \
 	  cp "$(PLAN_FILE)" "$(SNAP_DIR)/iter$(ITERATION).bak"; \
 	  echo "Snapshot: $(SNAP_DIR)/iter$(ITERATION).bak"
-	@PROMPT="Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). Calibrate importance strictly. A 3 (blocker) means the implemented PR would fail make check or its smoke walk without this change — a real defect in the plan's design, data flow, scope, or sequencing. It is NOT 'would be more correct', NOT a style preference, and NOT the exact syntax of an illustrative shell/CLI/runbook snippet shown only to explain intent (quoting, exit-code handling, awk or grep field numbers) — that syntax is verified at implementation by running it, so raise it at most as importance-2. BUT a dependency the plan genuinely relies on for feasibility — a CLI flag, command, or function/API signature that must exist for the design to work — stays importance-3 when it is wrong or unverified, because the design fails without it; do not down-rank a feasibility dependency to importance-2 just because it resembles 'syntax'. When unsure whether a finding blocks, ask: can the PR ship with a green make check and a passing smoke walk without it? If yes, it is at most importance-2. For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly. Also tag every prose finding with **FN (importance N):** at the start matching its footer id. After all prose, append a json code fence containing: {verdict: one of needs-iter/converged/do-not-implement (map: ready after minor edits->converged, needs another iteration->needs-iter, do not implement yet->do-not-implement), severity_counts: {3: N, 2: N, 1: N}, key: '$(KEY)', findings: [{id: FN label matching prose, importance: N, section_or_line: stable anchor, title: one line, fingerprint: slug(section_or_line)+':'+slug(title) where slug=lowercase-alpha-hyphens}]}."; \
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" ITERATION="$(ITERATION)" KEY="$(KEY)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/plan-review.txt)" || exit $$?; \
 	if [ "$(THREAD_MODE)" = "continue" ]; then \
 	  if [ -f "$(THREAD_FILE)" ]; then \
 	    SESSION_ID=$$(cat "$(THREAD_FILE)"); \
@@ -193,12 +175,13 @@ review-plan-by-claude:	## Claude skeptical review of a plan file (PLAN_FILE=docs
 	@mkdir -p "$(SNAP_DIR)"; \
 	  cp "$(PLAN_FILE)" "$(SNAP_DIR)/iter$(ITERATION).bak"; \
 	  echo "Snapshot: $(SNAP_DIR)/iter$(ITERATION).bak"
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" ITERATION="$(ITERATION)" KEY="$(KEY)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/plan-review.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude \
 	    --print \
 	    --add-dir "$(CURDIR)" \
 	    --output-format text \
-	    "Review the plan file at '$(PLAN_FILE)'. This is iteration $(ITERATION). Be skeptical and critical (not approving). Inspect the repository as needed to verify the plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden assumptions, missing verification, missing rollback / adoption path, phases that are too large, vague ownership / unclear acceptance criteria, places where manual copy-paste could be automated, hidden dependency on subscriptions / API keys / GitHub permissions / local tools, contradictions between the plan and current repository state, and places where the plan says 'later' but the dependency is actually needed earlier. Return findings ordered by importance (3 = blocker, 2 = improvement, 1 = polish). Calibrate importance strictly. A 3 (blocker) means the implemented PR would fail make check or its smoke walk without this change — a real defect in the plan's design, data flow, scope, or sequencing. It is NOT 'would be more correct', NOT a style preference, and NOT the exact syntax of an illustrative shell/CLI/runbook snippet shown only to explain intent (quoting, exit-code handling, awk or grep field numbers) — that syntax is verified at implementation by running it, so raise it at most as importance-2. BUT a dependency the plan genuinely relies on for feasibility — a CLI flag, command, or function/API signature that must exist for the design to work — stays importance-3 when it is wrong or unverified, because the design fails without it; do not down-rank a feasibility dependency to importance-2 just because it resembles 'syntax'. When unsure whether a finding blocks, ask: can the PR ship with a green make check and a passing smoke walk without it? If yes, it is at most importance-2. For each finding give: importance, what is wrong, why it matters, concrete suggested change. For each finding, also identify any OTHER sections of the same plan that need updating for consistency if this finding is folded — look at headings, tables, the iteration log, the evidence table, the architecture-decisions section, and flag any place where the plan text would contradict the folded change. End with a stop/go verdict: 'ready after minor edits' / 'needs another iteration' / 'do not implement yet'. If there are no importance-3 findings, say that explicitly. Also tag every prose finding with **FN (importance N):** at the start matching its footer id. After all prose, append a json code fence containing: {verdict: one of needs-iter/converged/do-not-implement (map: ready after minor edits->converged, needs another iteration->needs-iter, do not implement yet->do-not-implement), severity_counts: {3: N, 2: N, 1: N}, key: '$(KEY)', findings: [{id: FN label matching prose, importance: N, section_or_line: stable anchor, title: one line, fingerprint: slug(section_or_line)+':'+slug(title) where slug=lowercase-alpha-hyphens}]}." \
+	    "$$PROMPT" \
 	  > "$(PLAN_REVIEW_OUT_CLAUDE)"
 	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(HASH_FILE)"
 	@echo "──────────────────────────────────────────"
@@ -223,22 +206,24 @@ review-commit-by-codex:	## Codex review of the most recent commit (Tier-1). PLAN
 	  if [ ! -f "$(PLAN_FILE)" ]; then \
 	    echo "PLAN_FILE not found: $(PLAN_FILE)"; exit 1; \
 	  fi; \
+	  PROMPT="$$(COMMIT_REF="HEAD" PLAN_FILE="$(PLAN_FILE)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/commit-review-plan-bound.txt)" || exit $$?; \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
 	    codex exec \
 	      -C "$(CURDIR)" \
 	      --sandbox read-only \
 	      --color never \
 	      --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
-	      "{{ tier1_prompt('HEAD', '$(PLAN_FILE)') }}" \
+	      "$$PROMPT" \
 	    && cat "$(REVIEW_COMMIT_OUT_CODEX)"; \
 	else \
+	  PROMPT="$$(COMMIT_REF="HEAD" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/commit-review-unbound.txt)" || exit $$?; \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
 	    codex exec \
 	      -C "$(CURDIR)" \
 	      --sandbox read-only \
 	      --color never \
 	      --output-last-message "$(REVIEW_COMMIT_OUT_CODEX)" \
-	      "{{ tier1_prompt('HEAD') }}" \
+	      "$$PROMPT" \
 	    && cat "$(REVIEW_COMMIT_OUT_CODEX)"; \
 	fi
 
@@ -259,17 +244,19 @@ review-commit-by-claude:	## Claude review of the most recent commit (Tier-1). PL
 	  if [ ! -f "$(PLAN_FILE)" ]; then \
 	    echo "PLAN_FILE not found: $(PLAN_FILE)"; exit 1; \
 	  fi; \
+	  PROMPT="$$(COMMIT_REF="HEAD" PLAN_FILE="$(PLAN_FILE)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/commit-review-plan-bound.txt)" || exit $$?; \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
 	    claude --print --add-dir "$(CURDIR)" \
 	      --output-format text \
-	      "{{ tier1_prompt('HEAD', '$(PLAN_FILE)') }}" \
+	      "$$PROMPT" \
 	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
 	    && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"; \
 	else \
+	  PROMPT="$$(COMMIT_REF="HEAD" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/commit-review-unbound.txt)" || exit $$?; \
 	  $(CURDIR)/scripts/run-with-clean-env.py -- \
 	    claude --print --add-dir "$(CURDIR)" \
 	      --output-format text \
-	      "{{ tier1_prompt('HEAD') }}" \
+	      "$$PROMPT" \
 	    > "$(REVIEW_COMMIT_OUT_CLAUDE)" \
 	    && cat "$(REVIEW_COMMIT_OUT_CLAUDE)"; \
 	fi
@@ -280,10 +267,11 @@ review-plan-consistency-by-claude:	## Self-check: scan plan for self-contradicti
 	@test -f "$(PLAN_FILE)" || { echo "Plan file not found: $(PLAN_FILE)"; exit 1; }
 	@command -v claude >/dev/null 2>&1 || \
 	  { echo "claude CLI not found."; exit 1; }
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/plan-consistency.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude --print --add-dir "$(CURDIR)" \
 	    --output-format text \
-	    "Read the plan file at '$(PLAN_FILE)' in full. Your ONLY job: find internal contradictions, doc-drift between sections, and places where the latest fold's wording is inconsistent with adjacent rows / tables / sections. Do NOT critique the design, scope, completeness, or correctness — that is the Codex/Claude full-review job. Just identify pairs: 'Section X says A, Section Y says B, they disagree because Z'. If the plan is internally consistent, say so explicitly. Output as a numbered list. Be terse." \
+	    "$$PROMPT" \
 	  > "$(PLAN_CONSISTENCY_OUT)" \
 	  && cat "$(PLAN_CONSISTENCY_OUT)"
 	@shasum -a 256 "$(PLAN_FILE)" | awk '{print $$1}' > "$(CONS_FILE)"
@@ -406,13 +394,14 @@ review-plan-fact-check-by-codex:	## Pre-pass: fact-check active plan sections ag
 	  { echo "codex CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
 	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
 	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  codex exec \
 	    -C "$(CURDIR)" \
 	    --sandbox read-only \
 	    --color never \
 	    --output-last-message "$(PLAN_FACT_CHECK_OUT_CODEX)" \
-	    "Interpret these fact-check results for '$(PLAN_FILE)'. The verification JSON was produced deterministically by scripts/verify-plan-facts.py and is included below. For each FAILED item explain what the drift means and whether it is blocking (imp-3) or an improvement (imp-2). For each unsupported_external item note that the path is outside the declared fact roots and cannot be verified without a ## Fact roots block in the plan. For each not_verifiable item note the reason. If all facts verified cleanly say so explicitly. VERIFICATION JSON: $$(cat '$(FACT_CHECK_VERIFY_OUT)')"
+	    "$$PROMPT"
 	@echo "──────────────────────────────────────────"
 	@echo "Fact-check report written to: $(PLAN_FACT_CHECK_OUT_CODEX)"
 	@echo "──────────────────────────────────────────"
@@ -426,12 +415,13 @@ review-plan-fact-check-by-claude:	## Pre-pass: fact-check active plan sections a
 	  { echo "claude CLI not found. Install + log in first (see CONTRIBUTING.md)."; exit 1; }
 	@$(CURDIR)/scripts/extract-plan-facts.py "$(PLAN_FILE)" > "$(FACT_CHECK_FACTS_OUT)"
 	@$(CURDIR)/scripts/verify-plan-facts.py "$(FACT_CHECK_FACTS_OUT)" "$(CURDIR)" > "$(FACT_CHECK_VERIFY_OUT)"
+	@PROMPT="$$(PLAN_FILE="$(PLAN_FILE)" VERIFICATION_JSON_FILE="$(FACT_CHECK_VERIFY_OUT)" $(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/prompts/fact-check-interpret.txt)" || exit $$?; \
 	$(CURDIR)/scripts/run-with-clean-env.py -- \
 	  claude \
 	    --print \
 	    --add-dir "$(CURDIR)" \
 	    --output-format text \
-	    "Interpret these fact-check results for '$(PLAN_FILE)'. The verification JSON was produced deterministically by scripts/verify-plan-facts.py and is included below. For each FAILED item explain what the drift means and whether it is blocking (imp-3) or an improvement (imp-2). For each unsupported_external item note that the path is outside the declared fact roots and cannot be verified without a ## Fact roots block in the plan. For each not_verifiable item note the reason. If all facts verified cleanly say so explicitly. VERIFICATION JSON: $$(cat '$(FACT_CHECK_VERIFY_OUT)')" \
+	    "$$PROMPT" \
 	  > "$(PLAN_FACT_CHECK_OUT_CLAUDE)"
 	@echo "──────────────────────────────────────────"
 	@echo "Fact-check report written to: $(PLAN_FACT_CHECK_OUT_CLAUDE)"

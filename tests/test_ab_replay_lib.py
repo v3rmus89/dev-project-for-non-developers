@@ -201,6 +201,56 @@ def test_screen_verdict_never_returns_flip():
                 }
 
 
+# ── shared plan-review prompt (pre-expansion Bucket B) ───────────────────────────
+# ab-replay dropped its hand-mirrored PROMPT_TEMPLATE; it now reads
+# prompts/plan-review.txt and substitutes via the same known-token rules the
+# Makefile recipes use, computing {KEY} with the Makefile's formula.
+
+
+def test_compute_plan_review_key_matches_makefile_formula():
+    import hashlib
+    import os
+
+    repo = str(SKILL_ROOT)
+    plan = str(SKILL_ROOT / "docs" / "plans" / "README.md")
+    expected = hashlib.sha256(
+        (os.path.realpath(repo) + ":" + os.path.realpath(plan)).encode()
+    ).hexdigest()[:12]
+    got = lib.compute_plan_review_key(repo, plan)
+    assert got == expected
+    assert len(got) == 12 and all(c in "0123456789abcdef" for c in got)
+
+
+def test_build_plan_review_prompt_resolves_every_token():
+    """The KEY-resolved path (Tier-2 codex P2): the shared file carries
+    {PLAN_FILE}, {ITERATION} AND the JSON footer's {KEY} — ab-replay must
+    supply all three, so no registry token survives into the built prompt."""
+    import re
+
+    prompt = lib.build_plan_review_prompt(str(SKILL_ROOT), "docs/plans/x.md", 2)
+    for leftover in ("{PLAN_FILE}", "{ITERATION}", "{KEY}"):
+        assert leftover not in prompt, f"unresolved token {leftover}"
+    assert "docs/plans/x.md" in prompt
+    assert "This is iteration 2." in prompt
+    assert re.search(r"key: '[0-9a-f]{12}'", prompt), "JSON footer must carry the resolved key"
+    # Literal JSON-fence braces pass through raw — the str.format hazard the
+    # known-token ruleset exists to avoid.
+    assert "severity_counts: {3: N, 2: N, 1: N}" in prompt
+
+
+def test_build_plan_review_prompt_key_resolves_relative_plan_against_repo():
+    """The Makefile's realpath runs with make's cwd == the repo; ab-replay may
+    run from anywhere, so a RELATIVE --plan must be keyed against the repo,
+    not the invoker's cwd."""
+    repo = str(SKILL_ROOT)
+    rel_plan = "docs/plans/README.md"
+    prompt = lib.build_plan_review_prompt(repo, rel_plan, 1)
+    expected_key = lib.compute_plan_review_key(repo, str(SKILL_ROOT / rel_plan))
+    assert f"key: '{expected_key}'" in prompt
+    # {PLAN_FILE} stays the path AS GIVEN (codex resolves it against -C <repo>).
+    assert f"at '{rel_plan}'." in prompt
+
+
 # ── (ii) safe-argv builders (iter-3 FN2) ─────────────────────────────────────────
 
 

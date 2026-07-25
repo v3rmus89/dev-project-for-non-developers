@@ -33,6 +33,7 @@ from bootstrap_lib import render
 # for generated projects; the dogfood copy must match).
 _EXECUTABLE_SCRIPTS = [
     "scripts/extract-codex-session-id.py",
+    "scripts/render-review-prompt.py",
 ]
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent

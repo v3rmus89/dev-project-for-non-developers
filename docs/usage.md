@@ -516,11 +516,13 @@ The inventory of files `render_all` plans and writes lives in
 - `SHARED_TEMPLATE_MAP` + the per-language `*_TEMPLATE_MAP`s — files rendered
   through Jinja from `shared/` and `languages/<lang>/` templates.
 - `SHARED_VERBATIM_MAP` — files shipped byte-for-byte from their single
-  working copy in this repo (today: the six `scripts/*.py` helpers). These
-  deliberately have no `shared/` template twin — the working file IS the
-  shipped source, so an edit lands in one place and cannot drift. Sources are
-  validated as repo-relative (absolute paths, `..`, and symlink escapes are
-  rejected at render time).
+  working copy in this repo (the `scripts/*.py` helpers and the
+  `prompts/*.txt` review-prompt texts). These deliberately have no `shared/`
+  template twin — the working file IS the shipped source, so an edit lands in
+  one place and cannot drift; prompt files also carry literal JSON-fence
+  braces that a Jinja pass would reject. Sources are validated as
+  repo-relative (absolute paths, `..`, and symlink escapes are rejected at
+  render time).
 
 One adopt-mode path lives OUTSIDE the maps: when the target owns its own
 `Makefile`, `--mode=adopt` injects a standalone `Makefile.review` after

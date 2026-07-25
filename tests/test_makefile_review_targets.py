@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -787,82 +788,105 @@ def test_review_commit_by_claude_without_plan_file_uses_unbound_prompt(tmp_path)
     )
 
 
-def test_tier1_prompt_has_no_backticks_in_rendered_recipe(tmp_path):
-    """PR #5 Tier-2 regression test: the rendered Tier-1 prompt (both branches)
-    must not contain backticks or `$(` — they'd trigger shell command
-    substitution when passed as a double-quoted shell arg."""
+def test_tier1_recipes_build_prompt_from_shipped_files(tmp_path):
+    """Retargeted PR #5 Tier-2 regression test (pre-expansion Bucket B): the
+    Tier-1 prompt texts left the recipes for prompts/*.txt, so the recipe-side
+    contract is now 'each commit-review branch builds PROMPT from its exact
+    shipped prompt file, guarded fail-loud'. The shell-safety properties the
+    old test checked live in the shipped files (asserted below + in
+    test_shared_templates for the sources)."""
     target = _bootstrap_fixture(tmp_path)
     makefile_text = (target / "Makefile").read_text()
-    # Locate review-commit-by-codex recipe block
     rec_start = makefile_text.index("review-commit-by-codex:")
-    rec_end = makefile_text.index("preflight-review-tooling:")
+    rec_end = makefile_text.index("review-plan-consistency-by-claude:")
     rec_block = makefile_text[rec_start:rec_end]
-    # Extract everything inside the quoted prompts (after "Review commit ...)
-    p_starts = []
-    cursor = 0
-    while True:
-        try:
-            idx = rec_block.index('"Review commit', cursor)
-            p_starts.append(idx)
-            cursor = idx + 10
-        except ValueError:
-            break
-    # Both codex + claude targets have 2 prompts each (with-plan + unbound) = 4 total
-    assert len(p_starts) == 4, (
-        f"expected exactly 4 quoted prompts in recipe block (2 targets x 2 branches); "
-        f"got {len(p_starts)}"
+    helper_lines = [line for line in rec_block.splitlines() if "render-review-prompt.py" in line]
+    # Both codex + claude targets have 2 branches each (with-plan + unbound) = 4 total
+    assert len(helper_lines) == 4, (
+        f"expected exactly 4 helper calls in recipe block (2 targets x 2 branches); "
+        f"got {len(helper_lines)}"
     )
-    for ps in p_starts:
-        line_end = rec_block.index("\n", ps)
-        prompt = rec_block[ps + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
-        # Exception: the WITH-plan branch DOES contain $(PLAN_FILE) — that's
-        # intentional, Make expands it at runtime. But it should NOT contain
-        # any OTHER $( or backticks.
-        # Strip the literal $(PLAN_FILE) first to check the rest is clean.
-        check = prompt.replace("$(PLAN_FILE)", "<PLAN>")
-        assert "`" not in check, f"Tier-1 prompt contains backtick: {check[:200]}"
-        assert "$(" not in check, f"Tier-1 prompt contains shell-substitution `$(`: {check[:200]}"
+    bound = [line for line in helper_lines if "prompts/commit-review-plan-bound.txt" in line]
+    unbound = [line for line in helper_lines if "prompts/commit-review-unbound.txt" in line]
+    assert len(bound) == 2 and len(unbound) == 2, (
+        f"expected 2 plan-bound + 2 unbound helper calls; got {len(bound)} + {len(unbound)}"
+    )
+    for line in helper_lines:
+        assert "|| exit $$?" in line, f"unguarded helper call: {line.strip()[:120]}"
+    # The shipped prompt files themselves are shell-safe in the GENERATED
+    # project (the verbatim ship path must not mangle them).
+    for rel in ("prompts/commit-review-plan-bound.txt", "prompts/commit-review-unbound.txt"):
+        text = (target / rel).read_text()
+        assert "`" not in text and "$(" not in text and '"' not in text, (
+            f"shipped {rel} is not shell-safe"
+        )
 
 
-def test_plan_review_prompt_has_calibration_and_is_shell_safe(tmp_path):
-    """C1 regression: the plan-review prompts (codex + claude) must (a) carry the
-    imp-3 calibration sentence, and (b) be shell-safe — no backticks, no `$(`
-    beyond the legit make vars, and no literal double-quote — since each is passed
-    as a double-quoted shell arg.
-    Extends the Tier-1-only no-backtick guard above to the plan-review prompts;
-    that coverage gap is what let the calibration's own backticks slip into the
-    plan at iter-1 (FN1)."""
+def test_plan_review_recipes_and_shipped_prompt_file(tmp_path):
+    """C1 regression, retargeted (Bucket B): calibration + shell-safety now
+    live in the shipped prompts/plan-review.txt; the recipe-side contract is
+    the guarded helper call with that exact file in both plan-review targets."""
     target = _bootstrap_fixture(tmp_path)
     makefile_text = (target / "Makefile").read_text()
-    needle = '"Review the plan file at'
-    starts = [i for i in range(len(makefile_text)) if makefile_text.startswith(needle, i)]
-    assert len(starts) == 2, (
-        f"expected exactly 2 plan-review prompts (codex + claude); got {len(starts)}"
+    prompt_file = target / "prompts" / "plan-review.txt"
+    assert prompt_file.is_file(), "generated project must ship prompts/plan-review.txt"
+    text = prompt_file.read_text()
+    assert "Calibrate importance strictly" in text, (
+        "shipped plan-review prompt is missing the imp-3 calibration sentence"
     )
-    for s in starts:
-        line_end = makefile_text.index("\n", s)
-        prompt = makefile_text[s + 1 : line_end]
-        assert "Calibrate importance strictly" in prompt, (
-            "plan-review prompt is missing the imp-3 calibration sentence"
+    assert "`" not in text and "$(" not in text and '"' not in text, (
+        "shipped plan-review prompt is not shell-safe"
+    )
+    for target_name in ("review-plan-by-codex:", "review-plan-by-claude:"):
+        start = makefile_text.index(target_name)
+        block = makefile_text[start : makefile_text.index("\nreview-", start + 1)]
+        helper_lines = [line for line in block.splitlines() if "render-review-prompt.py" in line]
+        assert len(helper_lines) == 1, f"{target_name} must build PROMPT via the helper once"
+        assert "prompts/plan-review.txt" in helper_lines[0], (
+            f"{target_name} must use prompts/plan-review.txt"
         )
-        # The prompt is one double-quoted shell arg, so the ONLY double-quote on the
-        # line is the closing delimiter; an inner one would terminate the arg early.
-        # (Codex ends the prompt with `"; \`, Claude with `" \` — both have exactly
-        # one `"`.) This is the third shell-safety guarantee from the plan's Tests C1.
-        assert prompt.count('"') == 1, (
-            f"plan-review prompt contains a literal double-quote: {prompt[:200]}"
-        )
-        # Make expands $(PLAN_FILE)/$(ITERATION)/$(KEY) before the shell sees them;
-        # anything else with $( or a backtick would be shell command substitution.
-        check = (
-            prompt.replace("$(PLAN_FILE)", "<P>")
-            .replace("$(ITERATION)", "<I>")
-            .replace("$(KEY)", "<K>")
-        )
-        assert "`" not in check, f"plan-review prompt contains a backtick: {check[:200]}"
-        assert "$(" not in check, (
-            f"plan-review prompt contains shell-substitution `$(`: {check[:200]}"
-        )
+        assert "|| exit $$?" in helper_lines[0], f"{target_name} helper call unguarded"
+
+
+def test_plan_review_prompt_tokens_resolved_in_argv(tmp_path):
+    """Bucket B recipe-env contract (Tier-2 codex P1): the recipe-built prompt
+    must reach the CLI with every registry token RESOLVED — the env prefix
+    lives inside the command substitution, so a regression (prefix outside the
+    subshell) would either fail loud or, worse, ship literal `{TOKEN}` text."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug="token_resolution")
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            "review-plan-by-codex",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            "ITERATION=1",
+            f"PLAN_REVIEW_OUT_CODEX={tmp_path}/out-tokens.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = json.loads(argv_log.read_text())
+    exec_argv = [e["argv"] for e in log if e["cli"] == "codex" and "exec" in e["argv"]]
+    assert exec_argv, "codex exec never invoked"
+    prompt = exec_argv[-1][-1]
+    for leftover in ("{PLAN_FILE}", "{ITERATION}", "{KEY}"):
+        assert leftover not in prompt, f"unresolved registry token {leftover} reached the CLI"
+    assert "docs/plans/token_resolution.md" in prompt
+    assert "This is iteration 1." in prompt
+    # KEY resolves to the Makefile's 12-hex plan-review key inside the JSON footer.
+    assert re.search(r"key: '[0-9a-f]{12}'", prompt), "resolved {KEY} missing from JSON footer"
+    # Literal JSON-fence braces pass through the helper untouched (the
+    # str.format hazard the known-token registry exists to avoid).
+    assert "severity_counts: {3: N, 2: N, 1: N}" in prompt
 
 
 def test_step9_mandate_appears_in_contributing(tmp_path):
@@ -991,6 +1015,52 @@ def test_review_plan_fact_check_fails_without_plan_file(tmp_path):
         )
         assert result.returncode != 0, f"{tgt} must fail when PLAN_FILE is unset"
         assert "Usage:" in result.stdout, f"{tgt} must print Usage: when PLAN_FILE unset"
+
+
+@pytest.mark.parametrize("actor", ["codex", "claude"])
+def test_fact_check_verification_json_reaches_prompt(tmp_path, actor):
+    """iter-1 FN1 — the regression the {VERIFICATION_JSON} placeholder design
+    exists to prevent: once the prompt became inert file data, the old
+    in-recipe `$(cat …)` expansion stopped working, so the helper must inject
+    the verifier's JSON itself (file-backed VERIFICATION_JSON_FILE token).
+    Prove the deterministic verifier output demonstrably reaches the built
+    prompt for BOTH actors."""
+    target = _bootstrap_fixture(tmp_path)
+    plan = _make_plan_file(target, slug=f"fact_check_flow_{actor}")
+    shim_dir, argv_log = _shim_dir_capturing_argv(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    facts_out = tmp_path / f"facts-{actor}.json"
+    verify_out = tmp_path / f"verify-{actor}.json"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-C",
+            str(target),
+            f"review-plan-fact-check-by-{actor}",
+            f"PLAN_FILE={plan.relative_to(target)}",
+            f"FACT_CHECK_FACTS_OUT={facts_out}",
+            f"FACT_CHECK_VERIFY_OUT={verify_out}",
+            f"PLAN_FACT_CHECK_OUT_CODEX={tmp_path}/fc-{actor}.md",
+            f"PLAN_FACT_CHECK_OUT_CLAUDE={tmp_path}/fc-{actor}.md",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + "\n" + result.stdout
+    verify_content = verify_out.read_text().rstrip("\n")
+    assert verify_content, "verifier produced no JSON — fixture assumption broken"
+    log = json.loads(argv_log.read_text())
+    cli_argv = [e["argv"] for e in log if e["cli"] == actor and e["argv"] != ["--version"]]
+    assert cli_argv, f"{actor} was never invoked"
+    prompt = cli_argv[-1][-1]
+    assert "{VERIFICATION_JSON}" not in prompt, "file-backed token left unresolved"
+    assert verify_content in prompt, (
+        "verifier JSON did not reach the built prompt — the file-backed "
+        "VERIFICATION_JSON_FILE data flow is broken"
+    )
 
 
 def test_review_plan_fact_check_by_codex_propagates_cli_failure(tmp_path):

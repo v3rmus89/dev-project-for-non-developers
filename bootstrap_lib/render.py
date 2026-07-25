@@ -25,10 +25,11 @@ SHARED_TEMPLATE_MAP = {
 # output rel-path -> skill-repo-relative source path. No shared/ template twin,
 # no Jinja pass (a literal `{{` in a source stays literal; verbatim files never
 # meet StrictUndefined). Source paths are ARBITRARY repo-relative paths --
-# nothing here may assume a `scripts/` prefix (Bucket B ships `prompts/*.txt`
-# through this same map). Together with the template maps in this module these
-# are the complete render_all inventory of shipped files; the one addition
-# OUTSIDE the maps is adopt mode's conditionally injected standalone
+# nothing here may assume a `scripts/` prefix (the `prompts/*.txt` review
+# prompts ship through this same map, and carry literal JSON-fence braces that
+# a Jinja pass would mangle). Together with the template maps in this module
+# these are the complete render_all inventory of shipped files; the one
+# addition OUTSIDE the maps is adopt mode's conditionally injected standalone
 # Makefile.review (bootstrap_lib/cli.py) -- see docs/usage.md
 # "Shipped-file inventory".
 SHARED_VERBATIM_MAP = {
@@ -38,6 +39,12 @@ SHARED_VERBATIM_MAP = {
     "scripts/extract-codex-session-id.py": "scripts/extract-codex-session-id.py",
     "scripts/verify-plan-facts.py": "scripts/verify-plan-facts.py",
     "scripts/propagate-shared-rules.py": "scripts/propagate-shared-rules.py",
+    "scripts/render-review-prompt.py": "scripts/render-review-prompt.py",
+    "prompts/plan-review.txt": "prompts/plan-review.txt",
+    "prompts/commit-review-plan-bound.txt": "prompts/commit-review-plan-bound.txt",
+    "prompts/commit-review-unbound.txt": "prompts/commit-review-unbound.txt",
+    "prompts/plan-consistency.txt": "prompts/plan-consistency.txt",
+    "prompts/fact-check-interpret.txt": "prompts/fact-check-interpret.txt",
 }
 
 PYTHON_TEMPLATE_MAP = {
