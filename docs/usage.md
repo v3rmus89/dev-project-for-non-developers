@@ -508,6 +508,28 @@ See `CLAUDE.md` / `AGENTS.md` "Self-improvement loop" section for the full proto
 
 PR #1 of the skill itself uses Boxette's `make review-plan` (Codex direction only) for its plan-review because the skill's own bidirectional review loop is part of what PR #1 ships. From PR #2 onward the skill self-hosts the loop. The CI workflow, `claude[bot]` review, and Codex auto-review may skip on PR #1's own PR for the same bootstrap reason — the workflow files themselves are part of what PR #1 ships.
 
+## Shipped-file inventory
+
+The inventory of files `render_all` plans and writes lives in
+`bootstrap_lib/render.py`, in its maps — `shared/` alone is NOT the full list:
+
+- `SHARED_TEMPLATE_MAP` + the per-language `*_TEMPLATE_MAP`s — files rendered
+  through Jinja from `shared/` and `languages/<lang>/` templates.
+- `SHARED_VERBATIM_MAP` — files shipped byte-for-byte from their single
+  working copy in this repo (today: the six `scripts/*.py` helpers). These
+  deliberately have no `shared/` template twin — the working file IS the
+  shipped source, so an edit lands in one place and cannot drift. Sources are
+  validated as repo-relative (absolute paths, `..`, and symlink escapes are
+  rejected at render time).
+
+One adopt-mode path lives OUTSIDE the maps: when the target owns its own
+`Makefile`, `--mode=adopt` injects a standalone `Makefile.review` after
+`render_all` (see `bootstrap_lib/cli.py`), and per-file adopt policies can
+write `.new` companions for mapped paths. `--dry-run` shows the exact
+`render_all` set; adopt's conditional additions appear in the adopt run's own
+recommendation report (adopt requires `--apply`, so they never show in
+`--dry-run` output).
+
 ## Reference
 
 - `SKILL.md` — invocation entry-point doc consumed by Claude Code's skill registry

@@ -1,0 +1,9 @@
+verbatim-ship sentinel: this file must ship byte-for-byte, untouched.
+
+{{ not_a_template_var }} {% not_a_tag %} {# not_a_comment #}
+
+If any renderer ever routes verbatim-map entries through Jinja, these
+literal tokens raise (StrictUndefined / TemplateSyntaxError) or change
+the bytes — either way `test_verbatim_entries_bypass_jinja` goes red.
+Bucket B ships prompt files with literal JSON-fence braces through the
+same map; this sentinel is the guard for that contract.

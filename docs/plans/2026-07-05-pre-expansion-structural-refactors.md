@@ -584,8 +584,13 @@ to duplicate into).
 
 ## Implementation log (this PR)
 
-(plan PR — no implementation commits; per-bucket implementation PRs log here after
-plan merge)
+Bucket A (branch `refactor/bucket-a-verbatim-ship`):
+
+| Commit | Change | Tier-1 | Notes |
+|---|---|---|---|
+| `cd50117` | `SHARED_VERBATIM_MAP` in `bootstrap_lib/render.py` (arbitrary repo-relative sources, `read_bytes`, same `_emit_in_mode` filter as shared templates); six `scripts/*` entries out of `SHARED_TEMPLATE_MAP`; six `shared/scripts-*.tmpl` deleted; hand-synced byte-identity params replaced by structural verbatim properties (map disjointness, source exists+non-empty, rendered output == source); six entries dropped from `SHARED_TEMPLATES_TO_SCAN`; fact-check fixture retargeted; `docs/usage.md` "Shipped-file inventory" section; BACKLOG shipping-mechanism wording | 0 imp-3 / 0 imp-2 / 3 imp-1 | `tests/fixtures/fact-check/meta-plan-snapshot.md` was a live breaker OUTSIDE the plan's known-breaker list — the grep-the-suite discipline caught it (corpus invariant: referenced files exist). `make check` 1023 passed / 4 skipped (net -5: -6 byte-identity params, -12 scan params, +13 new) |
+| (this commit) | Tier-1 folds: F1 (a) — brace-sentinel fixture + `test_verbatim_entries_bypass_jinja` proves the ship path bypasses Jinja and exercises a non-`scripts/` source path (the Bucket B contract); F3 (a) — `planned_paths` docstring reflow. F2 (c) rejected — `BACKLOG.md` DONE-entry template ref is a past-tense historical record; Bucket D archives closed entries | — | New LESSONS.md entry: tautological-property-test class (expected value and code-under-test reading the same bytes) |
+| (fold 2) | Tier-2 cross-AI review folds — local codex stand-in on gpt-5.6-sol (GitHub Codex connector down: OpenAI backend 5xx outage; claude[bot] blocked pending PR #51's model-pin fix). 0 imp-3 / 3 imp-2, verdict needs-another-iteration; all 3 folded (a). FN1: verbatim sources now pass `validate_target_path` before reading (absolute / `..` / symlink escape rejected — codex empirically shipped `/etc/hosts` through the unguarded join) + 2 negative tests in `tests/test_render.py`. FN2: verbatim-source genericity scan restored (`test_no_boxette_isms_in_verbatim_sources`, parametrized over the map so Bucket B prompts inherit it) — the plan's "byte-equality is the replacement coverage" under-enumerated the retired scan's properties; deliberate beyond-plan strengthen. FN3: inventory claims precisified in `docs/usage.md` + `render.py` comment (adopt's post-`render_all` standalone `Makefile.review` injection, `.new` companions, `--dry-run` scope) | — | New LESSONS.md entry: replacement-coverage property enumeration |
 
 ## Lessons surfaced (this PR)
 

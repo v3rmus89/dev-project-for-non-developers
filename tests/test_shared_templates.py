@@ -63,12 +63,6 @@ SHARED_TEMPLATES_TO_SCAN = [
     "docs-SMOKE.md.tmpl",
     "docs-codex-github-review-setup.md.tmpl",
     "editorconfig.tmpl",
-    "scripts-run-with-clean-env.py.tmpl",
-    "scripts-loop-status.py.tmpl",
-    "scripts-extract-plan-facts.py.tmpl",
-    "scripts-extract-codex-session-id.py.tmpl",
-    "scripts-verify-plan-facts.py.tmpl",
-    "scripts-propagate-shared-rules.py.tmpl",
 ]
 
 
@@ -87,6 +81,23 @@ def test_no_boxette_isms_in_shared_templates(tmpl):
     for literal in FORBIDDEN_LITERAL:
         # Allow `bot/` only inside legit URLs (none expected in our templates)
         assert literal not in lower, f"forbidden literal {literal!r} in {tmpl}"
+
+
+@pytest.mark.parametrize("rel_out,src_rel", sorted(render.SHARED_VERBATIM_MAP.items()))
+def test_no_boxette_isms_in_verbatim_sources(rel_out, src_rel):
+    """Tier-2 fold (PR #50 FN2): dropping the six scripts from
+    SHARED_TEMPLATES_TO_SCAN removed the only genericity scan of their
+    CONTENT — byte-equality guards drift, not project-specific leakage.
+    Scan every verbatim source with the same forbidden-terms list the
+    rendered templates get, so a future paste into a shipped script (or a
+    Bucket B prompt file) fails loud."""
+    text = (render.SKILL_ROOT / src_rel).read_text(encoding="utf-8").lower()
+    for term in FORBIDDEN_TERMS:
+        assert not re.search(term, text, re.IGNORECASE), (
+            f"forbidden term {term!r} in verbatim source {src_rel}"
+        )
+    for literal in FORBIDDEN_LITERAL:
+        assert literal not in text, f"forbidden literal {literal!r} in {src_rel}"
 
 
 def test_claude_review_yml_parses_as_yaml():

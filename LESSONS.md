@@ -25,6 +25,26 @@ solved structurally.
 
 ## Active
 
+### 2026-07-25: "Replacement coverage" must enumerate every property the retired test enforced
+
+**Trigger**: Bucket A Tier-2 cross-review (codex, PR #50) FN2 — the plan dropped six script templates from `SHARED_TEMPLATES_TO_SCAN` calling byte-equality "their replacement coverage". But the scan enforced TWO properties: Jinja render safety (genuinely obsolete for verbatim files) AND content genericity (no forbidden project terms in SHIPPED files) — and byte-equality replaces only drift, not genericity. The genericity scan of six shipped scripts vanished silently through two Tier-2 plan rounds, Tier-1, and implementation; only the implementation PR's cross-review caught it.
+
+**Rule**: Before deleting or retargeting a test (or one parametrization entry), enumerate each distinct property it asserts and map EVERY one to a named surviving test. A "replacement coverage" claim must name the property it replaces — a test list is not one property.
+
+**Status**: Active
+
+---
+
+### 2026-07-25: A property test whose expected value and code-under-test read the same bytes is tautological
+
+**Trigger**: Bucket A Tier-1 (commit `cd50117`) imp-1 — `test_verbatim_render_output_byte_equal_to_source` compared `render_all`'s verbatim output against `read_bytes()` of the SAME source file `render_all` reads. The assertion could not fail even if verbatim entries were silently re-routed through Jinja, because the current six sources carry no Jinja tokens (a Jinja pass is byte-identical for them) — the exact regression class the verbatim mechanism exists to prevent.
+
+**Rule**: When a test asserts `output == f(source)` and the implementation computes `output` FROM that same source, add an independent witness: a sentinel input whose content the forbidden transform would visibly mangle or explode on (here: a committed fixture with literal `{{` / `{%` shipped through the verbatim map via `monkeypatch.setitem`). Load-bearing for Bucket B, whose prompt files carry literal JSON-fence braces that MUST bypass Jinja.
+
+**Status**: Active
+
+---
+
 ### 2026-06-13: A gate keyed on the analyze-phase recommendation can be invalidated by the interactive decide phase
 
 **Trigger**: PR #48 (adopt-mode hardening) Tier-2 codex P2 — Bucket B decided whether to emit the standalone `Makefile.review` (and its `include` hint) from the Makefile's *recommendation* (`SKIP`), computed before `_interactive_decide`. But adopt prompts the owner on their own Makefile, and `[o]verwrite` turns the active Makefile into the skill's (which inlines the fragment) — leaving the standalone redundant and the hint duplicate-target-inducing. The gate read pre-decision state to decide a post-decision fact.
