@@ -250,6 +250,22 @@ def test_verbatim_render_output_byte_equal_to_source(rel_out, src_rel):
     assert output[rel_out] == src_bytes, f"{rel_out}: rendered bytes differ from {src_rel}"
 
 
+def test_verbatim_entries_bypass_jinja(monkeypatch):
+    """Tier-1 fold on the byte-equality property above: for sources with no
+    Jinja tokens that property is satisfied even by an accidental Jinja pass,
+    so it cannot catch a future re-route of verbatim entries through the
+    template engine. This sentinel can: the fixture carries literal `{{` /
+    `{%` / `{#` tokens that raise (StrictUndefined / TemplateSyntaxError) or
+    change bytes under any render pass. Its source path also exercises a
+    non-scripts/ prefix — the arbitrary-repo-relative-source contract the
+    prompt-file bucket relies on. Calls render_all directly (NOT the
+    module-level cache) so the monkeypatched map never pollutes it."""
+    src_rel = "tests/fixtures/verbatim-brace-sentinel.txt"
+    monkeypatch.setitem(render.SHARED_VERBATIM_MAP, "docs/brace-sentinel.txt", src_rel)
+    output = render.render_all(SKILL_REPO_CONTEXT, language="python")
+    assert output["docs/brace-sentinel.txt"] == (SKILL_ROOT / src_rel).read_bytes()
+
+
 @pytest.mark.parametrize("script_rel", _EXECUTABLE_SCRIPTS)
 def test_review_script_is_executable(script_rel):
     """Bucket F Scope G: scripts the review recipe execs directly (e.g.

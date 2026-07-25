@@ -151,8 +151,8 @@ def planned_paths(language, github_review_mode="none", enable_smoke=False, packa
     """Return the set of output paths `render_all` would write for a config.
 
     Mirrors `render_all`'s key selection exactly — applies the same
-    `_emit_in_mode` / `_emit_python_in_pm_mode` filters to the template-map
-    AND verbatim-map keys — but renders nothing (no Jinja, no context dict). The interactive
+    `_emit_in_mode` / `_emit_python_in_pm_mode` filters to the template-map and
+    verbatim-map keys — but renders nothing (no Jinja, no context dict). The interactive
     intake (`bootstrap_lib.intake`) uses this for its greenfield
     collision check.
 

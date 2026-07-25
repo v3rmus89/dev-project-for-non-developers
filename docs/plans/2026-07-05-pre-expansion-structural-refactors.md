@@ -584,8 +584,12 @@ to duplicate into).
 
 ## Implementation log (this PR)
 
-(plan PR — no implementation commits; per-bucket implementation PRs log here after
-plan merge)
+Bucket A (branch `refactor/bucket-a-verbatim-ship`):
+
+| Commit | Change | Tier-1 | Notes |
+|---|---|---|---|
+| `cd50117` | `SHARED_VERBATIM_MAP` in `bootstrap_lib/render.py` (arbitrary repo-relative sources, `read_bytes`, same `_emit_in_mode` filter as shared templates); six `scripts/*` entries out of `SHARED_TEMPLATE_MAP`; six `shared/scripts-*.tmpl` deleted; hand-synced byte-identity params replaced by structural verbatim properties (map disjointness, source exists+non-empty, rendered output == source); six entries dropped from `SHARED_TEMPLATES_TO_SCAN`; fact-check fixture retargeted; `docs/usage.md` "Shipped-file inventory" section; BACKLOG shipping-mechanism wording | 0 imp-3 / 0 imp-2 / 3 imp-1 | `tests/fixtures/fact-check/meta-plan-snapshot.md` was a live breaker OUTSIDE the plan's known-breaker list — the grep-the-suite discipline caught it (corpus invariant: referenced files exist). `make check` 1023 passed / 4 skipped (net -5: -6 byte-identity params, -12 scan params, +13 new) |
+| (this commit) | Tier-1 folds: F1 (a) — brace-sentinel fixture + `test_verbatim_entries_bypass_jinja` proves the ship path bypasses Jinja and exercises a non-`scripts/` source path (the Bucket B contract); F3 (a) — `planned_paths` docstring reflow. F2 (c) rejected — `BACKLOG.md` DONE-entry template ref is a past-tense historical record; Bucket D archives closed entries | — | New LESSONS.md entry: tautological-property-test class (expected value and code-under-test reading the same bytes) |
 
 ## Lessons surfaced (this PR)
 
