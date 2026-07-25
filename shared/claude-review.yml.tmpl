@@ -47,6 +47,10 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: {% raw %}${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}{% endraw %}
+          # Explicit model pin: the @beta action's built-in default
+          # (claude-sonnet-4) was retired 2026-06-15 and 404s every run.
+          # The alias below tracks the current Sonnet line.
+          model: claude-sonnet-5
           direct_prompt: |
             You are reviewing a pull request for {{project_name}}
             ({{github_owner}}/{{github_repo}}).
