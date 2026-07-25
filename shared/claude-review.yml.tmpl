@@ -49,7 +49,8 @@ jobs:
           claude_code_oauth_token: {% raw %}${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}{% endraw %}
           # Explicit model pin: the @beta action's built-in default
           # (claude-sonnet-4) was retired 2026-06-15 and 404s every run.
-          # The alias below tracks the current Sonnet line.
+          # claude-sonnet-5 is the complete, undated model ID - bump it
+          # deliberately when Anthropic deprecates the Sonnet 5 line.
           model: claude-sonnet-5
           direct_prompt: |
             You are reviewing a pull request for {{project_name}}
