@@ -15,11 +15,20 @@ on:
   pull_request_review_comment:
     types: [created]
 
-# Concurrency: cancel-in-progress per (PR, event_name). Splitting per event
-# means rapid pushes (same event) still cancel each other, but review
-# comments from other bots don't murder Claude's first review.
+# Concurrency: supersede rapid pushes, but never let a comment cancel a review.
+#
+# The group includes the triggering comment's id, so every comment-triggered run
+# is its own group. Without it there is a deadlock: claude-code-action posts its
+# own status comment, that fires a fresh `issue_comment` event in the SAME group,
+# and cancel-in-progress kills the review that is still running. The follow-up
+# run is then skipped by the job-level `if` (a bot comment has no `@claude`), so
+# NO review ever completes. Cancellation is evaluated at the workflow level,
+# before the job `if`, so a run destined to be skipped still cancels a live one.
+#
+# `pull_request` events carry no comment, so they fall back to the literal `pr`
+# and keep sharing one group — rapid pushes still supersede each other.
 concurrency:
-  group: claude-review-{% raw %}${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}{% endraw %}
+  group: claude-review-{% raw %}${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}-${{ github.event.comment.id || 'pr' }}{% endraw %}
   cancel-in-progress: true
 
 jobs:

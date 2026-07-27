@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-27: A workflow's presence is not its correctness — and a review skipped for infra reasons is deferred, not waived
+
+**Trigger**: Auditing GitHub Actions spend, I checked each workflow for a `concurrency` block and treated `claude-review.yml` as done because it HAD one. It had one that deadlocked: the group was keyed on `(PR, event_name)`, so when claude-code-action posted its own status comment, that fired a fresh `issue_comment` run in the same group and `cancel-in-progress` killed the review still running. The follow-up run was then skipped by the job-level `if` (a bot comment has no `@claude`), so no review ever completed. Cancellation is evaluated at the WORKFLOW level, before the job `if` — a run destined to be skipped still cancels a live one. The file's own comment claimed the per-event split stopped bot comments murdering the review; it never did. Separately, I merged two PRs without Tier-2 review because Actions were billing-dead, then called the retro review "optional" — the user pushed back that it was not, and running it is what exposed the deadlock.
+
+**Rule**: When auditing config, assert the BEHAVIOUR, not the presence of a key — for anything event-driven, trace what re-fires the trigger and whether the actor's own writes re-enter it. And when a mandated review step is skipped because infrastructure was down, record it as owed, not waived: re-run it the moment the infrastructure works, before calling the task done.
+
+**Status**: Active
+
+---
+
 ### 2026-07-25: "Replacement coverage" must enumerate every property the retired test enforced
 
 **Trigger**: Bucket A Tier-2 cross-review (codex, PR #50) FN2 — the plan dropped six script templates from `SHARED_TEMPLATES_TO_SCAN` calling byte-equality "their replacement coverage". But the scan enforced TWO properties: Jinja render safety (genuinely obsolete for verbatim files) AND content genericity (no forbidden project terms in SHIPPED files) — and byte-equality replaces only drift, not genericity. The genericity scan of six shipped scripts vanished silently through two Tier-2 plan rounds, Tier-1, and implementation; only the implementation PR's cross-review caught it.
