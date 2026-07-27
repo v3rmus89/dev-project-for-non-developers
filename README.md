@@ -61,4 +61,6 @@ Acme, a private project, is where these patterns were developed iteratively acro
 
 ## License
 
-TBD (will be set before going public).
+[MIT](LICENSE) — use, modify and redistribute freely, including in commercial
+work; just keep the copyright notice. The templates this skill generates carry
+no licence obligations into your project.
