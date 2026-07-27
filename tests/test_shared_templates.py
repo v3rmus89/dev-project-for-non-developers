@@ -2,7 +2,8 @@
 
 - StrictUndefined render success (Codex iter-11 finding #1)
 - yaml parses
-- No-Boxette-isms scan (Codex iter-4 finding #3)
+- No-private-domain-term scan (Codex iter-4 finding #3). The FORBIDDEN_TERMS
+  literals are the real origin-project terms on purpose: they are the detector.
 - Triage-rule presence in CLAUDE.md / AGENTS.md / docs-plans-README
 """
 
@@ -73,7 +74,7 @@ def test_shared_template_renders_without_undefined_error(tmpl):
 
 
 @pytest.mark.parametrize("tmpl", SHARED_TEMPLATES_TO_SCAN)
-def test_no_boxette_isms_in_shared_templates(tmpl):
+def test_no_private_domain_terms_in_shared_templates(tmpl):
     rendered = _render(tmpl, _context())
     lower = rendered.lower()
     for term in FORBIDDEN_TERMS:
@@ -84,7 +85,7 @@ def test_no_boxette_isms_in_shared_templates(tmpl):
 
 
 @pytest.mark.parametrize("rel_out,src_rel", sorted(render.SHARED_VERBATIM_MAP.items()))
-def test_no_boxette_isms_in_verbatim_sources(rel_out, src_rel):
+def test_no_private_domain_terms_in_verbatim_sources(rel_out, src_rel):
     """Tier-2 fold (PR #50 FN2): dropping the six scripts from
     SHARED_TEMPLATES_TO_SCAN removed the only genericity scan of their
     CONTENT — byte-equality guards drift, not project-specific leakage.

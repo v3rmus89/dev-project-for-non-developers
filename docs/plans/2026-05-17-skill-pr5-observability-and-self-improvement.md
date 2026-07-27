@@ -354,7 +354,7 @@ Dogfood `CONTRIBUTING.md` mirrors.
 - `docs/usage.md`: new "Observability" section with `make status` example.
 - `BACKLOG.md`:
   - Close "Cross-session / post-compaction state recovery" entry → DONE in PR #5.
-  - Update the consolidated Boxette adoption entry (`Retroactively add triage rule + two-tier review docs to Boxette`) to ALSO include LESSONS.md template + observability layer.
+  - Update the consolidated Acme adoption entry (`Retroactively add triage rule + two-tier review docs to Acme`) to ALSO include LESSONS.md template + observability layer.
   - **Add new entry** (closes Codex iter-4 #4): "Helper script to auto-append a reviewed impl-log row to the plan file" — currently the workflow relies on the driver manually pasting the Tier-1-suggested row into the plan + creating a docs-only commit. A small helper (`make append-impl-log PLAN_FILE=... ROW='...' ` or a script reading the Tier-1 output) would automate this. **Trigger**: if driver-forgets-to-paste happens twice in any post-PR-#5 implementation. **Rough effort**: ~1 hour.
 - `shared/BACKLOG.md.tmpl`: no change needed (the entries there are workflow-tooling not project-content).
 
@@ -384,7 +384,7 @@ Requires 5a merged first (depends on LESSONS being present in renderer + cross-s
 ### Impl PR #5c — `/simplify` + active docs + BACKLOG
 
 - **Bucket E**: `/simplify` doc gating in `shared/CONTRIBUTING.md.tmpl` step 9 + dogfood mirror.
-- **Bucket G**: `README.md` (PR #5 line + PR #6 = real-project trial), `SKILL.md` (mention `make status` + LESSONS), `docs/usage.md` (Observability section). `BACKLOG.md`: close "Cross-session / post-compaction state recovery"; update Boxette adoption entry; add helper-script-to-append-impl-log-row entry with trigger.
+- **Bucket G**: `README.md` (PR #5 line + PR #6 = real-project trial), `SKILL.md` (mention `make status` + LESSONS), `docs/usage.md` (Observability section). `BACKLOG.md`: close "Cross-session / post-compaction state recovery"; update Acme adoption entry; add helper-script-to-append-impl-log-row entry with trigger.
 - **Bucket F** (final subset): `tests/test_shared_templates.py` final assertion (d) for `/simplify` gating wording.
 - **Cleanup commit**: any drift items found during 5a or 5b that need follow-up.
 
@@ -503,7 +503,7 @@ Each impl PR runs its own Tier-1 + Tier-2 review loop. The Plan PR (this documen
 | 318bc71 | PR #5b impl: tier1_prompt(commit_ref, plan_file=None) macro + Makefile shell-IF passthrough + CONTRIBUTING dual-variant subagent template + step-9 MANDATED impl-log row append + plan-file structural convention (Buckets B, C, F-subset) | none | none |
 | 39d9f6c | PR #5b Tier-1 self-review fold: 5 findings — claude without-PLAN_FILE test; apostrophe-s canonical phrasing; convention permits PR-specific subsections; tightened p_starts assertion; step-9 dogfood mirror test | none | Tier-1 reviewer noted PR #5b is the first commit to actually dogfood the impl-log-append workflow it ships — this very row is the proof |
 | 61f0101 | PR #5b Codex Tier-2 fold: validate PLAN_FILE existence before plan-bound Tier-1 (was missing the `test -f` guard that review-plan-by-* already had); also dropped stale empty "Lessons surfaced" duplicate section from this plan file | none | Codex Tier-2 caught the missing guard 5 min after marking PR ready (auto-fire DID work this time — but the lesson still stands; behavior remains inconsistent) |
-| c089051 | PR #5c impl: `/simplify` gating bullet in CONTRIBUTING (template + dogfood); README/SKILL/usage updated to mark PR #5 ✅ + add Observability + Self-improvement-loop sections; BACKLOG cleanup (close Cross-session DONE, expand Boxette adoption, add 4 PR #5 follow-ups); LESSONS entry #6 (Make-target guard-mirroring) | Bucket F test (d) for `/simplify` gating wording NOT added in this commit despite the commit-body claim (caught by Tier-1 fold, see 716028d row) | none in original; Tier-1 surfaced the test gap |
+| c089051 | PR #5c impl: `/simplify` gating bullet in CONTRIBUTING (template + dogfood); README/SKILL/usage updated to mark PR #5 ✅ + add Observability + Self-improvement-loop sections; BACKLOG cleanup (close Cross-session DONE, expand Acme adoption, add 4 PR #5 follow-ups); LESSONS entry #6 (Make-target guard-mirroring) | Bucket F test (d) for `/simplify` gating wording NOT added in this commit despite the commit-body claim (caught by Tier-1 fold, see 716028d row) | none in original; Tier-1 surfaced the test gap |
 | 716028d | PR #5c Tier-1 self-review fold: 1 imp-3 + 4 imp-2/1 — added missing `/simplify` doc-test, fixed stale BACKLOG forward-reference, added the Codex auto-fire workaround note to usage.md, fixed README "docs/lessons.md" → "LESSONS.md", added missing LESSONS separator, AND added a new LESSONS entry #7 about commit-message verification | none | Tier-1 caught my commit-message lie: I claimed the `/simplify` doc-test existed when it didn't. Lesson #7 captures this directly |
 
 ## Lessons surfaced (this PR)

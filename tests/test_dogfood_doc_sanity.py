@@ -1,11 +1,16 @@
-"""Dogfood-doc Boxette-isms scan (Codex iter-10 finding #3).
+"""Dogfood-doc private-domain-term scan (Codex iter-10 finding #3).
 
 Even though AGENTS.md / CLAUDE.md / CONTRIBUTING.md /
 pull_request_template.md aren't byte-for-byte selftested (they have
-skill-repo-specific overlays), they MUST NOT leak Boxette domain terms.
+skill-repo-specific overlays), they MUST NOT leak domain terms from the
+private origin project this skill was extracted from.
 
-Allowlist: docs/plans/* may reference Boxette (historical attribution to
-the source-of-truth repo).
+Allowlist: docs/plans/* may reference the origin project (historical
+attribution to the source-of-truth repo).
+
+NOTE: the literals in FORBIDDEN_TERMS and ORIGIN_PROJECT_PATTERN are the real
+private-project terms on purpose. They ARE the detector -- genericizing them
+would leave this guard green while detecting nothing.
 """
 
 from __future__ import annotations
@@ -28,9 +33,9 @@ FORBIDDEN_TERMS = [
 ]
 FORBIDDEN_LITERAL = ["bot/"]
 
-# Boxette is allowed in the plan dir (historical attribution to source repo)
-# but NOT in the active dogfood overlays.
-BOXETTE_PATTERN = re.compile(r"\bboxette\b", re.IGNORECASE)
+# The origin project is allowed in the plan dir (historical attribution to the
+# source repo) but NOT in the active dogfood overlays.
+ORIGIN_PROJECT_PATTERN = re.compile(r"\bboxette\b", re.IGNORECASE)
 
 DOGFOOD_FILES_TO_SCAN = [
     "AGENTS.md",
@@ -58,17 +63,17 @@ def test_no_forbidden_domain_terms(rel_path):
 
 
 @pytest.mark.parametrize("rel_path", ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md"])
-def test_no_boxette_in_dogfood_overlays(rel_path):
-    """Boxette references in AGENTS.md / CLAUDE.md / CONTRIBUTING.md count as
-    leaks. The pull_request_template doesn't reference Boxette either; that's
+def test_no_origin_project_refs_in_dogfood_overlays(rel_path):
+    """Origin-project references in AGENTS.md / CLAUDE.md / CONTRIBUTING.md count
+    as leaks. The pull_request_template doesn't reference it either; that's
     covered by the broader test below. docs/plans/* is allowlisted."""
     text = (SKILL_ROOT / rel_path).read_text()
-    # The CLAUDE.md and CONTRIBUTING.md may mention Boxette in the
+    # The CLAUDE.md and CONTRIBUTING.md may mention the origin project in the
     # bootstrap-exception note (legitimate historical attribution). Allow
     # ONLY inside well-known phrases.
-    # For simplicity, allow at most one Boxette reference per file and require
+    # For simplicity, allow at most one such reference per file and require
     # it to be near a `bootstrap exception` or `precursor` or `source` term.
-    refs = list(BOXETTE_PATTERN.finditer(text))
+    refs = list(ORIGIN_PROJECT_PATTERN.finditer(text))
     for match in refs:
         # Get the surrounding 100 chars
         start = max(0, match.start() - 100)
@@ -85,7 +90,7 @@ def test_no_boxette_in_dogfood_overlays(rel_path):
             ]
         )
         assert legitimate, (
-            f"non-attribution Boxette reference in {rel_path}: ...{text[start:end]}..."
+            f"non-attribution origin-project reference in {rel_path}: ...{text[start:end]}..."
         )
 
 
