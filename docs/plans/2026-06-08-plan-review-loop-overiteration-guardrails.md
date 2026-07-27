@@ -188,8 +188,8 @@ so the Background post-mortem's reference to `docs/plans/2026-06-08-doc-layout-p
 (which lives in downstream-app) resolves instead of reading as an external miss — are declared. Paths
 are absolute + machine-specific — local fact-check tooling metadata, not portable plan logic:
 
-- /Users/sandeep/Desktop/Code/dev-project-for-non-developers
-- /Users/sandeep/Desktop/Code/Acme/downstream-app
+- ~/code/dev-project-for-non-developers
+- ~/code/downstream-app
 
 ## Files / surfaces
 

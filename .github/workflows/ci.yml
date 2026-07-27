@@ -7,7 +7,10 @@ on:
 
 # Supersede in-flight runs when new commits land on the same ref, so a rapid
 # push-push-push burst bills one run instead of three. Concurrency groups are
-# repository-global, not per-file, so the group is namespaced by workflow name.
+# repository-global, not per-file. The key is `github.workflow_ref` (the workflow
+# FILE path + ref) rather than `github.workflow`, which is only the display name —
+# two workflows both named `CI` would otherwise share one group and cancel each
+# other. workflow_ref already encodes the ref, so it needs no `github.ref` suffix.
 #
 # cancel-in-progress is deliberately FALSE on main: a cancelled push-to-main run
 # leaves the merge commit with no green check. Nothing downstream gates on it
@@ -15,8 +18,14 @@ on:
 # available on this plan), so this is cheap insurance rather than a live
 # dependency — flip it to plain `true` only if that stays true and main-push
 # runs ever become frequent enough to matter.
+#
+# Scope of that protection: cancel-in-progress governs only the RUNNING job. A
+# run still QUEUED in the same group is always superseded when a newer one is
+# queued, whatever this is set to — so in a rapid push burst to main the middle
+# commit can still go without CI. That is the batching working as intended, not
+# a bug, but it is not the same as "nothing on main is ever skipped".
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

@@ -13,7 +13,7 @@
 ## (a) Trial target shape
 
 **Target**: `~/code/downstream-app/` — a real Python project on
-branch `customer-cases-redial-linking-v1` at SHA `2ae59e27e761e8e635ed4cd9edcf6e199afba44a`.
+branch `<original-branch>` at SHA `<original-sha>`.
 Uses `uv` (auto-detected via `uv.lock`).
 
 **Planned files**: 19 (the standard Python skill render with `--project-name=downstream-app`).
@@ -142,8 +142,8 @@ downstream-app content. Safety contract holds.
 
 **Live apply** (Phase D-3):
 
-- Preflight: ORIGINAL_BRANCH=`customer-cases-redial-linking-v1`,
-  ORIGINAL_SHA=`2ae59e27e761e8e635ed4cd9edcf6e199afba44a`. Dirty state
+- Preflight: ORIGINAL_BRANCH=`<original-branch>`,
+  ORIGINAL_SHA=`<original-sha>`. Dirty state
   (`.claude/settings.json` modified + `.claude/scheduled_tasks.lock` +
   `tools/` untracked) stashed via `git stash push --include-untracked`;
   STASH_SHA=`93bf8f1678e29bad2b6e1903ce1df1c6f3eba6ef` captured for by-ref
@@ -190,7 +190,7 @@ untracked `.new` files):
 
 **Manifest summary**:
 - `format_version`: 2
-- `target_root`: `/Users/sandeep/Desktop/Code/Acme/downstream-app` (absolute)
+- `target_root`: `~/code/downstream-app` (absolute)
 - `created_directories`: `['.github', '.github/workflows', 'docs/plans']`
 - 16 entries by policy: WRITE=14, APPEND_MERGE=1, WRITE_NEW=1
 
@@ -241,7 +241,7 @@ A v2 manifest written from cwd A with `--out ./target` recorded the relative
 path; `bootstrap.py --restore` from cwd B would silently exit 0 with zero
 mutations. Fixed: `str(Path(target_root).resolve())` mirrors v1's `_prepare_apply`
 exactly. The live trial's manifest correctly records the absolute target_root
-(`/Users/sandeep/Desktop/Code/Acme/downstream-app`) — pinned by direct read
+(`~/code/downstream-app`) — pinned by direct read
 during Phase D verification.
 
 **4. Tier-1 vs plan-loop catch ratio**: PR #7's 13 impl commits had 11 Tier-1

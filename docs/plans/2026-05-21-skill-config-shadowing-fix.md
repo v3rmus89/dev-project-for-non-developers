@@ -26,8 +26,8 @@ Result in `downstream-app`: the project's deliberate, hand-tuned ruff config
 an explicit "this project handles RU/UZ text everywhere" comment) went dead.
 ~107 false-positive errors lit up and `make lint` turned red. **A secondary
 defect** (referred to below as the "`known-first-party` defect"): the skill's
-`ruff.toml` set `known-first-party = ["call_details"]` — a package that does
-not exist (the project's real packages are `downstream_app` / `acme_chats`);
+`ruff.toml` set `known-first-party = ["downstream_app"]` — a package that does
+not exist (the project's real packages are `downstream_app` / `downstream_app`);
 the value was derived mechanically from the repo folder name.
 
 ### Why the analyzer missed it
@@ -274,7 +274,7 @@ New B1 coverage:
 - *end-to-end* (`test_mode_adopt_smoke.py`) — one CLI smoke: target owns a
   standalone config + no `pyproject.toml`, run with
   `--auto-accept-recommendations --non-interactive` → **exit 2**. The existing
-  non-trivial-`pyproject.toml` smoke fixture (`TestCallDetailsShapedFixture`,
+  non-trivial-`pyproject.toml` smoke fixture (`TestDownstreamAppShapedFixture`,
   which seeds `pyproject.toml` with `[tool.ruff]`, rule (g) SKIP) additionally
   asserts the B2 rule-(g) advisory fires — note this fixture exercises the
   rule-(g) path, *not* the full live `downstream-app` shadow shape (existing
@@ -348,7 +348,7 @@ not just mentioned):
 - **AD-3 — drop the `known-first-party` key entirely.** It was derived
   mechanically as `project_name.replace("-","_")`. It is wrong for adoption
   into a project whose real package differs from the repo name
-  (`downstream-app` → guessed `call_details`, real `acme_chats`), **and** it
+  (`downstream-app` → guessed `downstream_app`, real `downstream_app`), **and** it
   is already a dead no-op for greenfield: the skill scaffolds `src/main.py` (a
   script), not a package named after the project, so nothing matches
   `known-first-party` until the user creates a package they would name
@@ -455,7 +455,7 @@ confirm that repo's `make lint` goes green.
 | I2 — B2 manual-merge guidance underspecified (raw Jinja, no diff path) | Codex/4 | (a) fold | Bucket B (B2 rule-(g)) — inspect via `--diff` (rendered, not template), copy only the tool tables, never `[project]`/deps. |
 | I3 — "downstream-app-shaped fixture" label overclaims the live shadow shape | Codex/4 | (a) fold | Bucket C — relabelled the e2e fixture as the non-trivial-`pyproject.toml` rule-(g) fixture; full live shadow shape covered by the dedicated unit fixture + Verification bullet. |
 | I4 — uv direct-template test not named in Bucket C | Codex/4 | (a) fold | Bucket C — `tests/test_python_uv_templates.py` named; `[tool.ruff]`/`[tool.pytest.ini_options]` asserted for both pm modes. |
-| C10 — Critical-files fixture label not aligned with the I3 reframing | consistency/4.5 | (a) fold | Critical files — relabelled to "non-trivial-`pyproject.toml` rule-(g) fixture (`TestCallDetailsShapedFixture`)". |
+| C10 — Critical-files fixture label not aligned with the I3 reframing | consistency/4.5 | (a) fold | Critical files — relabelled to "non-trivial-`pyproject.toml` rule-(g) fixture (`TestDownstreamAppShapedFixture`)". |
 | J1 — "no shadowing risk" for Node/Go is false (`golangci-lint` reads `.golangci.{yaml,toml,json}`; Biome reads `biome.jsonc`) | Codex Tier-2/PR #22 | (a) fold | NOT-in-scope row corrected (Node/Go shadowing is real, parked not "nothing to change"); Scope #8 + Bucket E — 5th BACKLOG entry. |
 | J2 — verify TOML section-name semantics (`[lint]` → `[tool.ruff.lint]`) | claude[bot] Tier-2/PR #22 | (c) reject | Already covered — the generated-project smoke test runs real ruff/pytest against the rendered `pyproject.toml`; section-name equivalence is documented ruff behavior, not a risk. |
 | J3 — `policy=WRITE` display vs manual-review prompt UX | claude[bot] Tier-2/PR #22 | (c) reject | Implementation-review territory — the plan already specifies an explicit file-naming `reason`, and `format_recommendation_report` segregates `mr=True` files under a "manual review needed" heading. |
@@ -481,6 +481,6 @@ confirm that repo's `make lint` goes green.
 - `bootstrap_lib/adopt.py` — `recommend_policy` rules (a)/(g)/(h), `_is_nontrivial_pyproject`, `analyze_target`, `format_recommendation_report`
 - `bootstrap_lib/cli.py` — `_build_context` (`project_import_name`), the adoption flow + `--non-interactive` contract + the interactive prompt default
 - `languages/python/pyproject.toml.tmpl`, `ruff.toml.tmpl`, `pytest.ini.tmpl`, `Makefile.tmpl`, `.pre-commit-config.yaml.tmpl`
-- `tests/test_mode_adopt_smoke.py` — all-safe + non-trivial-`pyproject.toml` rule-(g) fixture (`TestCallDetailsShapedFixture`)
+- `tests/test_mode_adopt_smoke.py` — all-safe + non-trivial-`pyproject.toml` rule-(g) fixture (`TestDownstreamAppShapedFixture`)
 - `docs/usage.md` — adoption recommendation-report example + `--non-interactive` CI contract
 - This plan's Context section (the downstream-app dogfooding report)

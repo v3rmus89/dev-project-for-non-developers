@@ -323,4 +323,4 @@ For Codex / Claude:
 - `shared/CLAUDE.md.tmpl` Python-version section + `shared/CONTRIBUTING.md.tmpl` one-time setup section — places that need nested `{% if (package_manager | default("pip")) == 'uv' %}` branches (closes Codex iter-6 #3 — earlier text said bare `{% if package_manager == 'uv' %}` which is exactly the iter-5 StrictUndefined-crash pattern; `\|default("pip")` filter is mandatory per Bucket B template-level safety convention)
 - `.github/workflows/ci.yml` (skill repo) — needs `astral-sh/setup-uv@v8.1.0` + `uv --version` diagnostic step added (Bucket E)
 - `Makefile` (skill repo) `doctor` target — needs `uv` advisory check
-- Existing downstream-app target (`/Users/sandeep/Desktop/Code/Acme/downstream-app/`) — the real-world example whose conflict shape motivated this PR; useful as a reality check on detection heuristics
+- Existing downstream-app target (`~/code/downstream-app/`) — the real-world example whose conflict shape motivated this PR; useful as a reality check on detection heuristics

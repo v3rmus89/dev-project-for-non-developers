@@ -62,5 +62,9 @@ Acme, a private project, is where these patterns were developed iteratively acro
 ## License
 
 [MIT](LICENSE) — use, modify and redistribute freely, including in commercial
-work; just keep the copyright notice. The templates this skill generates carry
-no licence obligations into your project.
+work; just keep the copyright notice.
+
+Note on generated output: files rendered from the Jinja templates are yours to
+treat as your own. A few helper scripts are shipped **verbatim** (see
+`SHARED_VERBATIM_MAP` in `bootstrap_lib/render.py`); those are substantial
+portions of this work, so MIT's notice requirement travels with them.
