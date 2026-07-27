@@ -743,7 +743,7 @@ class TestAnalyzeTarget:
         rel_paths = [a.rel_path for a in plan.analyses]
         assert rel_paths == ["a.txt", "m.txt", "z.txt"]
 
-    def test_call_details_shaped_fixture_exercises_full_rule_set(self, tmp_path: Path) -> None:
+    def test_downstream_app_shaped_fixture_exercises_full_rule_set(self, tmp_path: Path) -> None:
         """Synthetic fixture matching the downstream-app collision shape (4
         collisions: .gitignore + .python-version + CLAUDE.md + pyproject.toml).
         Verifies every Scope #5 rule fires once end-to-end via analyze_target."""
@@ -1258,7 +1258,7 @@ class TestPyprojectSkipAdvisory:
         report = format_recommendation_report(analyze_target(tmp_path, dict(_MINIMAL_PLANNED)))
         assert "did not parse as valid TOML" in report
 
-    def test_live_call_details_shape_surfaces_both_advisories(self, tmp_path: Path) -> None:
+    def test_live_downstream_app_shape_surfaces_both_advisories(self, tmp_path: Path) -> None:
         """The exact live downstream-app shape: existing pyproject.toml with
         [tool.pytest.ini_options] PLUS a top-level pytest.ini that wins.
         B1 names pytest.ini; B2 gives rule-(g) merge guidance."""

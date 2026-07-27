@@ -1003,7 +1003,7 @@ already assert post-restore content equality, no test changes needed.
 
 **Why parked**: `TestRecommendPolicyRules.test_rule_a0_...` exercises rule
 (a0) at the unit layer (feeds `ignored_by_git=".gitignore:..."` directly
-into TargetMeta). `TestAnalyzeTarget.test_call_details_shaped_fixture` is
+into TargetMeta). `TestAnalyzeTarget.test_downstream_app_shaped_fixture` is
 the only orchestrator-level integration test, and it doesn't `git init`
 `tmp_path` — so `_check_ignored_by_git` returns `None` for every file,
 and the (a0) path through the full subprocess pipeline is never exercised

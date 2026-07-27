@@ -32,7 +32,7 @@ CASES = [
     ("go", {"go_version": "1.26"}),
 ]
 
-EXPECTED_GROUP = "${{ github.workflow }}-${{ github.ref }}"
+EXPECTED_GROUP = "${{ github.workflow_ref }}"
 EXPECTED_CANCEL = "${{ github.ref != 'refs/heads/main' }}"
 
 # PyYAML is a YAML 1.1 parser, which folds the bare key `on` to the boolean True.
@@ -59,8 +59,10 @@ def test_ci_yml_has_concurrency_group(lang, ctx):
     data = yaml.safe_load(_render(lang, ctx))
     concurrency = data.get("concurrency")
     assert concurrency is not None, f"{lang}: ci.yml.tmpl lost its concurrency block"
-    # Namespaced by workflow name: concurrency groups are repository-global, not
-    # per-file, so a bare `${{ github.ref }}` would collide with other workflows.
+    # Keyed on workflow_ref, not workflow: groups are repository-global rather
+    # than per-file, and `github.workflow` is only the display name — two
+    # workflows both named `CI` would share a group and cancel each other.
+    # workflow_ref is the file path + ref, so it is unique without a ref suffix.
     assert concurrency["group"] == EXPECTED_GROUP
     assert concurrency["cancel-in-progress"] == EXPECTED_CANCEL
 

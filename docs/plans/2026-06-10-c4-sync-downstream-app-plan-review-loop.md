@@ -381,5 +381,5 @@ _pending — reviewer-proposed lessons triaged here; real ones → `LESSONS.md`.
 
 ## Fact roots
 
-- /Users/sandeep/Desktop/Code/dev-project-for-non-developers (this skill repo — source files being ported)
-- /Users/sandeep/Desktop/Code/Acme/downstream-app (the target repo — current drifted state; cross-repo, see architecture decision 3)
+- ~/code/dev-project-for-non-developers (this skill repo — source files being ported)
+- ~/code/downstream-app (the target repo — current drifted state; cross-repo, see architecture decision 3)

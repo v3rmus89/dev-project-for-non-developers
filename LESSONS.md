@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-27: A token-rename scrub must cover every spelling variant AND the scaffolding around the token
+
+**Trigger**: Scrubbing private project names before making the repo public, I built the substitution table from what a case-insensitive grep for the two known project tokens matched, and declared it clean — 428 replacements, residual grep empty. Tier-2 review (retroactive, on merged PR #54) found three classes still live on the now-public repo: (1) **absolute paths** — I replaced the `~/`-relative form of the dev path but not the `/Users/<name>/...` form, leaving 25 occurrences that leak the username and home topology; (2) **identifier variants** — the snake_case package name was in the table but a second real package, plus the CamelCase and alternate snake_case spellings, were not, so 14 survived; (3) **adjacent secrets of the same kind** — a real customer-facing branch name and commit SHA in a trial report whose own privacy note forbids customer content. The residual grep was empty only because it searched for the same tokens the table already handled — it could not fail. A follow-up review then caught a fourth class: two DISTINCT real names collapsed into one placeholder, destroying a passage whose whole point was that they differed.
+
+**Rule**: When scrubbing an identifier, enumerate its *variants* first (snake_case, CamelCase, kebab-case, plural, the package name vs the repo name) and the *scaffolding* it sits inside (absolute paths, URLs, branch names, SHAs, hostnames). Then verify with a search built from a DIFFERENT axis than the substitution table — grep for the shape of the thing (`/Users/`, `refs/heads/`, 40-hex) rather than the tokens you already replaced. A residual grep that reuses the substitution keys is tautological and always passes.
+
+**Status**: Active
+
+---
+
 ### 2026-07-27: A workflow's presence is not its correctness — and a review skipped for infra reasons is deferred, not waived
 
 **Trigger**: Auditing GitHub Actions spend, I checked each workflow for a `concurrency` block and treated `claude-review.yml` as done because it HAD one. It had one that deadlocked: the group was keyed on `(PR, event_name)`, so when claude-code-action posted its own status comment, that fired a fresh `issue_comment` run in the same group and `cancel-in-progress` killed the review still running. The follow-up run was then skipped by the job-level `if` (a bot comment has no `@claude`), so no review ever completed. Cancellation is evaluated at the WORKFLOW level, before the job `if` — a run destined to be skipped still cancels a live one. The file's own comment claimed the per-event split stopped bot comments murdering the review; it never did. Separately, I merged two PRs without Tier-2 review because Actions were billing-dead, then called the retro review "optional" — the user pushed back that it was not, and running it is what exposed the deadlock.

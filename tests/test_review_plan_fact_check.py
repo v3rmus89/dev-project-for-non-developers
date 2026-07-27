@@ -270,6 +270,26 @@ def test_fact_roots_parsed_in_active_section(tmp_path):
     )
 
 
+def test_fact_roots_tilde_paths_parsed_and_expanded(tmp_path):
+    """Privacy regression (2026-07-27): the pre-publication scrub rewrote both
+    real Fact-roots blocks from `/Users/<name>/...` to `~/code/...`, and the
+    parser only matched a literal leading `/`. Both plans silently began
+    declaring NO roots, so the deterministic fact-check pre-pass fell back to
+    single-repo scanning without saying so. The tilde form is what the leak
+    guard steers authors toward, so it must parse — and must still hand
+    downstream consumers an absolute path."""
+    plan = tmp_path / "plan.md"
+    plan.write_text("# Plan\n\n## Fact roots\n\n- ~/code/repo\n- `~/code/other`\n")
+    facts_data = _extract(plan)
+    expected = [str(Path("~/code/repo").expanduser()), str(Path("~/code/other").expanduser())]
+    assert facts_data["fact_roots"] == expected, (
+        f"tilde Fact-roots must parse and expand: {facts_data['fact_roots']}"
+    )
+    assert all(r.startswith("/") for r in facts_data["fact_roots"]), (
+        "expanded roots must be absolute"
+    )
+
+
 def test_fact_roots_after_nested_fence_still_parsed(tmp_path):
     """Regression (C4 follow-up): a nested four/three-backtick fence must close
     correctly so a real ## Fact roots block AFTER it is still parsed. The old
