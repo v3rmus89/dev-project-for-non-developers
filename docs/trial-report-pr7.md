@@ -190,7 +190,7 @@ untracked `.new` files):
 
 **Manifest summary**:
 - `format_version`: 2
-- `target_root`: `~/code/downstream-app` (absolute)
+- `target_root`: `<absolute-target-root>/downstream-app` (absolute)
 - `created_directories`: `['.github', '.github/workflows', 'docs/plans']`
 - 16 entries by policy: WRITE=14, APPEND_MERGE=1, WRITE_NEW=1
 

@@ -49,7 +49,8 @@ def test_no_real_home_paths_in_docs(path: Path):
     ]
     assert not offenders, (
         f"{path.relative_to(SKILL_ROOT)} contains real home path(s): {sorted(set(offenders))}. "
-        f"Use `~/code/...` or a placeholder from {sorted(PLACEHOLDER_USERS)}."
+        f"Use `~/code/...` (parse_fact_roots expands the tilde, so Fact-roots "
+        f"blocks stay machine-absolute) or a placeholder from {sorted(PLACEHOLDER_USERS)}."
     )
 
 
