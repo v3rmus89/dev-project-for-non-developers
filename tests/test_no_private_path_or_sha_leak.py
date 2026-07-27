@@ -23,6 +23,13 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 PLACEHOLDER_USERS = {"me", "example", "you", "user", "<name>"}
 HOME_PATH_RE = re.compile(r"/(?:Users|home)/([A-Za-z0-9_.<>-]+)")
 
+# Half-scrubbed compound identifiers. When a generic `<real>` -> `Acme` rule is
+# applied to a compound like `<real>_chats`, the result (`acme_chats`) keeps the
+# REAL suffix — the meaningful half — while looking scrubbed. Placeholder-shaped
+# names (`<real-package-a>`) and the pre-existing fictitious `acme-corp` examples
+# are fine; identifier-shaped `acme_<suffix>` / `Acme<Suffix>` are not.
+HALF_SCRUBBED_RE = re.compile(r"\bacme_[a-z]+|\bAcme[A-Z][a-z]+")
+
 # A bare 40-hex string is a real git SHA. Synthetic all-zero/all-same runs used as
 # test fixtures are fine; anything else in prose is a real commit.
 SHA_RE = re.compile(r"\b[0-9a-f]{40}\b")
@@ -61,4 +68,22 @@ def test_no_real_commit_shas_in_docs(path: Path):
     assert not offenders, (
         f"{path.relative_to(SKILL_ROOT)} contains real commit SHA(s): {sorted(set(offenders))}. "
         "Use a `<original-sha>`-style placeholder, or an abbreviated 7-char hash."
+    )
+
+
+@pytest.mark.parametrize("path", _docs_and_root_markdown(), ids=lambda p: p.name)
+def test_no_half_scrubbed_compound_identifiers(path: Path):
+    """`acme_<suffix>` keeps the real suffix of a private compound identifier.
+
+    Regression: the pre-publication scrub's generic `<real>` -> `acme` rule hit
+    compounds it had no explicit entry for, so `<real>_chats` became
+    `acme_chats` — scrubbed-looking, but the informative half survived. A later
+    "fix" then re-adopted one of those artifacts as a placeholder. Use a clearly
+    fictitious `<real-package-a>`-style name instead.
+    """
+    offenders = HALF_SCRUBBED_RE.findall(path.read_text())
+    assert not offenders, (
+        f"{path.relative_to(SKILL_ROOT)} contains half-scrubbed identifier(s): "
+        f"{sorted(set(offenders))}. A generic name substitution left the real "
+        "suffix intact — use a placeholder that shares no token with the real name."
     )
