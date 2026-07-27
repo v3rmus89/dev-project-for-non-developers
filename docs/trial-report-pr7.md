@@ -1,4 +1,4 @@
-# Trial report — PR #7 `--mode=adopt` against `call-details/`
+# Trial report — PR #7 `--mode=adopt` against `downstream-app/`
 
 > One-time structured trial-experience write-up per plan Scope #11. NOT a typo
 > for `LESSONS.md` (the two artifacts are intentionally distinct: this is the
@@ -7,16 +7,16 @@
 > **Privacy boundary**: per Scope #11, this report contains NO secrets, NO
 > transcript / customer / PII content, NO raw file excerpts. Safe content:
 > filenames, file sizes, sha256 hashes, structural categories, policy
-> decisions + reasoning. The trial target (`~/Desktop/Code/Boxette/call-details/`)
+> decisions + reasoning. The trial target (`~/code/downstream-app/`)
 > contains `secrets/`, `data/`, customer-domain code; none of that surfaces here.
 
 ## (a) Trial target shape
 
-**Target**: `~/Desktop/Code/Boxette/call-details/` — a real Python project on
+**Target**: `~/code/downstream-app/` — a real Python project on
 branch `customer-cases-redial-linking-v1` at SHA `2ae59e27e761e8e635ed4cd9edcf6e199afba44a`.
 Uses `uv` (auto-detected via `uv.lock`).
 
-**Planned files**: 19 (the standard Python skill render with `--project-name=call-details`).
+**Planned files**: 19 (the standard Python skill render with `--project-name=downstream-app`).
 
 **Collision baseline** (verified empirically; closes Codex iter-3 #5
 correction of the pre-empirical "8 collisions" guess):
@@ -107,7 +107,7 @@ what the plan predicts.
 | (e) | `.python-version` AND any pin | (overshadowed by rule (c) in this target) | n/a — rule (c) fired first since target's bytes are byte-identical to skill's |
 | (f) | domain markdown + non-trivial | CLAUDE.md (96 lines, 6 headings) → WRITE_NEW/mr=True | no — fired correctly; `.new` written, original untouched |
 | (g) | `pyproject.toml` + non-trivial | pyproject.toml (`[dependency-groups]` detected) → SKIP/mr=True | no — fired correctly; user reviews diff manually |
-| (h) | DEFAULT for unrecognized existing | (no triggering file in target) | n/a — call-details has no "miscellaneous unknown existing files" in the collision set |
+| (h) | DEFAULT for unrecognized existing | (no triggering file in target) | n/a — downstream-app has no "miscellaneous unknown existing files" in the collision set |
 
 **Misfire count**: 0. All firing rules behaved exactly as the plan predicts.
 No rule needed loop-back to Phase C.
@@ -138,7 +138,7 @@ would be logged as a UX gap in Section (e) below. None did.
   never created); no `.new` file remaining.
 
 **Rehearsal verdict**: the engine + restore matrix work end-to-end on real
-call-details content. Safety contract holds.
+downstream-app content. Safety contract holds.
 
 **Live apply** (Phase D-3):
 
@@ -190,11 +190,11 @@ untracked `.new` files):
 
 **Manifest summary**:
 - `format_version`: 2
-- `target_root`: `/Users/sandeep/Desktop/Code/Boxette/call-details` (absolute)
+- `target_root`: `/Users/sandeep/Desktop/Code/Acme/downstream-app` (absolute)
 - `created_directories`: `['.github', '.github/workflows', 'docs/plans']`
 - 16 entries by policy: WRITE=14, APPEND_MERGE=1, WRITE_NEW=1
 
-**Was call-details/ better off after?** Subjectively yes — the adopt-mode
+**Was downstream-app/ better off after?** Subjectively yes — the adopt-mode
 landed a clean set of dev-workflow scaffolding (Makefile, CI workflow,
 pre-commit + pre-push hooks via pre-commit framework, plan-loop docs)
 without touching CLAUDE.md / pyproject.toml / .python-version. The user
@@ -229,11 +229,11 @@ during PR #7 impl).
 The rule (a0) recommendation reason captures the matching gitignore line for
 the user to look up the rule manually. The pre-fold version returned
 `<source>:<line>:<pattern>` (e.g. `.gitignore:48:AGENTS.md`); after the fold
-it's `<source>:<line>` only (e.g. `.gitignore:48`). On call-details/, the
+it's `<source>:<line>` only (e.g. `.gitignore:48`). On downstream-app/, the
 matching pattern is `AGENTS.md` (not sensitive). But the principle catches the
 class of leaks: had the user's gitignore pattern been
 `secrets/customer-acme-corp/*`, the pre-fold reason would have leaked it.
-Validated end-to-end on real call-details content.
+Validated end-to-end on real downstream-app content.
 
 **3. v2 manifest needed absolute `target_root` for cross-cwd restore** (imp-3;
 folded inline during `_main_apply_adopt` Tier-1 review).
@@ -241,7 +241,7 @@ A v2 manifest written from cwd A with `--out ./target` recorded the relative
 path; `bootstrap.py --restore` from cwd B would silently exit 0 with zero
 mutations. Fixed: `str(Path(target_root).resolve())` mirrors v1's `_prepare_apply`
 exactly. The live trial's manifest correctly records the absolute target_root
-(`/Users/sandeep/Desktop/Code/Boxette/call-details`) — pinned by direct read
+(`/Users/sandeep/Desktop/Code/Acme/downstream-app`) — pinned by direct read
 during Phase D verification.
 
 **4. Tier-1 vs plan-loop catch ratio**: PR #7's 13 impl commits had 11 Tier-1
@@ -303,7 +303,7 @@ these; this list cross-references the parked items.)
 ---
 
 *PR #7 (this PR) ships the engine + smoke tests + docs + this trial report.
-Live apply on call-details/ left on `feat/pr7-trial-adoption` branch for
+Live apply on downstream-app/ left on `feat/pr7-trial-adoption` branch for
 the user's manual review of CLAUDE.md.new. Rollback recipe (Phase D-4)
 documented inline in plan Bucket E if needed; the rehearsal proved the
 contract works.*

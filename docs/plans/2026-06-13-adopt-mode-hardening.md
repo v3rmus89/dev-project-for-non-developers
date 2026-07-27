@@ -9,15 +9,15 @@ writes into an empty/clean directory. Adopt runs a per-file analyze →
 recommend → owner-consent → apply pipeline (`bootstrap_lib/adopt.py` is the
 analyze+recommend engine; `recommend_policy` applies rules a0/a..h in order).
 
-This plan hardens adopt mode in the skill, using the **live Boxette Telegram
-bot** (`~/Desktop/Code/Boxette/Telegram bot`) as a real-project acceptance
+This plan hardens adopt mode in the skill, using the **live Acme Telegram
+bot** (`~/code/acme bot`) as a real-project acceptance
 test. The bot is an ideal target: it adopted an **early (PR #1-era, 2026-05-15)
 version of the skill** and is now badly stale — its `Makefile` still has the
 old Codex-only `review` / `review-plan` targets (pre `-by-codex`/`-by-claude`
 split), and its `AGENTS.md`/`CLAUDE.md` carry **none** of the current skill
 markers (triage rule, two-tier review, loop machinery). It is pip/venv-based
 (not uv), under git on `main` (reversible), and holds **real secrets**
-(`.env`, `boxette.db`, `data/`).
+(`.env`, `acme.db`, `data/`).
 
 ### Ground-truth evidence (read-only analyze against the live bot)
 
@@ -458,5 +458,5 @@ removal) is an owner step, not something adopt performs.
   PR #7 greenfield-placeholder item) vs the ones it **leaves parked** (the
   adopt `run:`-target retarget; config-shadowing cluster; sensitive-path
   safety; CRLF parity; re-adopt/upgrade detection).
-- Bot acceptance target: `~/Desktop/Code/Boxette/Telegram bot` (pyproject.toml,
+- Bot acceptance target: `~/code/acme bot` (pyproject.toml,
   Makefile, .gitignore, requirements-dev.txt).

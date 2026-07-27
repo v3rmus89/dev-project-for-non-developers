@@ -7,7 +7,7 @@
   landed green (make check 977 → 979 pass) with clean Tier-1 reviews (0 imp-3, 0 imp-2). Pending
   the PR.
 - **Author:** Claude.
-- **Origin:** Post-mortem of the `call-details` plan
+- **Origin:** Post-mortem of the `downstream-app` plan
   `docs/plans/2026-06-08-doc-layout-post-2b-improvements.md`, whose review loop ran **19 Codex
   iterations** (+ ~16 self-checks) in one day without converging. Target band is 3–5.
 
@@ -55,7 +55,7 @@ reviewer cannot run anything (1–2 bugs found per pass) and every fold *adds* s
 grep, a gate) that regenerates findings next round.
 
 **Three process gaps amplified it (all verified):**
-1. `call-details` is on a **pre-PR-30 skill snapshot** (rule files last synced 2026-05-25). It has
+1. `downstream-app` is on a **pre-PR-30 skill snapshot** (rule files last synced 2026-05-25). It has
    **no fact-check pre-pass** (which catches the path/symbol claims of Bucket 2 in one batch — though
    not CLI-flag existence; see iter-1 FN2) and **no architectural-split rule**. Only the older
    plateau rule was present.
@@ -77,12 +77,12 @@ grep, a gate) that regenerates findings next round.
 | **C3** | `CONTRIBUTING.md` plateau rule (+ tmpl); `docs/plans/README.md` "Stopping the loop" (+ tmpl) | **Extend the circuit-breaker** with a second trigger: even when findings are *not* narrow edge cases, if imp-3 keeps regenerating past ~iter 5 clustered in **one artifact/theme** (deploy runbook; CLI/API signatures), that is an *artifact-class mismatch*, not convergence — stop folding, switch to execution-based verification, or escalate to the human-approval gate. |
 
 **NOT in this plan:**
-- **C4 — port to `call-details`: split to a separate follow-up plan** (was in this plan; carved out
-  at iter-1 FN3). As of 2026-06-08, `call-details` had an actively-changing dirty tree from the in-progress post-2b
-  implementation (15+ modified files across `src/boxette_*/` + tests, still progressing); porting
+- **C4 — port to `downstream-app`: split to a separate follow-up plan** (was in this plan; carved out
+  at iter-1 FN3). As of 2026-06-08, `downstream-app` had an actively-changing dirty tree from the in-progress post-2b
+  implementation (15+ modified files across `src/acme_*/` + tests, still progressing); porting
   into a mid-flight tree would tangle two workstreams. This snapshot is point-in-time, not a durable
   fact — the "6 files" first recorded here was already stale by iter-2 (FN2) and used ambiguous bare
-  filenames (FN1); the follow-up plan must recheck the exact dirty set (repo-relative paths) at start. The follow-up runs **once call-details is clean AND
+  filenames (FN1); the follow-up plan must recheck the exact dirty set (repo-relative paths) at start. The follow-up runs **once downstream-app is clean AND
   C1–C3 have merged**; it re-propagates the fact-check pre-pass templates + updated rule docs via
   `bootstrap.py` / `scripts/propagate-shared-rules.py`, with a clean-tree precondition, its own
   branch, and git-revert rollback.
@@ -183,13 +183,13 @@ keeps regenerating in one executable artifact.
 ## Fact roots
 
 For the fact-check pre-pass. Declared roots **replace** the default repo root, so both this repo
-(for the C1–C3 templates/scripts/tests in the Files table) and the `call-details` repo — needed only
+(for the C1–C3 templates/scripts/tests in the Files table) and the `downstream-app` repo — needed only
 so the Background post-mortem's reference to `docs/plans/2026-06-08-doc-layout-post-2b-improvements.md`
-(which lives in call-details) resolves instead of reading as an external miss — are declared. Paths
+(which lives in downstream-app) resolves instead of reading as an external miss — are declared. Paths
 are absolute + machine-specific — local fact-check tooling metadata, not portable plan logic:
 
 - /Users/sandeep/Desktop/Code/dev-project-for-non-developers
-- /Users/sandeep/Desktop/Code/Boxette/call-details
+- /Users/sandeep/Desktop/Code/Acme/downstream-app
 
 ## Files / surfaces
 
@@ -205,7 +205,7 @@ are absolute + machine-specific — local fact-check tooling metadata, not porta
 Single phase (C1–C3, this repo). C1 → C2 → C3 as focused commits (one logical change each), each
 with `make check` green + Tier-1 commit review. Update each root doc **and** its `.tmpl` together
 (dogfood tests fail otherwise); run `scripts/propagate-shared-rules.py` where applicable; re-sync the
-Makefile SELFTEST-OVERLAP region for C1. (The call-details port is a separate follow-up plan — see
+Makefile SELFTEST-OVERLAP region for C1. (The downstream-app port is a separate follow-up plan — see
 Not-in-scope.)
 
 ## Tests
@@ -242,10 +242,10 @@ separate rows here.)
 |------|---------|-----|-------------|-------|
 | 1 | **FN1** — C1 prompt text used backticks around `make check` → shell command substitution when the double-quoted prompt is built; the no-backtick guard test covers only Tier-1, not plan-review prompts | 3 | **(a) fold** | Design C1 prompt rewritten shell-safe (single quotes, no backticks/`$(`/`"`); Tests C1 + Regression-safety add the plan-review shell-safety assertion; Scope C1 notes the constraint |
 | 1 | **FN2** — C1 carve-out too broad: routed CLI/API findings to the fact-check pre-pass, but the verifier marks CLI flags `not_verifiable` and ignores API signatures → would hide real feasibility blockers | 3 | **(a) fold** (narrow) + **(b) park** | Carve-out narrowed in Scope/Design C1 (relied-upon CLI/API deps stay imp-3); Background bucket-2 + gap-1 softened; verifier upgrade parked to BACKLOG (trigger noted in Not-in-scope) |
-| 1 | **FN3** — C4 port into `call-details` lacked clean-tree/branch/rollback gates; the repo is mid-implementation (dirty tree from post-2b — 6 files when first checked, 15+ by iter-2) | 3 | **(d) surface → split** | C4 removed from this plan; carved into a follow-up (Not-in-scope) with clean-tree precondition + revert rollback. User confirmed the split during iter-1 triage (formal approval gate still pending). |
+| 1 | **FN3** — C4 port into `downstream-app` lacked clean-tree/branch/rollback gates; the repo is mid-implementation (dirty tree from post-2b — 6 files when first checked, 15+ by iter-2) | 3 | **(d) surface → split** | C4 removed from this plan; carved into a follow-up (Not-in-scope) with clean-tree precondition + revert rollback. User confirmed the split during iter-1 triage (formal approval gate still pending). |
 | 1 | **FN4** — plan violated the README section order (Implementation log before Iteration log; no Evidence table / Lessons) → `make status` tailed the wrong section | 2 | **(a) fold** | Restructured: Iteration log → Evidence table → Implementation log → Lessons surfaced |
 | 2 | **FN1** — iter-0.5 fact-check not reproducible; bare `models.py` mis-verified against a `venv` pip-vendored file | 2 | **(a) fold** | C4 bullet + Evidence use dated/repo-relative refs; iter-0.5 row marked point-in-time; parked verifier item broadened to bare-filename / venv-exclusion |
-| 2 | **FN2** — "6 dirty files" call-details snapshot already stale (15+ by iter-2, still moving) | 2 | **(a) fold** | C4 bullet → dated snapshot + "recheck in follow-up"; Evidence FN3 row updated |
+| 2 | **FN2** — "6 dirty files" downstream-app snapshot already stale (15+ by iter-2, still moving) | 2 | **(a) fold** | C4 bullet → dated snapshot + "recheck in follow-up"; Evidence FN3 row updated |
 | 2 | **FN3** — C2 mandates `shellcheck`, which is absent from `make doctor` and not installed in this env | 2 | **(a) fold** | Scope + Design C2 softened to "shellcheck or a documented equivalent; add to doctor when shell scripts are introduced" |
 
 ## Implementation log (this PR)

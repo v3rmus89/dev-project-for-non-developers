@@ -83,7 +83,7 @@ the Phase-2 smoke-walk use `./venv/bin/python`), not introduced or solved here.
 | 5 | Intake question set (greenfield) — see Bucket B. The output-directory question is asked **last** (just before the greenfield check), carries a default (`../<project-name>`) — empty input accepts it — plus one line of guidance; the no-default required answers (`--github-owner`, `--github-repo`) are re-prompted on empty input | `bootstrap_lib/intake.py` |
 | 6 | Confirm gate: after the questions + the greenfield check, print the resolved configuration in plain language, then ask **apply / cancel** | `bootstrap_lib/intake.py` |
 | 7 | Intake builds an argv list and `main()` re-parses it through the **existing** `_build_parser()` — a backstop, not the primary validation | `bootstrap_lib/cli.py`, `bootstrap_lib/intake.py` |
-| 8 | Append four `BACKLOG.md` entries (each with the repo's required *why parked* / *trigger* / *rough effort* fields — see Lessons) for the adopt-mode quality items observed while bootstrapping `call-details`; committed as a clearly-labelled "PR #7 adopt-mode-trial cleanup" commit, after a dedup check against existing `BACKLOG.md` entries (iter-5 fold, Codex 4) | `BACKLOG.md` |
+| 8 | Append four `BACKLOG.md` entries (each with the repo's required *why parked* / *trigger* / *rough effort* fields — see Lessons) for the adopt-mode quality items observed while bootstrapping `downstream-app`; committed as a clearly-labelled "PR #7 adopt-mode-trial cleanup" commit, after a dedup check against existing `BACKLOG.md` entries (iter-5 fold, Codex 4) | `BACKLOG.md` |
 | 9 | Tests — see Bucket E | `tests/test_intake.py` (new), `tests/test_render.py`, `tests/test_bootstrap_cli.py` |
 | 10 | Docs: document the interactive mode (incl. intake's two-check greenfield definition) in a **new `docs/usage.md` section** + a one-line `README.md` pointer. Separately, fix the two *stale* `docs/usage.md` phrases — the adopt-mode "When NOT to use it" list and the uv-detection table's "empty-or-nonexistent dir" row — by **dropping the inaccurate "no files"/"empty dir" phrasing**; do NOT import intake's manifest-scan definition into those flag-driven sections, which use narrower notions of greenfield (iter-5 fold, Claude 2-B). `SKILL.md` is intentionally unchanged (see NOT-in-scope) | `docs/usage.md`, `README.md` |
 
@@ -479,15 +479,15 @@ re-parse through `_build_parser()` is a backstop.
 ## Lessons surfaced (this PR)
 
 The four adopt-mode quality items below were observed while bootstrapping
-`call-details`. They are **Scope item 8** — appended to `BACKLOG.md` (commit iv)
+`downstream-app`. They are **Scope item 8** — appended to `BACKLOG.md` (commit iv)
 with the repo's required *why parked* / *trigger* / *rough effort* fields:
 
 | Backlog entry | Why parked | Trigger to pick up | Rough effort |
 |---|---|---|---|
-| Adopt-mode writes greenfield smoke placeholders (`src/main.py`, `tests/test_smoke.py`) into a project with real code | Surfaced during the `call-details` adopt trial; adopt-mode should not emit greenfield-only scaffold into an existing project | Next adopt-mode change, or a user reports stray `src/main.py` after an adopt run | ~1-2 h — gate the smoke/`src/main.py` emit on greenfield vs adopt |
+| Adopt-mode writes greenfield smoke placeholders (`src/main.py`, `tests/test_smoke.py`) into a project with real code | Surfaced during the `downstream-app` adopt trial; adopt-mode should not emit greenfield-only scaffold into an existing project | Next adopt-mode change, or a user reports stray `src/main.py` after an adopt run | ~1-2 h — gate the smoke/`src/main.py` emit on greenfield vs adopt |
 | Adopt-mode's `Makefile` `run` target is hardcoded to `src/main.py` | The skill's `Makefile` assumes the greenfield layout; an adopted real project has a different entry point | Same as above, or a user reports `make run` broken after adopt | ~1 h — detect the real entry point, or leave `run` for the user to set |
-| `make install-hooks` needs `pre-commit` but adopt-mode does not add it to the target's real dev-dependency group | The skill ships `.pre-commit-config.yaml` + the target but not the dep; surfaced on `call-details` | First adopt user runs `make install-hooks` and it fails | ~1 h — adopt-mode appends `pre-commit` to the detected dev-dependency group |
-| `AGENTS.md` collided with the target's `.gitignore` | `call-details` ignored `AGENTS.md` as Codex-CLI residue; the skill's `AGENTS.md` is a tracked deliverable | An adopt user's `.gitignore` already lists `AGENTS.md` | ~30 min — adopt-mode detects + warns, or documents the conflict |
+| `make install-hooks` needs `pre-commit` but adopt-mode does not add it to the target's real dev-dependency group | The skill ships `.pre-commit-config.yaml` + the target but not the dep; surfaced on `downstream-app` | First adopt user runs `make install-hooks` and it fails | ~1 h — adopt-mode appends `pre-commit` to the detected dev-dependency group |
+| `AGENTS.md` collided with the target's `.gitignore` | `downstream-app` ignored `AGENTS.md` as Codex-CLI residue; the skill's `AGENTS.md` is a tracked deliverable | An adopt user's `.gitignore` already lists `AGENTS.md` | ~30 min — adopt-mode detects + warns, or documents the conflict |
 
 ## Critical files to read before each iter's review
 

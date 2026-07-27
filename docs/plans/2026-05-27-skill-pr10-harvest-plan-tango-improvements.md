@@ -10,7 +10,7 @@
 
 - **Our design is human-anchored** (Claude triages per-finding via the (a/b/c/d) rule + 4 pre-fold questions; human approves once at end-of-loop). Plan-tango's auto-apply trades that discipline for speed. We keep ours.
 - **What plan-tango does better, mechanically**: it works inside plan mode (Skill design); it snapshots the plan before each iter; it sha256-checks the plan between iters to catch external edits; it detects oscillation / stuck / regression; it reuses one Codex thread with a `<reset_iteration>` block to cut cost on long loops; it has a structured verdict contract so the stop condition is mechanical instead of prose-eyeballed.
-- **The 13-15 iter case we hit** (call-details `docs/plans/2026-05-25-phase-5a-prep-amendments.md`, 8 Codex passes + 7 consistency passes + 2 closings = 17 iters) was **not** oscillation — it was a real convergence over a 744-line plan, where each Codex pass found genuinely new findings, sometimes introduced by prior folds. iter 11 was the first imp-3=0; iter 13 saw imp-3 return because the iter-11 fold introduced a new (fictional) `llm.ping()` API. A structured verdict footer + stop classifier would have flagged the iter-11 inflection mechanically. Continue-thread mode would have cut Codex cost meaningfully across 8 passes of a 700-line plan.
+- **The 13-15 iter case we hit** (downstream-app `docs/plans/2026-05-25-phase-5a-prep-amendments.md`, 8 Codex passes + 7 consistency passes + 2 closings = 17 iters) was **not** oscillation — it was a real convergence over a 744-line plan, where each Codex pass found genuinely new findings, sometimes introduced by prior folds. iter 11 was the first imp-3=0; iter 13 saw imp-3 return because the iter-11 fold introduced a new (fictional) `llm.ping()` API. A structured verdict footer + stop classifier would have flagged the iter-11 inflection mechanically. Continue-thread mode would have cut Codex cost meaningfully across 8 passes of a 700-line plan.
 
 **Outcome we want**: fewer-friction reviews (no exit-from-plan-mode), cheaper long loops (cache hits), mechanical stop signals (no prose-reading), automatic catch of oscillation / regression / external-edit footguns — *without* surrendering the per-finding triage discipline or the final-approval gate.
 
@@ -39,7 +39,7 @@
 | Lock files / resume after Ctrl-C | Overkill for a single-driver workflow. |
 | Opus final sanity-check (plan-tango `--final-check`) | Covered by our existing N.5 consistency self-check + Tier-1 commit review + Tier-2 bot review. |
 | Removing the 6-surface byte-identity test for the triage block | Load-bearing (LESSONS.md 2026-05-25). |
-| Further CLAUDE.md trim using call-details PR #22 taxonomy | Out of scope. Worth a separate trim PR. |
+| Further CLAUDE.md trim using downstream-app PR #22 taxonomy | Out of scope. Worth a separate trim PR. |
 | Hard cap of 12 iters | We have the plateau rule + (once E lands) the structured stop classifier. |
 
 ## Subsystem breakdown
@@ -427,4 +427,4 @@ After commit 4, run `make check` and `make test` to confirm the full test surfac
 - [docs/plans/README.md](docs/plans/README.md) — section taxonomy (this plan file follows it)
 - [CLAUDE.md](CLAUDE.md) — confirm the harvest does NOT contradict the triage / pre-coding / approval-gate sections
 - [egsok/plan-tango plugins/plan-tango/skills/run/SKILL.md](https://github.com/egsok/plan-tango/blob/main/plugins/plan-tango/skills/run/SKILL.md) — the source we're harvesting from; useful for the reviewer to cross-check claims about plan-tango's mechanics
-- `/Users/sandeep/Desktop/Code/Boxette/call-details/docs/plans/2026-05-25-phase-5a-prep-amendments.md` (**external reference — may not be accessible to all reviewers; this is a sibling repo on the original driver's machine**) — the 17-iter case study that motivates Bucket E. The Iteration log + Evidence table inside this plan file restate the relevant trajectory data inline, so reviewers without access to the sibling repo can still verify the convergence pattern.
+- `/Users/sandeep/Desktop/Code/Acme/downstream-app/docs/plans/2026-05-25-phase-5a-prep-amendments.md` (**external reference — may not be accessible to all reviewers; this is a sibling repo on the original driver's machine**) — the 17-iter case study that motivates Bucket E. The Iteration log + Evidence table inside this plan file restate the relevant trajectory data inline, so reviewers without access to the sibling repo can still verify the convergence pattern.

@@ -6,7 +6,7 @@ The skill currently loads ~182 lines into every Claude Code session via `CLAUDE.
 ~141 lines into every read-only review session via `AGENTS.md`. Both files were grown
 incrementally across PR #1–#7 — most additions earned their place at the time, but the
 result is verbose enough that priority signal dilutes. The PR #7 trial against
-`call-details/` surfaced the issue empirically: the rendered `CLAUDE.md.new` (~160
+`downstream-app/` surfaced the issue empirically: the rendered `CLAUDE.md.new` (~160
 lines) merged with the user's existing 96-line CLAUDE.md hit 233 lines before any
 tightening.
 
@@ -20,8 +20,8 @@ lives. **Detail-rich content** (workflow steps, prompt templates, calibration pa
 already canonically present in `docs/plans/README.md`:
 - Filename convention (`/tmp/plan-review-…-iter-N.md`) → `docs/plans/README.md:27-35`
 - Bootstrap exception → DROPPED from CLAUDE.md (iter-3 fold Claude 3): CLAUDE.md's
-  Bootstrap exception is PR-#1-specific Boxette-precursor detail ("PR #1's own plan
-  was reviewed via Boxette's `make review-plan`…"); `docs/plans/README.md:101-105`
+  Bootstrap exception is PR-#1-specific Acme-precursor detail ("PR #1's own plan
+  was reviewed via Acme's `make review-plan`…"); `docs/plans/README.md:101-105`
   has a DIFFERENT bootstrap exception (about plan-PR/impl-PR collapsing for
   bootstrap plans). They're NOT equivalent. Accepted dropped-content trade-off:
   PR-#1 historical trivia is low-value at PR #17. The README.md bootstrap exception
@@ -184,7 +184,7 @@ edits are byte-identical lockstep.
 |---|---|---|---|---|
 | Commands table | 22 | 22 | Full table | (nothing) |
 | What this repo is | 8 | 8 | Full content | (nothing) |
-| Plan review loop | 34 | 6 | Lead rule + 2-line invocation + 1-line "stop when no imp-3" + 1-line pointer | Filename convention, when-to-stop bullets, consistency self-check paragraph → POINT AT `docs/plans/README.md` (already canonical there; iter-1 fold). **Bootstrap exception**: dropped from CLAUDE.md (iter-3 fold Claude 3 per user direction) — the PR-#1-specific Boxette-precursor detail is low-value historical trivia at PR #17. `docs/plans/README.md:101-105` has a DIFFERENT bootstrap exception about plan-PR/impl-PR collapsing; not equivalent. Accepted dropped-content trade-off. |
+| Plan review loop | 34 | 6 | Lead rule + 2-line invocation + 1-line "stop when no imp-3" + 1-line pointer | Filename convention, when-to-stop bullets, consistency self-check paragraph → POINT AT `docs/plans/README.md` (already canonical there; iter-1 fold). **Bootstrap exception**: dropped from CLAUDE.md (iter-3 fold Claude 3 per user direction) — the PR-#1-specific Acme-precursor detail is low-value historical trivia at PR #17. `docs/plans/README.md:101-105` has a DIFFERENT bootstrap exception about plan-PR/impl-PR collapsing; not equivalent. Accepted dropped-content trade-off. |
 | Triaging review findings | 23 | 17 | (covered by Bucket A) | Calibration + plateau → `CONTRIBUTING.md` (Bucket A; evidence-table format stays inside the (a/b/c/d) bullets which remain in the short block — iter-2 fold Claude 2-3) |
 | Two-tier code review | 8 | 6 | Tier-1 (same-AI as implementer) + Tier-2 positive description (both bots in dogfood; per-mode conditional in template) | Negative "Codex bot NOT configured" caveat removed; "Both feed the same…" sentence (already implied); same-AI Tier-1 ambiguity tightened (iter-2 refold) |
 | Cross-session state recovery | 5 | 4 | First paragraph compressed | "If multiple plan files…" elaboration |
