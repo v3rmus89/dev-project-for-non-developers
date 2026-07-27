@@ -5,6 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+# Supersede in-flight runs when new commits land on the same ref, so a rapid
+# push-push-push burst bills one run instead of three. Concurrency groups are
+# repository-global, not per-file, so the group is namespaced by workflow name.
+#
+# cancel-in-progress is deliberately FALSE on main: a cancelled push-to-main run
+# leaves the merge commit with no green check. Nothing downstream gates on it
+# today (no deploy platform, no release job, and required status checks are not
+# available on this plan), so this is cheap insurance rather than a live
+# dependency — flip it to plain `true` only if that stays true and main-push
+# runs ever become frequent enough to matter.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
