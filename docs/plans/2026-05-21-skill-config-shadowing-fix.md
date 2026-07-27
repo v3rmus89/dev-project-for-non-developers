@@ -27,7 +27,7 @@ an explicit "this project handles RU/UZ text everywhere" comment) went dead.
 ~107 false-positive errors lit up and `make lint` turned red. **A secondary
 defect** (referred to below as the "`known-first-party` defect"): the skill's
 `ruff.toml` set `known-first-party = ["downstream_app"]` — a package that does
-not exist (the project's real packages are `downstream_app` / `downstream_app`);
+not exist (the project's real packages are `acme_calls` / `acme_chats`);
 the value was derived mechanically from the repo folder name.
 
 ### Why the analyzer missed it
@@ -348,7 +348,7 @@ not just mentioned):
 - **AD-3 — drop the `known-first-party` key entirely.** It was derived
   mechanically as `project_name.replace("-","_")`. It is wrong for adoption
   into a project whose real package differs from the repo name
-  (`downstream-app` → guessed `downstream_app`, real `downstream_app`), **and** it
+  (`downstream-app` → guessed `downstream_app`, real `acme_chats`), **and** it
   is already a dead no-op for greenfield: the skill scaffolds `src/main.py` (a
   script), not a package named after the project, so nothing matches
   `known-first-party` until the user creates a package they would name

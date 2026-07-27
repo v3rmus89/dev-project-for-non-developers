@@ -146,7 +146,7 @@ downstream-app content. Safety contract holds.
   ORIGINAL_SHA=`<original-sha>`. Dirty state
   (`.claude/settings.json` modified + `.claude/scheduled_tasks.lock` +
   `tools/` untracked) stashed via `git stash push --include-untracked`;
-  STASH_SHA=`93bf8f1678e29bad2b6e1903ce1df1c6f3eba6ef` captured for by-ref
+  STASH_SHA=`<original-stash-sha>` captured for by-ref
   pop on rollback (closes Codex Tier-2 PR #16 #28 + #30).
 - Trial branch created: `feat/pr7-trial-adoption` from ORIGINAL_SHA.
 - Apply with heredoc decisions: 16 mutating entries written; manifest at
