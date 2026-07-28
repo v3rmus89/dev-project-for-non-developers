@@ -892,10 +892,12 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
     inspection per Architecture decision "Analyze phase reads target files but
     writes NOTHING."
 
-    Caller contract: the caller (`apply_pipeline.py`) is responsible for validating that
-    `target_root` is an existing directory AND that every `planned_files` key
-    is CLI-layer path-safe (no absolute paths, no `..` segments). Path-safety
-    enforcement lives in `apply_pipeline.py` + `render.py` per Architecture decisions;
+    Caller contract: the caller (`apply_pipeline.py`) is responsible for
+    validating that `target_root` is an existing directory AND that every
+    `planned_files` key is CLI-layer path-safe (no absolute paths, no `..`
+    segments). Path-safety enforcement lives in
+    `apply_pipeline._cli_layer_path_safety` (called by `cli.main`) +
+    `render.py` per Architecture decisions;
     this engine assumes pre-validated inputs.
     """
     analyses: list[PlannedFileAnalysis] = []

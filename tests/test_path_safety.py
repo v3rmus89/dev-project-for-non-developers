@@ -1,8 +1,8 @@
 """Path-safety tests at both layers (renderer and CLI).
 
 Closes Codex iter-7 finding #4 + iter-8 finding #2: the path-safety check
-runs at TWO layers (inside render.render_all AND inside apply_pipeline.py's
-apply planning). The test monkey-patches render_all to BYPASS the renderer-layer
+runs at TWO layers (inside render.render_all AND in
+apply_pipeline._cli_layer_path_safety, which cli.main calls). The test monkey-patches render_all to BYPASS the renderer-layer
 check, proving the CLI-layer check is the actual safety boundary.
 """
 
