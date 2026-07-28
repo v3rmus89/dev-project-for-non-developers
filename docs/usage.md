@@ -150,16 +150,16 @@ Python-only — see below) and re-asks for a different directory.
 
 4. **Apply** — each non-SKIP entry is written atomically; SKIP entries don't appear in the v2 restore manifest (mutation-only contract). The manifest is fsync'd BEFORE any filesystem write, so `--restore` rolls back partial-apply states.
 
-### Worked example (call-details/ shape)
+### Worked example (downstream-app/ shape)
 
-Suppose `~/Desktop/Code/Boxette/call-details/` already has `CLAUDE.md` (50 lines of domain content), `pyproject.toml` (with `[tool.ruff]`), `.gitignore` (with `venv/\n*.pyc\n`), and `.python-version` (pins `3.12`). 13 other files the skill writes are missing.
+Suppose `~/code/downstream-app/` already has `CLAUDE.md` (50 lines of domain content), `pyproject.toml` (with `[tool.ruff]`), `.gitignore` (with `venv/\n*.pyc\n`), and `.python-version` (pins `3.12`). 13 other files the skill writes are missing.
 
 **Step 1**: inspect with `--diff` (read-only; no `--mode=adopt` needed):
 
 ```bash
 ./venv/bin/python bootstrap.py --diff --language python \
-    --project-name call-details \
-    --out ~/Desktop/Code/Boxette/call-details/
+    --project-name downstream-app \
+    --out ~/code/downstream-app/
 ```
 
 Prints a unified diff per file (`--- a/<path>` / `+++ b/<path>` headers, plain `difflib.unified_diff` shape). Read it to understand what each collision file's skill-template-vs-target diff looks like before running adopt-mode. *(Note: a richer `--diff` mode that annotates each diff header with the recommended policy was specified in Bucket A row 8 but is not yet implemented; tracked in `BACKLOG.md` for a follow-up PR. For now, the recommendation report (Step 2) shows the policy per file.)*
@@ -168,14 +168,14 @@ Prints a unified diff per file (`--- a/<path>` / `+++ b/<path>` headers, plain `
 
 ```bash
 ./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
-    --project-name call-details \
-    --out ~/Desktop/Code/Boxette/call-details/
+    --project-name downstream-app \
+    --out ~/code/downstream-app/
 ```
 
 The recommendation report is printed first:
 
 ```
-adoption recommendation: 17 file(s) analyzed at ~/Desktop/Code/Boxette/call-details
+adoption recommendation: 17 file(s) analyzed at ~/code/downstream-app
 
 automatic (15):
 
@@ -226,7 +226,7 @@ Then the interactive prompts fire for the 2 mr=True files. Pressing Enter accept
 After decisions land:
 
 ```
-adopt-mode apply: 15 mutating entries written to ~/Desktop/Code/Boxette/call-details/
+adopt-mode apply: 15 mutating entries written to ~/code/downstream-app/
 restore manifest: /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
 to rollback: /Users/me/skill/venv/bin/python /Users/me/skill/bootstrap.py --restore /var/folders/.../dev-project-setup-restore-20260520T120000Z.json
 ```
@@ -506,7 +506,7 @@ See `CLAUDE.md` / `AGENTS.md` "Self-improvement loop" section for the full proto
 
 ## Bootstrap-exception note (PR #1)
 
-PR #1 of the skill itself uses Boxette's `make review-plan` (Codex direction only) for its plan-review because the skill's own bidirectional review loop is part of what PR #1 ships. From PR #2 onward the skill self-hosts the loop. The CI workflow, `claude[bot]` review, and Codex auto-review may skip on PR #1's own PR for the same bootstrap reason — the workflow files themselves are part of what PR #1 ships.
+PR #1 of the skill itself uses Acme's `make review-plan` (Codex direction only) for its plan-review because the skill's own bidirectional review loop is part of what PR #1 ships. From PR #2 onward the skill self-hosts the loop. The CI workflow, `claude[bot]` review, and Codex auto-review may skip on PR #1's own PR for the same bootstrap reason — the workflow files themselves are part of what PR #1 ships.
 
 ## Shipped-file inventory
 

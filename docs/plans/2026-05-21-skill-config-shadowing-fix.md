@@ -2,16 +2,16 @@
 
 ## Context
 
-Dogfooding `--mode=adopt` into the real `call-details` project surfaced a
+Dogfooding `--mode=adopt` into the real `downstream-app` project surfaced a
 silent, damaging bug.
 
 The skill ships ruff's configuration as a **standalone file**
 (`languages/python/ruff.toml.tmpl`) and pytest's as a standalone
 `languages/python/pytest.ini.tmpl`. Most existing Python projects —
-`call-details` included — keep that configuration **inside `pyproject.toml`**
+`downstream-app` included — keep that configuration **inside `pyproject.toml`**
 (`[tool.ruff]`, `[tool.pytest.ini_options]`).
 
-When adoption mode analyzed `call-details`, it looked for a file literally
+When adoption mode analyzed `downstream-app`, it looked for a file literally
 named `ruff.toml`, found none, and classified it under rule **(a)** —
 "missing AND not ignored → `WRITE`, `manual_review_needed=False`". So the skill
 **silently wrote a `ruff.toml`** with no owner prompt.
@@ -21,13 +21,13 @@ directory, `ruff.toml` wins and `[tool.ruff]` in `pyproject.toml` is ignored
 entirely* — ruff does not merge them. pytest behaves the same way
 (`pytest.ini` overrides `[tool.pytest.ini_options]`).
 
-Result in `call-details`: the project's deliberate, hand-tuned ruff config
+Result in `downstream-app`: the project's deliberate, hand-tuned ruff config
 (its `ignore = ["RUF001","RUF002","RUF003"]` ambiguous-unicode exemption, with
 an explicit "this project handles RU/UZ text everywhere" comment) went dead.
 ~107 false-positive errors lit up and `make lint` turned red. **A secondary
 defect** (referred to below as the "`known-first-party` defect"): the skill's
-`ruff.toml` set `known-first-party = ["call_details"]` — a package that does
-not exist (the project's real packages are `boxette_calls` / `boxette_chats`);
+`ruff.toml` set `known-first-party = ["downstream_app"]` — a package that does
+not exist (the project's real packages are `<real-package-a>` / `<real-package-b>`);
 the value was derived mechanically from the repo folder name.
 
 ### Why the analyzer missed it
@@ -64,7 +64,7 @@ change the analyzer no longer walks those paths at all (it only inspects
   target's standalone file;
 - target owns a standalone config **and already has a `pyproject.toml`** with
   `[tool.*]` — the standalone file shadows the target's *own* `[tool.*]`
-  (the exact live `call-details` shape: `[tool.pytest.ini_options]` in
+  (the exact live `downstream-app` shape: `[tool.pytest.ini_options]` in
   `pyproject.toml` plus a top-level `pytest.ini` that wins).
 
 So the fix has **two halves**:
@@ -133,7 +133,7 @@ explicitly out of scope (Bucket E). Verified by the adoption-mode smoke tests.
 | **Nested** (non-top-level) standalone configs (monorepo sub-directory `ruff.toml`s) | The scan is **top-level (`target_root`) only** (AD-1). Recursive scanning risks surfacing sensitive nested path names and noisy partial shadows. `BACKLOG.md` entry (Scope #8). |
 | Migrating the **skill repo's own** `ruff.toml` / `pytest.ini` to its `pyproject.toml` | Separate concern — the skill repo is not a bootstrapped artifact; changing its lint config could surface new lint errors on the skill's own code mid-PR. `BACKLOG.md` entry (Scope #8); flagged in the approval summary. |
 | Node / Go config-file shadowing | The skill ships `biome.json` (Node) and `.golangci.yml` (Go). Biome also discovers `biome.jsonc`; `golangci-lint` also discovers `.golangci.{yaml,toml,json}` — so a target-owned *alternate-extension* config **can** shadow the skill's file. This PR scopes the shadow fix to Python (where the bug actually bit); Node/Go shadow handling is parked — `BACKLOG.md` entry (Scope #8). |
-| Removing the stale `pytest.ini` from the live `call-details` repo | Work in the `call-details` repo, not the skill (AD-5). Listed under "Post-PR human follow-up", not Verification — the implementation session must not edit `call-details`. |
+| Removing the stale `pytest.ini` from the live `downstream-app` repo | Work in the `downstream-app` repo, not the skill (AD-5). Listed under "Post-PR human follow-up", not Verification — the implementation session must not edit `downstream-app`. |
 
 ## Subsystem breakdown
 
@@ -183,7 +183,7 @@ The scan runs **in every case**, and its result drives two things:
    it overrides the matching `[tool.*]` table — *whichever* `pyproject.toml`
    that table lives in (the skill's freshly-written one, or the target's own).
    This is emitted whether or not the target already has a `pyproject.toml`;
-   it is the load-bearing surfacing of the live `call-details` shape (existing
+   it is the load-bearing surfacing of the live `downstream-app` shape (existing
    `[tool.pytest.ini_options]` + a `pytest.ini` that wins).
 2. *Conditional — manual-review escalation.* If adoption would **WRITE a fresh
    `pyproject.toml`** (rule (a) — target has none) and the scan found a
@@ -229,7 +229,7 @@ branches, because rule (h) is the catch-all default and covers more than a
   `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]`, and
   `[tool.pytest.ini_options]` tables into their `pyproject.toml` — never
   replacing `[project]` or dependency sections, and merging rather than
-  clobbering project-specific config (e.g. `call-details`' RU/UZ ruff
+  clobbering project-specific config (e.g. `downstream-app`' RU/UZ ruff
   ignores). The wording must **not** assert that the owner's `pyproject.toml`
   config is what is live — if the B1 scan found a standalone shadow file, that
   file wins instead; the rule-(g) wording explicitly defers to the B1 shadow
@@ -266,7 +266,7 @@ New B1 coverage:
   rendering, **parameterized over `ruff.toml` / `.ruff.toml` / `pytest.ini`**
   and over both target shapes: "no `pyproject.toml`" (escalation fires) and
   "existing `pyproject.toml`" (no escalation, advisory still names the file).
-  The existing-`pyproject.toml` + `pytest.ini` case (the live `call-details`
+  The existing-`pyproject.toml` + `pytest.ini` case (the live `downstream-app`
   shape) is an explicit fixture asserting the report names `pytest.ini` as
   overriding `[tool.pytest.ini_options]`. A **no-shadow control** — rule-(a)
   WRITE `pyproject.toml` with no standalone config present → not escalated,
@@ -274,10 +274,10 @@ New B1 coverage:
 - *end-to-end* (`test_mode_adopt_smoke.py`) — one CLI smoke: target owns a
   standalone config + no `pyproject.toml`, run with
   `--auto-accept-recommendations --non-interactive` → **exit 2**. The existing
-  non-trivial-`pyproject.toml` smoke fixture (`TestCallDetailsShapedFixture`,
+  non-trivial-`pyproject.toml` smoke fixture (`TestDownstreamAppShapedFixture`,
   which seeds `pyproject.toml` with `[tool.ruff]`, rule (g) SKIP) additionally
   asserts the B2 rule-(g) advisory fires — note this fixture exercises the
-  rule-(g) path, *not* the full live `call-details` shadow shape (existing
+  rule-(g) path, *not* the full live `downstream-app` shadow shape (existing
   `[tool.pytest.ini_options]` + a top-level `pytest.ini`), which is covered by
   the dedicated unit-level fixture above and the Verification smoke bullet.
 
@@ -348,7 +348,7 @@ not just mentioned):
 - **AD-3 — drop the `known-first-party` key entirely.** It was derived
   mechanically as `project_name.replace("-","_")`. It is wrong for adoption
   into a project whose real package differs from the repo name
-  (`call-details` → guessed `call_details`, real `boxette_chats`), **and** it
+  (`downstream-app` → guessed `downstream_app`, real `<real-package-b>`), **and** it
   is already a dead no-op for greenfield: the skill scaffolds `src/main.py` (a
   script), not a package named after the project, so nothing matches
   `known-first-party` until the user creates a package they would name
@@ -364,11 +364,11 @@ not just mentioned):
   `testpaths` / `python_files` become TOML lists; `addopts` a TOML string.
   pytest's `--strict-config` (kept in `addopts`) fails loud on a malformed
   `ini_options` table — so a bad migration cannot pass silently.
-- **AD-5 — the live `call-details` cleanup is out of scope for this skill PR.**
-  `call-details` still contains a stale `pytest.ini` from the original buggy
-  adoption. Removing it is work in the `call-details` repo. The skill PR's
+- **AD-5 — the live `downstream-app` cleanup is out of scope for this skill PR.**
+  `downstream-app` still contains a stale `pytest.ini` from the original buggy
+  adoption. Removing it is work in the `downstream-app` repo. The skill PR's
   acceptance is about the *skill*; it is not gated on the state of one
-  downstream repo, and the implementation session must not edit `call-details`.
+  downstream repo, and the implementation session must not edit `downstream-app`.
   Tracked under "Post-PR human follow-up" and surfaced at the approval gate.
 
 ## Risks + mitigations
@@ -394,28 +394,28 @@ not just mentioned):
 - Adoption smoke: `--mode=adopt` into a fixture with an existing
   `pyproject.toml` (with `[tool.pytest.ini_options]`) **plus** a top-level
   `pytest.ini` → the report names `pytest.ini` as overriding
-  `[tool.pytest.ini_options]` (the live `call-details` shape).
+  `[tool.pytest.ini_options]` (the live `downstream-app` shape).
 - Adoption smoke: `--mode=adopt` into a fixture that owns a top-level
   standalone `ruff.toml` / `.ruff.toml` / `pytest.ini` and has **no**
   `pyproject.toml`, run with `--auto-accept-recommendations --non-interactive`
   → **exit 2** (the B1 escalation guard); the advisory names the shadowing file.
-- The skill *surfaces* the call-details-class issue (advisory + escalation);
+- The skill *surfaces* the downstream-app-class issue (advisory + escalation);
   Verification does **not** edit any downstream repo.
 
 ## Post-PR human follow-up
 
 Not a gate on this skill PR (AD-5), surfaced at the approval gate: the live
-`call-details` repo still contains a stale `pytest.ini` written by the original
-buggy adoption. The user should remove it in the `call-details` repo and
+`downstream-app` repo still contains a stale `pytest.ini` written by the original
+buggy adoption. The user should remove it in the `downstream-app` repo and
 confirm that repo's `make lint` goes green.
 
 ## Iteration log (this plan)
 
 | Iter | Reviewer | imp-3 | imp-2 | imp-1 | Notes |
 |---|---|---|---|---|---|
-| 1 | Codex | 2 | 3 | 1 | F2 folded (target-owned shadow scan); F3 folded (drop `known-first-party`); F4 folded (advisory = merge-not-replace); F5 folded (explicit replacement fixtures); F6 folded (Bucket D scope). F1 imp-3 framing rejected — call-details cleanup is a separate-repo task (AD-5) + Verification note. |
+| 1 | Codex | 2 | 3 | 1 | F2 folded (target-owned shadow scan); F3 folded (drop `known-first-party`); F4 folded (advisory = merge-not-replace); F5 folded (explicit replacement fixtures); F6 folded (Bucket D scope). F1 imp-3 framing rejected — downstream-app cleanup is a separate-repo task (AD-5) + Verification note. |
 | 1.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 5 internal drifts all folded (C1–C5). |
-| 2 | Codex | 1 | 4 | 0 | All 5 folded: G1 imp-3 (B1 → manual-review escalation, not log-only); G2 (B2 three-way wording incl. malformed pyproject); G3 (top-level-only scan boundary); G4 (Bucket E owns the BACKLOG updates); G5 (call-details action moved out of Verification). |
+| 2 | Codex | 1 | 4 | 0 | All 5 folded: G1 imp-3 (B1 → manual-review escalation, not log-only); G2 (B2 three-way wording incl. malformed pyproject); G3 (top-level-only scan boundary); G4 (Bucket E owns the BACKLOG updates); G5 (downstream-app action moved out of Verification). |
 | 2.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 1 minor drift folded (C6 — B1/B2 advisory attribution). |
 | 3 | Codex | 1 | 3 | 0 | All 4 folded: H1 imp-3 (B1 scan always surfaces detected files even when a `pyproject.toml` exists; B2 rule-(g) no longer asserts unconditional precedence); H2 (escalated rec keeps `policy=WRITE` — justified); H3 (tests parameterized over all 3 filenames); H4 (Context/Outcome/Verification scoped to the 3 top-level filenames). |
 | 3.5 | Claude (consistency) | 0 | — | — | 0 contradictions; 3 minor drifts folded (C7 — B2 missing a Scope row; C8 — stale "no `ruff.toml` written" in Verification; C9 — Risks named a no-false-escalation fixture absent from Bucket C). |
@@ -427,7 +427,7 @@ confirm that repo's `make lint` goes green.
 
 | Finding | Reviewer/iter | Decision | Where |
 |---|---|---|---|
-| F1 — no remediation for already-shadowed call-details | Codex/1 | (c) reject imp-3 framing + (d) surface to human | AD-5; Post-PR human follow-up; NOT-in-scope row. Skill PR not gated on a downstream repo's state. |
+| F1 — no remediation for already-shadowed downstream-app | Codex/1 | (c) reject imp-3 framing + (d) surface to human | AD-5; Post-PR human follow-up; NOT-in-scope row. Skill PR not gated on a downstream repo's state. |
 | F2 — analyzer still misses target-owned standalone configs | Codex/1 | (a) fold | Context (two-halves); Scope #4/#6; Bucket B (B1); AD-1; Risks; Verification; Critical files. (Strengthened by G1/H1.) |
 | F3 — AD-3 overclaimed `project_import_name` solved | Codex/1 | (a) fold | AD-3 rewritten — drop `known-first-party` + `project_import_name` key entirely; Scope #1/#3; Bucket A; Bucket D. |
 | F4 — advisory too vague / unsafe copy-paste | Codex/1 | (a) fold | Bucket B (B2) — advisory wording = compare-and-merge, owner config wins; Bucket C asserts it. |
@@ -442,7 +442,7 @@ confirm that repo's `make lint` goes green.
 | G2 — rule (h) covers malformed/unclassified, not only "trivial" | Codex/2 | (a) fold | Bucket B (B2) — three-way wording incl. malformed-`pyproject.toml` branch; Bucket C malformed advisory test. |
 | G3 — shadow-scan scope (top-level vs recursive) underspecified | Codex/2 | (a) fold | Bucket B (B1) — "top-level (`target_root`) only"; NOT-in-scope nested-config row; Bucket E BACKLOG entry. |
 | G4 — deferred items say BACKLOG but plan doesn't own the update | Codex/2 | (a) fold | New Scope #8 + Bucket E — `BACKLOG.md` entries with explicit triggers for all four parked items. |
-| G5 — Verification contains an out-of-scope `call-details` mutation | Codex/2 | (a) fold | Verification — mutation removed; new "Post-PR human follow-up" section; AD-5; NOT-in-scope row. |
+| G5 — Verification contains an out-of-scope `downstream-app` mutation | Codex/2 | (a) fold | Verification — mutation removed; new "Post-PR human follow-up" section; AD-5; NOT-in-scope row. |
 | C6 — B1 claimed the SKIP-case advisory that B2 owns | consistency/2.5 | (a) fold | Bucket B (B1) — already-has-`pyproject.toml` bullet defers the SKIP-case advisory to B2 (refined by H1: B1 still emits its own always-on shadow advisory). |
 | H1 — existing-`pyproject.toml` + standalone shadow not surfaced; B2 rule-(g) "takes precedence" false | Codex/3 | (a) fold | Context (half 2 — two shadow shapes); Bucket B (B1 always-name; B2 rule-(g) defers to B1); Scope #4/#6; Bucket C (existing-pyproject + `pytest.ini` fixture); AD-1; Verification; Outcome. |
 | H2 — B1 flips only `manual_review_needed`; interactive default still WRITEs shadowed config | Codex/3 | (a) fold | Bucket B (B1) — `policy=WRITE` retained, rationale + alternative documented; Risks row; Bucket C asserts `reason` names the file. |
@@ -453,9 +453,9 @@ confirm that repo's `make lint` goes green.
 | C9 — Risks named a no-false-escalation fixture absent from Bucket C | consistency/3.5 | (a) fold | Bucket C — added the no-shadow control fixture (rule-(a) WRITE, no standalone config → not escalated). |
 | I1 — B1 scan result has no owner in the data model (advisory/escalation drift risk) | Codex/4 | (a) fold | Bucket B (B1) — `analyze_target` scans once, stores `shadowing_configs` on `AdoptionPlan`; escalation + report share the snapshot. |
 | I2 — B2 manual-merge guidance underspecified (raw Jinja, no diff path) | Codex/4 | (a) fold | Bucket B (B2 rule-(g)) — inspect via `--diff` (rendered, not template), copy only the tool tables, never `[project]`/deps. |
-| I3 — "call-details-shaped fixture" label overclaims the live shadow shape | Codex/4 | (a) fold | Bucket C — relabelled the e2e fixture as the non-trivial-`pyproject.toml` rule-(g) fixture; full live shadow shape covered by the dedicated unit fixture + Verification bullet. |
+| I3 — "downstream-app-shaped fixture" label overclaims the live shadow shape | Codex/4 | (a) fold | Bucket C — relabelled the e2e fixture as the non-trivial-`pyproject.toml` rule-(g) fixture; full live shadow shape covered by the dedicated unit fixture + Verification bullet. |
 | I4 — uv direct-template test not named in Bucket C | Codex/4 | (a) fold | Bucket C — `tests/test_python_uv_templates.py` named; `[tool.ruff]`/`[tool.pytest.ini_options]` asserted for both pm modes. |
-| C10 — Critical-files fixture label not aligned with the I3 reframing | consistency/4.5 | (a) fold | Critical files — relabelled to "non-trivial-`pyproject.toml` rule-(g) fixture (`TestCallDetailsShapedFixture`)". |
+| C10 — Critical-files fixture label not aligned with the I3 reframing | consistency/4.5 | (a) fold | Critical files — relabelled to "non-trivial-`pyproject.toml` rule-(g) fixture (`TestDownstreamAppShapedFixture`)". |
 | J1 — "no shadowing risk" for Node/Go is false (`golangci-lint` reads `.golangci.{yaml,toml,json}`; Biome reads `biome.jsonc`) | Codex Tier-2/PR #22 | (a) fold | NOT-in-scope row corrected (Node/Go shadowing is real, parked not "nothing to change"); Scope #8 + Bucket E — 5th BACKLOG entry. |
 | J2 — verify TOML section-name semantics (`[lint]` → `[tool.ruff.lint]`) | claude[bot] Tier-2/PR #22 | (c) reject | Already covered — the generated-project smoke test runs real ruff/pytest against the rendered `pyproject.toml`; section-name equivalence is documented ruff behavior, not a risk. |
 | J3 — `policy=WRITE` display vs manual-review prompt UX | claude[bot] Tier-2/PR #22 | (c) reject | Implementation-review territory — the plan already specifies an explicit file-naming `reason`, and `format_recommendation_report` segregates `mr=True` files under a "manual review needed" heading. |
@@ -481,6 +481,6 @@ confirm that repo's `make lint` goes green.
 - `bootstrap_lib/adopt.py` — `recommend_policy` rules (a)/(g)/(h), `_is_nontrivial_pyproject`, `analyze_target`, `format_recommendation_report`
 - `bootstrap_lib/cli.py` — `_build_context` (`project_import_name`), the adoption flow + `--non-interactive` contract + the interactive prompt default
 - `languages/python/pyproject.toml.tmpl`, `ruff.toml.tmpl`, `pytest.ini.tmpl`, `Makefile.tmpl`, `.pre-commit-config.yaml.tmpl`
-- `tests/test_mode_adopt_smoke.py` — all-safe + non-trivial-`pyproject.toml` rule-(g) fixture (`TestCallDetailsShapedFixture`)
+- `tests/test_mode_adopt_smoke.py` — all-safe + non-trivial-`pyproject.toml` rule-(g) fixture (`TestDownstreamAppShapedFixture`)
 - `docs/usage.md` — adoption recommendation-report example + `--non-interactive` CI contract
-- This plan's Context section (the call-details dogfooding report)
+- This plan's Context section (the downstream-app dogfooding report)

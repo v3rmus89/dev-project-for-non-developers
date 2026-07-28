@@ -25,12 +25,31 @@ solved structurally.
 
 ## Active
 
+### 2026-07-27: A token-rename scrub must cover every spelling variant AND the scaffolding around the token
+
+**Trigger**: Scrubbing private project names before making the repo public, I built the substitution table from what a case-insensitive grep for the two known project tokens matched, and declared it clean — 428 replacements, residual grep empty. Tier-2 review (retroactive, on merged PR #54) found three classes still live on the now-public repo: (1) **absolute paths** — I replaced the `~/`-relative form of the dev path but not the `/Users/<name>/...` form, leaving 25 occurrences that leak the username and home topology; (2) **identifier variants** — the snake_case package name was in the table but a second real package, plus the CamelCase and alternate snake_case spellings, were not, so 14 survived; (3) **adjacent secrets of the same kind** — a real customer-facing branch name and commit SHA in a trial report whose own privacy note forbids customer content. The residual grep was empty only because it searched for the same tokens the table already handled — it could not fail. A follow-up review then caught a fourth class: two DISTINCT real names collapsed into one placeholder, destroying a passage whose whole point was that they differed.
+
+**Rule**: When scrubbing an identifier, enumerate its *variants* first (snake_case, CamelCase, kebab-case, plural, the package name vs the repo name) and the *scaffolding* it sits inside (absolute paths, URLs, branch names, SHAs, hostnames). Then verify with a search built from a DIFFERENT axis than the substitution table — grep for the shape of the thing (`/Users/`, `refs/heads/`, 40-hex) rather than the tokens you already replaced. A residual grep that reuses the substitution keys is tautological and always passes.
+
+**Status**: Active
+
+---
+
+### 2026-07-27: A workflow's presence is not its correctness — and a review skipped for infra reasons is deferred, not waived
+
+**Trigger**: Auditing GitHub Actions spend, I checked each workflow for a `concurrency` block and treated `claude-review.yml` as done because it HAD one. It had one that deadlocked: the group was keyed on `(PR, event_name)`, so when claude-code-action posted its own status comment, that fired a fresh `issue_comment` run in the same group and `cancel-in-progress` killed the review still running. The follow-up run was then skipped by the job-level `if` (a bot comment has no `@claude`), so no review ever completed. Cancellation is evaluated at the WORKFLOW level, before the job `if` — a run destined to be skipped still cancels a live one. The file's own comment claimed the per-event split stopped bot comments murdering the review; it never did. Separately, I merged two PRs without Tier-2 review because Actions were billing-dead, then called the retro review "optional" — the user pushed back that it was not, and running it is what exposed the deadlock.
+
+**Rule**: When auditing config, assert the BEHAVIOUR, not the presence of a key — for anything event-driven, trace what re-fires the trigger and whether the actor's own writes re-enter it. And when a mandated review step is skipped because infrastructure was down, record it as owed, not waived: re-run it the moment the infrastructure works, before calling the task done.
+
+**Status**: Active
+
+---
+
 ### 2026-07-26: Deleting a named construct must sweep live guidance docs for forward-pointing references, not just the surfaces the plan names
 
 **Trigger**: Bucket B Tier-1 (commit `cda3b51`) imp-2 — retiring the `tier1_prompt` macro updated every surface the plan enumerated (Makefile, template, CONTRIBUTING tmpl + dogfood, tests), but the Active rule at `LESSONS.md` "2026-05-19: Tier-1 commit review must use the SAME AI" still instructed future sessions to "pass the canonical Tier-1 prompt from `shared/Makefile.review.tmpl`'s `tier1_prompt` macro" — a live pointer at a construct that no longer existed. LESSONS.md is read and applied at every session start, so the drift would have misdirected the next Tier-1-via-subagent session.
 
 **Rule**: Before deleting or renaming a named construct (macro, function, file, make target), grep ALL live guidance surfaces — `LESSONS.md` Active rules, `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `BACKLOG.md` triggers — for forward-pointing references, and retarget every hit in the same commit. Past-tense mentions inside a lesson's **Trigger** are historical record and stay; a **Rule** that names the construct is a live instruction and must move with it. The plan's enumerated surface list is a floor, not the sweep.
-
 **Status**: Active
 
 ---
@@ -175,7 +194,7 @@ solved structurally.
 
 ### 2026-05-25: Percent-based trim targets don't transfer between repos with different test surfaces
 
-**Trigger**: Phase 4 of the project-CLAUDE.md hygiene initiative arrived with a ~50% line-count target derived from call-details PR #22 (199→106 lines, -48%). Applied blindly to this repo it would have required trimming sections pinned by `tests/test_triage_byte_identity.py` (6-surface byte-identity) + `tests/test_dogfood_doc_sanity.py` (Two-tier, Cross-session, Self-improvement, plan-consistency presence) — which means also editing `shared/CLAUDE.md.tmpl` and the tests, propagating to every downstream `dev-project-setup` consumer. Out of scope for a hygiene pass. Surfaced via pre-edit audit before any files were touched.
+**Trigger**: Phase 4 of the project-CLAUDE.md hygiene initiative arrived with a ~50% line-count target derived from downstream-app PR #22 (199→106 lines, -48%). Applied blindly to this repo it would have required trimming sections pinned by `tests/test_triage_byte_identity.py` (6-surface byte-identity) + `tests/test_dogfood_doc_sanity.py` (Two-tier, Cross-session, Self-improvement, plan-consistency presence) — which means also editing `shared/CLAUDE.md.tmpl` and the tests, propagating to every downstream `dev-project-setup` consumer. Out of scope for a hygiene pass. Surfaced via pre-edit audit before any files were touched.
 
 **Rule**: Before adopting a percent-based trim target from a prior PR, enumerate which sections in the new repo are pinned by tests (or other load-bearing invariants like template-mirroring contracts). The trim ceiling is the unpinned section set, not the aspirational percent. If the unpinned set falls short of the target, surface that to the user with three options — (a) extend scope to template + tests + downstream surface, (b) accept the smaller trim, (c) skip the trim — rather than picking unilaterally or stealth-breaking a test. Auto-mode "make the reasonable call" does not extend to load-bearing constraints the source prompt didn't account for.
 

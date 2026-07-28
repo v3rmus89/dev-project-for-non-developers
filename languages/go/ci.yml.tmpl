@@ -5,6 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+# Supersede in-flight runs when new commits land on the same branch: pushing
+# three times in a row bills one CI run instead of three. Concurrency groups are
+# repository-global rather than per-file. The key is `github.workflow_ref` (the
+# workflow FILE path + ref) rather than `github.workflow`, which is only the
+# display name — two workflows both named `CI` would share one group and cancel
+# each other. workflow_ref already encodes the ref, so no `github.ref` suffix.
+#
+# cancel-in-progress stays FALSE on main on purpose. If anything downstream waits
+# on the main-branch run — a deploy platform such as Railway or Vercel gating on
+# CI, a release job, a required status check — cancelling it would silently leave
+# a merge undeployed. Set it to plain `true` only once you know nothing does.
+#
+# It protects only the RUNNING job: a run still QUEUED in the same group is always
+# superseded by a newer one regardless of this setting, so a middle commit in a
+# rapid push burst can still go without CI.
+concurrency:
+  group: {% raw %}${{ github.workflow_ref }}{% endraw %}
+  cancel-in-progress: {% raw %}${{ github.ref != 'refs/heads/main' }}{% endraw %}
+
 jobs:
   check:
     runs-on: ubuntu-latest

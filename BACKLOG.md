@@ -37,7 +37,7 @@ dependencies" under "PR #7 follow-ups", the **no-Makefile** subcase where
 
 ### `loop-status` malformed-latest: a keyless foreign file at a higher iter still masks a valid latest (`loop-status-malformed-latest-keyless-foreign`)
 
-**Status**: parked (Codex P2 on call-details PR #50). PR #46 closed the *parseable*
+**Status**: parked (Codex P2 on downstream-app PR #50). PR #46 closed the *parseable*
 foreign-key direction (`_latest_files_for_stem` now key-filters footers that parse),
 but a foreign review file that is **malformed/keyless** — same plan stem (basename),
 higher iteration, in a shared `/tmp` — is still kept as a candidate (no key to filter
@@ -62,30 +62,30 @@ for another reason.
 
 ---
 
-### Forward-pin the drifted machinery test files to call-details (`call-details-machinery-test-parity`)
+### Forward-pin the drifted machinery test files to downstream-app (`downstream-app-machinery-test-parity`)
 
 **Status**: parked (claude[bot] Tier-2 imp-2 on PR #50). The C4 forward-pin synced the
-machinery *code* (scripts + Makefile lines) but not its tests, so call-details' suite does not
+machinery *code* (scripts + Makefile lines) but not its tests, so downstream-app' suite does not
 exercise the new `malformed-latest` / key-filter / `_FenceTracker` paths. Still pre-PR-#45 in
-call-details: `tests/test_loop_status.py` and `tests/test_review_plan_fact_check.py`.
+downstream-app: `tests/test_loop_status.py` and `tests/test_review_plan_fact_check.py`.
 
-**Why not a trivial byte-identical sync (the real blocker)**: the skill and call-details have
+**Why not a trivial byte-identical sync (the real blocker)**: the skill and downstream-app have
 divergent ruff policies — the skill sets `ignore = ["E501"]` ("let ruff format handle line
 length"), so its shared test files carry long fixture lines (e.g. 122-col `json.dumps` footer
-literals in `test_loop_status.py`), while call-details **enforces** E501 at line-length 100. A
-byte-identical `cp` therefore fails call-details' `make check` lint — tried in PR #50, reverted
+literals in `test_loop_status.py`), while downstream-app **enforces** E501 at line-length 100. A
+byte-identical `cp` therefore fails downstream-app' `make check` lint — tried in PR #50, reverted
 in `a9fa16b`. Closing this cleanly needs one of: (a) wrap the skill's shared test fixtures to
 ≤100 cols so they sync byte-identical to the stricter downstream, or (b) reconcile the ruff
-configs (e.g. call-details ignores E501 under `tests/**`). Separately, `tests/test_review_loop_artifacts.py`
+configs (e.g. downstream-app ignores E501 under `tests/**`). Separately, `tests/test_review_loop_artifacts.py`
 is **repo-adapted, NOT byte-identical** anyway — the skill's version drives a fixture through
-the skill's `bootstrap.py` (absent in call-details) — so not every machinery test file can be
+the skill's `bootstrap.py` (absent in downstream-app) — so not every machinery test file can be
 byte-identical.
 
 Also: the skill itself has **no direct `_FenceTracker` unit test** (only indirect coverage via
 `extract_active_text` / `parse_fact_roots`). Adding one only downstream would create drift — add
 it in the skill first if at all (claude[bot] called it polish).
 
-**Trigger to pick up**: the next call-details machinery sync, or a fence / malformed-latest
+**Trigger to pick up**: the next downstream-app machinery sync, or a fence / malformed-latest
 regression slips through downstream.
 
 **Rough effort**: ~half a day (option (a): wrap skill test fixtures ≤100 cols + verify both
@@ -156,11 +156,11 @@ still useful.
 
 ---
 
-## Follow-ups from C4 (call-details plan-review catch-up)
+## Follow-ups from C4 (downstream-app plan-review catch-up)
 
-C4 re-synced `call-details`' whole plan-review subsystem with the skill (the
+C4 re-synced `downstream-app`' whole plan-review subsystem with the skill (the
 loop-status numeric-ordering fix shipped in skill PR #43). Three follow-ups were
-parked during it — two surfaced by call-details' Tier-1, one carried over from
+parked during it — two surfaced by downstream-app' Tier-1, one carried over from
 skill PR #42.
 
 ### ✅ CommonMark-correct fence tracker shared by the fact extractor + fact-roots parser (`fact-check-nested-fence-tracker`) — DONE in PR #45
@@ -340,7 +340,7 @@ therefore shadow the skill's file — the same class of bug the Python
 config-shadowing fix addressed. Surfaced by Codex Tier-2 on the plan PR.
 
 **Why parked**: the config-shadowing fix was scoped to Python, where the bug
-actually bit (call-details dogfooding). Node/Go adoption mode is itself parked
+actually bit (downstream-app dogfooding). Node/Go adoption mode is itself parked
 for a follow-up, so the shadow handling belongs with that work.
 
 **Trigger to pick up**: adoption-mode shadow handling is extended beyond
@@ -492,7 +492,7 @@ manifest scope).
 
 ---
 
-### Retroactively add triage rule + two-tier review docs + observability layer to Boxette
+### Retroactively add triage rule + two-tier review docs + observability layer to Acme
 
 **Status**: now actionable as a follow-up side-task (post-PR-#5).
 
@@ -500,15 +500,15 @@ manifest scope).
 during this skill's plan-review loop. PR #4 added the four-questions
 extension + Two-tier code review section. PR #5 added `make status` for
 cross-session recovery + `LESSONS.md` self-improvement loop + plan-file
-Implementation log convention. Boxette (the source repo this skill
+Implementation log convention. Acme (the source repo this skill
 extracts patterns from) doesn't have any of these yet. PR #4 + #5 ship
 the relevant `shared/CLAUDE.md.tmpl` / `shared/AGENTS.md.tmpl` /
 `shared/CONTRIBUTING.md.tmpl` / `shared/docs-plans-README.md.tmpl` /
 `shared/Makefile.review.tmpl` / `shared/LESSONS.md.tmpl` sections;
-Boxette can adopt by copying.
+Acme can adopt by copying.
 
-**Triggers to pick up**: anyone working on Boxette's plan-review workflow,
-OR the next substantive Boxette plan-review starts.
+**Triggers to pick up**: anyone working on Acme's plan-review workflow,
+OR the next substantive Acme plan-review starts.
 
 **Rough effort**: ~2 hours — copy (1) the triage block with four-questions
 extension, (2) the Two-tier code review section, (3) `make status` target,
@@ -664,10 +664,10 @@ sensitive material.
 
 ### Investigate Codex doc-only-PR auto-review skip
 
-**Status**: parked (carried over from Boxette's observation).
+**Status**: parked (carried over from Acme's observation).
 
 **Why parked**: Codex's GitHub auto-review may skip PRs whose diff is
-entirely documentation. Boxette observed this on two consecutive
+entirely documentation. Acme observed this on two consecutive
 plan-only PRs (#7, #8). PR #1 of this skill is also doc-heavy.
 
 **Triggers to pick up**: third consecutive plan-only PR gets skipped, OR
@@ -767,12 +767,12 @@ plan-vs-repo factual mismatches.
 
 ### ✅ Adopt-mode skips the greenfield smoke placeholders for an existing project (imp-2) — DONE in PR #48
 
-**Status**: ✅ DONE in PR #48 (Bucket A, commit `c936920`) — `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language) is filtered from the adopt planned set in `_main_apply_adopt` before analyze. **Source**: PR #7 adopt-mode trial against `call-details` (recorded during skill PR #8).
+**Status**: ✅ DONE in PR #48 (Bucket A, commit `c936920`) — `render.GREENFIELD_ONLY_PLACEHOLDERS` (per-language) is filtered from the adopt planned set in `_main_apply_adopt` before analyze. **Source**: PR #7 adopt-mode trial against `downstream-app` (recorded during skill PR #8).
 
 **Why parked**: an `--apply --mode=adopt` run emitted the greenfield smoke
 placeholders `src/main.py` (`print("hello from <project>")`) and
-`tests/test_smoke.py` (`assert True`) into `call-details`, which already
-has real source under `src/boxette_calls/` and a real test suite. Adopt
+`tests/test_smoke.py` (`assert True`) into `downstream-app`, which already
+has real source under `src/downstream_app/` and a real test suite. Adopt
 mode should not scaffold greenfield-only placeholder code into a project
 that already has code.
 
@@ -786,11 +786,11 @@ emit on greenfield-vs-adopt in the adopt apply path.
 
 ### Adopt-mode's `Makefile` `run` target is hardcoded to `src/main.py` (imp-2)
 
-**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `downstream-app`.
 
 **Why parked**: the skill's `Makefile` ships `run: uv run python src/main.py`
 — correct for the greenfield smoke layout, wrong for an adopted real
-project whose entry point is elsewhere (`call-details` uses a
+project whose entry point is elsewhere (`downstream-app` uses a
 `[project.scripts]` console script). After an adopt run, `make run` points
 at a placeholder (or, once the placeholder is dropped per the entry above,
 a missing file).
@@ -806,7 +806,7 @@ documented TODO for the user to fill in.
 
 ### Adopt-mode does not add `pre-commit` to the target's dev dependencies (imp-2)
 
-**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `downstream-app`.
 
 **Why parked**: adopt mode applies `.pre-commit-config.yaml` and the
 `make install-hooks` target, but `make install-hooks` runs
@@ -827,9 +827,9 @@ deps" hint after applying `.pre-commit-config.yaml`).
 
 ### Adopt-mode: `AGENTS.md` can collide with the target's `.gitignore` (imp-1)
 
-**Status**: parked. **Source**: PR #7 adopt-mode trial against `call-details`.
+**Status**: parked. **Source**: PR #7 adopt-mode trial against `downstream-app`.
 
-**Why parked**: `call-details`'s `.gitignore` listed `AGENTS.md` (it had
+**Why parked**: `downstream-app`'s `.gitignore` listed `AGENTS.md` (it had
 been ignored as Codex-CLI scratch residue). The skill's `AGENTS.md` is a
 *tracked* reviewer-guidance deliverable, so an ignored `AGENTS.md` is
 silently never committed and the GitHub review bots never read it. Adopt
@@ -950,7 +950,7 @@ toolchain), rule (d)'s membership check matches `b"venv/"` (post-strip),
 but the merge function's appended `raw_line` retains the `\r`, producing
 a mixed `\r\n` + `\n` output on the next apply.
 
-The PR #7 scope (call-details/ trial on macOS) uses LF-terminated
+The PR #7 scope (downstream-app/ trial on macOS) uses LF-terminated
 gitignore, so this doesn't fire. Real-but-deferrable.
 
 **Triggers to pick up**:
@@ -1003,7 +1003,7 @@ already assert post-restore content equality, no test changes needed.
 
 **Why parked**: `TestRecommendPolicyRules.test_rule_a0_...` exercises rule
 (a0) at the unit layer (feeds `ignored_by_git=".gitignore:..."` directly
-into TargetMeta). `TestAnalyzeTarget.test_call_details_shaped_fixture` is
+into TargetMeta). `TestAnalyzeTarget.test_downstream_app_shaped_fixture` is
 the only orchestrator-level integration test, and it doesn't `git init`
 `tmp_path` — so `_check_ignored_by_git` returns `None` for every file,
 and the (a0) path through the full subprocess pipeline is never exercised
@@ -1014,7 +1014,7 @@ isn't zero — just split.
 **Triggers to pick up**:
 - A future regression where the subprocess error-handling in
   `_check_ignored_by_git` changes and breaks (a0)'s orchestrator path.
-- During the live `--apply --mode=adopt` trial against call-details if
+- During the live `--apply --mode=adopt` trial against downstream-app if
   AGENTS.md misfires.
 
 **Rough effort**: ~15 min — add one test that does `_git_init(tmp_path)`,
@@ -1030,7 +1030,7 @@ subprocess path.
 
 **Why parked**: `_compute_target_meta` reads each existing target file
 once; `recommend_policy` re-reads the same file (for rules b/d/f/g that
-need bytes). For PR #7's call-details collision set (4 files), that's
+need bytes). For PR #7's downstream-app collision set (4 files), that's
 8 reads vs 4 — negligible. For a target with hundreds of colliding
 files, the double-read could matter. The current docstring on
 `recommend_policy` explains the design choice: TargetMeta is deliberately
@@ -1064,7 +1064,7 @@ template ever includes `!negation` patterns that need to come AFTER
 specific positive matches in the target, the merge would produce
 semantically-different behavior than a hand-written ordering.
 
-The call-details collision set used for PR #7's trial doesn't have
+The downstream-app collision set used for PR #7's trial doesn't have
 `!negation` patterns; the skill's own `.gitignore.tmpl` doesn't either.
 Real-but-deferrable.
 
@@ -1147,7 +1147,7 @@ some failed — verify cleanup state).
 
 **Triggers to pick up**:
 - A user explicitly asks "I have a pip project; how do I switch to uv?"
-- The PR #7 trial on `call-details/` surfaces this as a common adoption need.
+- The PR #7 trial on `downstream-app/` surfaces this as a common adoption need.
 
 **Rough effort**: ~1 day — design + impl + tests + docs.
 
@@ -1190,7 +1190,7 @@ caught 2 imp-3 safety holes that the plan loop missed at integration
 boundaries (rule (a0) gitignore-pattern leak in report; v2 manifest
 unresolved-relpath silent-restore failure across cwds).
 
-**Effort**: ~2 weeks across plan + impl, informed by call-details trial.
+**Effort**: ~2 weeks across plan + impl, informed by downstream-app trial.
 
 ---
 
@@ -1206,15 +1206,15 @@ unresolved-relpath silent-restore failure across cwds).
 
 ---
 
-### ✅ Real-project trial on `~/Desktop/Code/Boxette/call-details/` — DONE
+### ✅ Real-project trial on `~/code/downstream-app/` — DONE
 
 **Status**: shipped. PR #7's `--mode=adopt` engine + the live trial against
-`call-details/` both landed; `docs/trial-report-pr7.md` is the one-time
+`downstream-app/` both landed; `docs/trial-report-pr7.md` is the one-time
 structured trial write-up (all four deliverables — trial plan, trial report,
 `--mode=adopt` implementation, surfaced polish — complete).
 
 The trial's downstream value also materialised later: dogfooding adopt-mode
-into `call-details` is exactly what surfaced the config-shadowing bug, fixed in
+into `downstream-app` is exactly what surfaced the config-shadowing bug, fixed in
 the 2026-05-21 config-shadowing fix
 ([docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md)).
 

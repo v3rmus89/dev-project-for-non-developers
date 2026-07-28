@@ -824,7 +824,7 @@ class TestRestoreV2:
     # ─── Dispatcher + path-safety + unknown-policy ───
     def test_v2_mixed_entries_all_policies_in_one_manifest(self, tmp_path):
         """Sanity check: a single v2 manifest containing one entry per
-        mutating policy restores cleanly end-to-end. This is the call-details
+        mutating policy restores cleanly end-to-end. This is the downstream-app
         shape — the realistic adopt-mode payload."""
         import base64
 
@@ -1162,7 +1162,7 @@ class TestPlanAdoptionEntries:
             manifest_mod.plan_adoption_entries(tmp_path, {}, plan)
 
     def test_mixed_plan_all_policies_produce_correct_entries(self, tmp_path):
-        """Realistic call-details-shaped fixture: WRITE + OVERWRITE +
+        """Realistic downstream-app-shaped fixture: WRITE + OVERWRITE +
         WRITE_NEW + APPEND_MERGE + SKIP in one plan. Verify entry counts +
         policies."""
         # WRITE: missing

@@ -6,7 +6,7 @@ Why two fixtures:
        to-end with `--auto-accept-recommendations` and NO prompts. A
        single auto-accept-only smoke would hang / EOF on mr=True files,
        so we split.
-  (ii) call-details-shaped — full 4-collision shape including CLAUDE.md
+  (ii) downstream-app-shaped — full 4-collision shape including CLAUDE.md
        + pyproject.toml (both mr=True). Stdin decision script piped via
        heredoc (`stdin_text` argument to `run_cli`) — closes Codex
        iter-5 #1: heredoc/pipe input works portably across CI.
@@ -294,12 +294,12 @@ class TestAllSafeFixture:
         assert not (target / "CLAUDE.md").exists()
 
 
-# ─── Fixture (ii) — call-details-shaped (mr=True via stdin heredoc) ─────────
+# ─── Fixture (ii) — downstream-app-shaped (mr=True via stdin heredoc) ─────────
 
 
-class TestCallDetailsShapedFixture:
+class TestDownstreamAppShapedFixture:
     """Fixture (ii): full 4-collision shape matching the empirically-
-    verified call-details collision set per Plan Context line 13:
+    verified downstream-app collision set per Plan Context line 13:
       .gitignore, .python-version, CLAUDE.md, pyproject.toml
 
     Two are mr=True (CLAUDE.md → rule (f) WRITE_NEW; pyproject.toml →
@@ -313,14 +313,14 @@ class TestCallDetailsShapedFixture:
         gitignore_subset = b"venv/\n*.pyc\n"
         (target_root / ".gitignore").write_bytes(gitignore_subset)
         # rule (c) byte-identical .python-version → SKIP (matches skill 3.12)
-        # (matches the call-details target, which already pins 3.12)
+        # (matches the downstream-app target, which already pins 3.12)
         (target_root / ".python-version").write_bytes(b"3.12\n")
         # rule (f) WRITE_NEW — CLAUDE.md with >20 lines (non-trivial domain content)
         claude_original = b"# Project CLAUDE.md\n\n" + b"line of domain content\n" * 30
         (target_root / "CLAUDE.md").write_bytes(claude_original)
         # rule (g) SKIP — pyproject.toml with [tool.*] (non-trivial)
         pyproject_original = (
-            b'[project]\nname = "call-details"\nversion = "0.1.0"\n'
+            b'[project]\nname = "downstream-app"\nversion = "0.1.0"\n'
             b"\n[tool.ruff]\nline-length = 100\n"
         )
         (target_root / "pyproject.toml").write_bytes(pyproject_original)
@@ -336,7 +336,7 @@ class TestCallDetailsShapedFixture:
     # The recommendations are: CLAUDE.md → WRITE_NEW; pyproject.toml → SKIP.
     _accept_recommended_decisions = "\n\n"
 
-    def test_call_details_shape_runs_with_stdin_heredoc(self, tmpdir_isolated):
+    def test_downstream_app_shape_runs_with_stdin_heredoc(self, tmpdir_isolated):
         """End-to-end with two mr=True prompts piped via stdin. User
         accepts both recommendations."""
         target = tmpdir_isolated / "target"
@@ -386,7 +386,7 @@ class TestCallDetailsShapedFixture:
         assert not (target / "src" / "main.py").exists()
         assert not (target / "tests" / "test_smoke.py").exists()
 
-    def test_call_details_shape_manifest_v2_structure(self, tmpdir_isolated):
+    def test_downstream_app_shape_manifest_v2_structure(self, tmpdir_isolated):
         """Verify the v2 manifest: format_version=2; SKIP entries (CLAUDE.md
         wait — CLAUDE.md is WRITE_NEW, IS in manifest; only true SKIPs i.e.
         .python-version + pyproject.toml are NOT in manifest)."""
@@ -426,10 +426,10 @@ class TestCallDetailsShapedFixture:
         assert claude_entry["policy"] == "WRITE_NEW"
         assert claude_entry["target_path"] == "CLAUDE.md.new"
 
-    def test_call_details_shape_restore_preserves_skip_and_unchanged_files(self, tmpdir_isolated):
+    def test_downstream_app_shape_restore_preserves_skip_and_unchanged_files(self, tmpdir_isolated):
         """The load-bearing safety property: `--restore` undoes the writes
         but does NOT touch pre-existing SKIP / OVERWRITE / WRITE_NEW-original
-        files. Critical for the live trial against call-details/."""
+        files. Critical for the live trial against downstream-app/."""
         target = tmpdir_isolated / "target"
         pre_snapshot = self._setup_target(target)
 
@@ -469,7 +469,7 @@ class TestCallDetailsShapedFixture:
         assert not (target / "Makefile").exists()
         assert not (target / ".editorconfig").exists()
 
-    def test_call_details_shape_user_skips_claude_via_stdin(self, tmpdir_isolated):
+    def test_downstream_app_shape_user_skips_claude_via_stdin(self, tmpdir_isolated):
         """User picks [s]kip on the CLAUDE.md prompt → no .new file written."""
         target = tmpdir_isolated / "target"
         pre_snapshot = self._setup_target(target)

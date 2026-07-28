@@ -211,10 +211,14 @@ def parse_fact_roots(plan_text: str) -> list[str]:
                 block_depth = lvl
                 continue
         if in_block:
-            # Match "- /absolute/path" or "- `/absolute/path`"
-            m = re.match(r"^\s*[-*]\s+`?(/[^\s`]+)`?", line)
+            # Match "- /absolute/path", "- `/absolute/path`", or the same with a
+            # leading `~/`. Tilde form matters for a public repo: a Fact-roots
+            # block may not carry a real /Users/<name>/ path, and `~/` is the
+            # privacy-safe spelling the leak guard steers authors toward. Expand
+            # it here so downstream consumers still receive absolute paths.
+            m = re.match(r"^\s*[-*]\s+`?(~?/[^\s`]+)`?", line)
             if m:
-                roots.append(m.group(1))
+                roots.append(str(Path(m.group(1)).expanduser()))
 
     return roots
 
