@@ -118,7 +118,9 @@ invokes `python3.12 -m venv venv` explicitly, so the system `python3`
   parser consume it. `tests/test_shim_cli_help_consistency.py` enforces
   byte-equal help output.
 - Path-safety runs at two layers: inside `render.render_all` AND inside
-  `cli.py`'s apply planning. Both must remain in place — the CLI-layer
-  check is the actual safety boundary (renderer-layer can be monkey-patched).
+  `apply_pipeline._cli_layer_path_safety`, which `cli.main` calls on the whole
+  planned set. Both must remain in place — the CLI-layer check is the actual
+  safety boundary (renderer-layer can be monkey-patched), and what must survive
+  is the CALL in `cli.main`, not merely the function's existence.
 - The "Triaging review findings" rule is byte-identical across three
   templates and three dogfood docs. Drift fails the dogfood test.

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap_lib import cli
+from bootstrap_lib import cli, guidance
 from bootstrap_lib._flags import add_flags
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -1208,7 +1208,7 @@ def test_gh_repo_hint_detection_fails_open_on_subprocess_error(tmp_path, monkeyp
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
         return real_run(cmd, *args, **kwargs)
 
-    monkeypatch.setattr(cli.subprocess, "run", _boom)
+    monkeypatch.setattr(guidance.subprocess, "run", _boom)
     rc, out, err = run_cli(_gh_apply_args(target))
     assert rc == 0, err  # apply must still succeed — detection fails open
     assert "apply successful" in out

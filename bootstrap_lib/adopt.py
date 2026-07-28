@@ -8,9 +8,9 @@ this module ships the per-file analyze-then-decide-with-owner UX:
        -> PolicyRecommendation
     3. format_recommendation_report(plan) -> str  (user-facing report)
 
-The decide phase lives in `bootstrap_lib/cli.py` (`_interactive_decide`); the
-apply phase lives in `manifest.plan_adoption_entries` +
-`cli._apply_adoption_writes`. This module is the analyze + recommend layer.
+The decide phase lives in `bootstrap_lib/adopt_ui.py` (`_interactive_decide`);
+the apply phase lives in `manifest.plan_adoption_entries` +
+`apply_pipeline._apply_adoption_writes`. This module is the analyze + recommend layer.
 
 All data classes are NamedTuple via class-syntax per PR #6 Claude iter-2 #2
 lesson (functional NamedTuple stores annotations as strings; class-syntax does
@@ -359,7 +359,7 @@ class AdoptionCollisionError(Exception):
     The current trigger is the Scope #7 `.new` collision rule: if
     `<original>.new` already exists at apply time, fail-loud rather than
     overwrite a file the user may have authored or already-merged.
-    `cli.py` catches this and converts to `CLIError(exit_code=2)`.
+    `apply_pipeline.py` catches this and converts to `CLIError(exit_code=2)`.
     """
 
 
@@ -892,10 +892,12 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
     inspection per Architecture decision "Analyze phase reads target files but
     writes NOTHING."
 
-    Caller contract: the caller (`cli.py`) is responsible for validating that
-    `target_root` is an existing directory AND that every `planned_files` key
-    is CLI-layer path-safe (no absolute paths, no `..` segments). Path-safety
-    enforcement lives in `cli.py` + `render.py` per Architecture decisions;
+    Caller contract: the caller (`apply_pipeline.py`) is responsible for
+    validating that `target_root` is an existing directory AND that every
+    `planned_files` key is CLI-layer path-safe (no absolute paths, no `..`
+    segments). Path-safety enforcement lives in
+    `apply_pipeline._cli_layer_path_safety` (called by `cli.main`) +
+    `render.py` per Architecture decisions;
     this engine assumes pre-validated inputs.
     """
     analyses: list[PlannedFileAnalysis] = []

@@ -1,4 +1,4 @@
-"""Tests for `bootstrap_lib.cli._interactive_decide` and the per-file
+"""Tests for `bootstrap_lib.adopt_ui._interactive_decide` and the per-file
 allowed-actions matrix (PR #7 Bucket C / Scope #6).
 
 stdin is injected via `io.StringIO` rather than PTY mock — closes Claude
@@ -18,7 +18,7 @@ from bootstrap_lib.adopt import (
     PolicyRecommendation,
     TargetMeta,
 )
-from bootstrap_lib.cli import (
+from bootstrap_lib.adopt_ui import (
     _AdoptionAbort,
     _allowed_actions_for,
     _interactive_decide,

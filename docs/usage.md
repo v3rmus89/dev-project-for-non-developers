@@ -526,7 +526,7 @@ The inventory of files `render_all` plans and writes lives in
 
 One adopt-mode path lives OUTSIDE the maps: when the target owns its own
 `Makefile`, `--mode=adopt` injects a standalone `Makefile.review` after
-`render_all` (see `bootstrap_lib/cli.py`), and per-file adopt policies can
+`render_all` (see `bootstrap_lib/apply_pipeline.py`), and per-file adopt policies can
 write `.new` companions for mapped paths. `--dry-run` shows the exact
 `render_all` set; adopt's conditional additions appear in the adopt run's own
 recommendation report (adopt requires `--apply`, so they never show in
