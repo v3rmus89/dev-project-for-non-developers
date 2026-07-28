@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-28: Retargeting a pointer after a code move can name the right module and still weaken the invariant
+
+**Trigger**: Bucket C moved `_cli_layer_path_safety` into `apply_pipeline.py` while its only call stayed in `cli.main`. I retargeted CLAUDE.md's path-safety invariant from "inside `cli.py`'s apply planning" to "inside `apply_pipeline.py`'s apply planning" — correct about where the function now lives, but the invariant exists to say "both layers must remain in place", and what must remain is the CALL. Under the new wording someone could delete the call in `cli.main`, leave the function defined, and read the invariant as satisfied while the actual safety boundary was gone. I had made the pointer locally accurate and globally weaker, in the same commit whose own message argued that a wrong module name in an invariant is worse than none. Tier-1 caught it; the same sentence had already propagated to two more surfaces (`tests/test_path_safety.py`, `bootstrap_lib/adopt.py`).
+
+**Rule**: When a move forces a pointer update, ask what the pointer is FOR before rewriting it. A navigational pointer ("the code is here") retargets to the definition site. A pointer inside an invariant, contract, or test rationale names the load-bearing site — usually the CALL — and after a split that separates definition from invocation it must name both. Then sweep every surface carrying that sentence, not just the one the reviewer cited.
+
+**Status**: Active
+
+---
+
 ### 2026-07-27: A token-rename scrub must cover every spelling variant AND the scaffolding around the token
 
 **Trigger**: Scrubbing private project names before making the repo public, I built the substitution table from what a case-insensitive grep for the two known project tokens matched, and declared it clean — 428 replacements, residual grep empty. Tier-2 review (retroactive, on merged PR #54) found three classes still live on the now-public repo: (1) **absolute paths** — I replaced the `~/`-relative form of the dev path but not the `/Users/<name>/...` form, leaving 25 occurrences that leak the username and home topology; (2) **identifier variants** — the snake_case package name was in the table but a second real package, plus the CamelCase and alternate snake_case spellings, were not, so 14 survived; (3) **adjacent secrets of the same kind** — a real customer-facing branch name and commit SHA in a trial report whose own privacy note forbids customer content. The residual grep was empty only because it searched for the same tokens the table already handled — it could not fail. A follow-up review then caught a fourth class: two DISTINCT real names collapsed into one placeholder, destroying a passage whose whole point was that they differed.
