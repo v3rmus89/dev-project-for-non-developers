@@ -78,7 +78,7 @@ def _v2_entry(
 
 
 class TestApplyAdoptionWritesDirect:
-    """Direct invocations of `cli._apply_adoption_writes` to verify per-
+    """Direct invocations of `apply_pipeline._apply_adoption_writes` to verify per-
     policy write semantics. AdoptionPlan is unused inside the function (only
     held for future logging hooks); pass a minimal stub."""
 
@@ -578,7 +578,7 @@ def test_plain_apply_path_unchanged_by_adopt_wiring(tmp_path):
 
 
 def _guidance_output(**kwargs):
-    """Capture `cli._print_post_apply_guidance` stdout for the given flags.
+    """Capture `guidance._print_post_apply_guidance` stdout for the given flags.
 
     The helper only reads a few attrs off `args`, so a SimpleNamespace stand-in
     keeps these unit tests pure (no argparse / filesystem)."""

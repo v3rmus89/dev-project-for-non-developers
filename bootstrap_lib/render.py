@@ -30,7 +30,7 @@ SHARED_TEMPLATE_MAP = {
 # a Jinja pass would mangle). Together with the template maps in this module
 # these are the complete render_all inventory of shipped files; the one
 # addition OUTSIDE the maps is adopt mode's conditionally injected standalone
-# Makefile.review (bootstrap_lib/cli.py) -- see docs/usage.md
+# Makefile.review (bootstrap_lib/apply_pipeline.py) -- see docs/usage.md
 # "Shipped-file inventory".
 SHARED_VERBATIM_MAP = {
     "scripts/run-with-clean-env.py": "scripts/run-with-clean-env.py",

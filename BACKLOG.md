@@ -683,7 +683,7 @@ a code PR gets skipped.
 non-interactive `--decisions` JSON remains. **Updated 2026-06-09 (backlog audit).**
 
 **What shipped**: PR #7's `--mode=adopt` delivered the interactive per-file
-decide loop (`bootstrap_lib/cli.py::_interactive_decide`): per-file
+decide loop (`bootstrap_lib/adopt_ui.py::_interactive_decide`): per-file
 `[r]ecommended / [s]kip / [d]iff / [n]ew / [o]verwrite (typed confirm) /
 [a]ppend / [q]uit-abort`. This covers the merged plan's original "asks
 per-file" intent.

@@ -354,7 +354,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
 
     `.new` collision rule (Scope #7): if `<original>.new` already exists at
     plan-time for a WRITE_NEW entry, raise `AdoptionCollisionError`. The
-    caller (`cli.py`) converts to `CLIError(exit_code=2)` with the user-facing
+    caller (`apply_pipeline.py`) converts to `CLIError(exit_code=2)` with the user-facing
     "rename or remove it before running --mode=adopt" message. Fail-loud
     rather than risk overwriting a file the user authored or already-merged.
 
