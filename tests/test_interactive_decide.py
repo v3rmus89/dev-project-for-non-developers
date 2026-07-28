@@ -18,7 +18,7 @@ from bootstrap_lib.adopt import (
     PolicyRecommendation,
     TargetMeta,
 )
-from bootstrap_lib.cli import (
+from bootstrap_lib.adopt_ui import (
     _AdoptionAbort,
     _allowed_actions_for,
     _interactive_decide,

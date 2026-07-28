@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bootstrap_lib import cli, manifest
+from bootstrap_lib import apply_pipeline, cli, guidance, manifest
 
 
 def run_cli(argv, *, stdin_text=""):
@@ -92,7 +92,9 @@ class TestApplyAdoptionWritesDirect:
         entries = [
             _v2_entry(policy="WRITE", path="new.txt", sha256_after_target_path=_sha256(skill))
         ]
-        cli._apply_adoption_writes(tmp_path, {"new.txt": skill}, self._stub_plan(tmp_path), entries)
+        apply_pipeline._apply_adoption_writes(
+            tmp_path, {"new.txt": skill}, self._stub_plan(tmp_path), entries
+        )
         assert (tmp_path / "new.txt").read_bytes() == skill
 
     def test_overwrite_replaces_existing(self, tmp_path):
@@ -106,7 +108,9 @@ class TestApplyAdoptionWritesDirect:
                 sha256_after_target_path=_sha256(skill),
             )
         ]
-        cli._apply_adoption_writes(tmp_path, {"f.txt": skill}, self._stub_plan(tmp_path), entries)
+        apply_pipeline._apply_adoption_writes(
+            tmp_path, {"f.txt": skill}, self._stub_plan(tmp_path), entries
+        )
         assert (tmp_path / "f.txt").read_bytes() == skill
 
     def test_write_new_creates_dot_new_file_original_untouched(self, tmp_path):
@@ -121,7 +125,7 @@ class TestApplyAdoptionWritesDirect:
                 sha256_after_target_path=_sha256(skill),
             )
         ]
-        cli._apply_adoption_writes(
+        apply_pipeline._apply_adoption_writes(
             tmp_path, {"CLAUDE.md": skill}, self._stub_plan(tmp_path), entries
         )
         assert (tmp_path / "CLAUDE.md.new").read_bytes() == skill
@@ -144,7 +148,7 @@ class TestApplyAdoptionWritesDirect:
             )
         ]
         with pytest.raises(AdoptionCollisionError):
-            cli._apply_adoption_writes(
+            apply_pipeline._apply_adoption_writes(
                 tmp_path, {"CLAUDE.md": b"# skill\n"}, self._stub_plan(tmp_path), entries
             )
         # Pre-existing .new MUST be preserved.
@@ -167,7 +171,7 @@ class TestApplyAdoptionWritesDirect:
         )
         gi.write_bytes(tampered)  # the block appears in the apply window
         with pytest.raises(AdoptionCollisionError):
-            cli._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
+            apply_pipeline._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
         assert gi.read_bytes() == tampered  # untouched (no double-append)
 
     def test_neutralize_gitignore_deleted_at_apply_raises(self, tmp_path):
@@ -182,7 +186,7 @@ class TestApplyAdoptionWritesDirect:
         entry = manifest._build_v2_neutralize_entry(tmp_path)
         gi.unlink()  # deleted in the apply window
         with pytest.raises(AdoptionCollisionError):
-            cli._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
+            apply_pipeline._apply_adoption_writes(tmp_path, {}, self._stub_plan(tmp_path), [entry])
         assert not gi.exists()  # NOT recreated
 
     def test_append_merge_re_merges_at_apply_time(self, tmp_path):
@@ -198,7 +202,7 @@ class TestApplyAdoptionWritesDirect:
                 pre_append_length=len(b"venv/\n"),
             )
         ]
-        cli._apply_adoption_writes(
+        apply_pipeline._apply_adoption_writes(
             tmp_path, {".gitignore": skill}, self._stub_plan(tmp_path), entries
         )
         result = (tmp_path / ".gitignore").read_bytes()
@@ -210,7 +214,7 @@ class TestApplyAdoptionWritesDirect:
     def test_unknown_policy_raises(self, tmp_path):
         entries = [_v2_entry(policy="WEIRD", path="f.txt", sha256_after_target_path="x")]
         with pytest.raises(ValueError, match="unknown policy"):
-            cli._apply_adoption_writes(
+            apply_pipeline._apply_adoption_writes(
                 tmp_path, {"f.txt": b"x"}, self._stub_plan(tmp_path), entries
             )
 
@@ -587,7 +591,7 @@ def _guidance_output(**kwargs):
     old_stdout = sys.stdout
     sys.stdout = io_module.StringIO()
     try:
-        cli._print_post_apply_guidance(args, "/tmp/target", **kwargs)
+        guidance._print_post_apply_guidance(args, "/tmp/target", **kwargs)
         return sys.stdout.getvalue()
     finally:
         sys.stdout = old_stdout
@@ -727,7 +731,7 @@ class TestMakefileTargetOverlap:
             "review:\t## dispatch\n\t@echo hi\n"
             "check: lint test\n"
         )
-        names = cli._makefile_target_names(text)
+        names = guidance._makefile_target_names(text)
         assert names == {"build", "review", "check"}
         assert "PYTHON" not in names
         assert "ARGS" not in names
@@ -738,10 +742,10 @@ class TestMakefileTargetOverlap:
             b"test:\n\tpytest\n\nreview:\n\t@echo old\n\nrun:\n\tpython app.py\n"
         )
         fragment = b"review:\n\t@echo dispatch\n\nloop-status:\n\t@echo status\n"
-        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)
+        assert guidance._compute_colliding_targets(tmp_path, fragment) == ("review",)
 
     def test_compute_colliding_targets_no_makefile_returns_empty(self, tmp_path):
-        assert cli._compute_colliding_targets(tmp_path, b"review:\n\t@echo x\n") == ()
+        assert guidance._compute_colliding_targets(tmp_path, b"review:\n\t@echo x\n") == ()
 
     def test_real_fragment_vs_bot_shape_only_review_collides(self, tmp_path):
         """R-B1 ground truth: against a bot-shaped Makefile (a bare `review:` and
@@ -754,4 +758,4 @@ class TestMakefileTargetOverlap:
         (tmp_path / "Makefile").write_bytes(
             b"review:\n\t@echo old\n\nreview-plan:\n\t@echo old-plan\n\ntest:\n\tpytest\n"
         )
-        assert cli._compute_colliding_targets(tmp_path, fragment) == ("review",)
+        assert guidance._compute_colliding_targets(tmp_path, fragment) == ("review",)
