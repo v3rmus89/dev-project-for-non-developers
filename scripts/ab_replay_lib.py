@@ -24,9 +24,74 @@ This module is import-safe (underscore name); the live runner imports it.
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
+import os
 import subprocess
 from collections import namedtuple
+from pathlib import Path
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILL_ROOT = _SCRIPTS_DIR.parent
+
+# ── Shared plan-review prompt (one source for ALL consumers) ──────────────────
+
+# The SAME file the Makefile's review-plan-by-{codex,claude} recipes render via
+# scripts/render-review-prompt.py -- there is no ab-replay-private prompt copy.
+PLAN_REVIEW_PROMPT_FILE = _SKILL_ROOT / "prompts" / "plan-review.txt"
+
+# Import the substitution helper's known-token ruleset from its working copy
+# (the file name is not a valid module name, hence the spec dance). One
+# ruleset for every consumer: registry-only substitution, never str.format --
+# the prompt carries literal JSON-fence braces that must pass through raw.
+_spec = importlib.util.spec_from_file_location(
+    "_render_review_prompt", _SCRIPTS_DIR / "render-review-prompt.py"
+)
+_render_review_prompt = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_render_review_prompt)
+
+
+def compute_plan_review_key(repo_abspath: str, plan_path: str) -> str:
+    """The Makefile's KEY for a (repo, plan) pair -- must stay formula-identical.
+
+    Mirrors the `KEY = $(shell python3 -c ...)` definition in the Makefile
+    review block: sha256 of `realpath(repo) + ':' + realpath(plan)`, first
+    12 hex chars. `plan_path` must already be resolvable from the current
+    process (pass an absolute or repo-joined path; the Makefile's realpath
+    runs with make's cwd == the repo).
+    """
+    k = os.path.realpath(str(repo_abspath)) + ":" + os.path.realpath(str(plan_path))
+    return hashlib.sha256(k.encode()).hexdigest()[:12]
+
+
+def build_plan_review_prompt(repo_abspath: str, plan: str, iteration: int) -> str:
+    """Resolve prompts/plan-review.txt exactly as the Makefile recipes do.
+
+    Supplies every registry token the shared file carries: {PLAN_FILE} is the
+    plan path as given (codex resolves it against -C <repo>, mirroring make's
+    repo cwd), {ITERATION} the iteration number, and {KEY} computed from the
+    repo-joined plan path via `compute_plan_review_key`. The trailing newline
+    is stripped to match what the recipes' command substitution produces.
+    """
+    plan_for_key = plan if os.path.isabs(plan) else os.path.join(repo_abspath, plan)
+    values = {
+        "PLAN_FILE": plan,
+        "ITERATION": str(iteration),
+        "KEY": compute_plan_review_key(repo_abspath, plan_for_key),
+    }
+
+    def _resolve(name: str) -> str:
+        try:
+            return values[name]
+        except KeyError:
+            raise _render_review_prompt.UnresolvedTokenError(
+                name, f"ab-replay supplies no value for {{{name}}}"
+            ) from None
+
+    text = PLAN_REVIEW_PROMPT_FILE.read_text(encoding="utf-8")
+    return _render_review_prompt.render_prompt(text, _resolve).rstrip("\n")
+
 
 # ── Safe-argv builders (iter-3 FN2) ───────────────────────────────────────────
 

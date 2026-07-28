@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 import yaml
 
 from bootstrap_lib import render
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 FORBIDDEN_TERMS = [
     r"\bboxette\b",
@@ -251,170 +254,248 @@ def test_makefile_review_renders_new_targets():
         assert target_name in phony_block, f"{target_name} not declared phony"
 
 
-def test_makefile_review_plan_prompt_contains_cross_section_instruction():
-    """PR #4 idea-(a): both review-plan-by-{codex,claude} prompts must include
-    the 'where else in the plan' cross-section impact instruction."""
-    rendered = _render("Makefile.review.tmpl", _context())
-    assert "OTHER sections of the same plan" in rendered, "idea-(a) prompt extension missing"
+# ──────────────────────────────────────────────────────────────────────
+# prompts/ files + render-review-prompt.py wiring (pre-expansion Bucket B).
+# The five prompt texts left the Makefile recipes for prompts/*.txt; the
+# recipes build PROMPT at runtime via scripts/render-review-prompt.py. These
+# tests replace the retired tier1_prompt-macro tests:
+#   - macro byte-identity across Makefile/CONTRIBUTING → single-source files
+#     + test_contributing_references_prompt_files (no second copy exists);
+#   - macro empty-string-equals-None → the recipe's `[ -n "$(PLAN_FILE)" ]`
+#     branch, covered by the argv shim tests in test_makefile_review_targets;
+#   - macro no-backticks shell-safety → test_prompt_files_are_shell_safe
+#     over ALL five files (LESSONS.md 2026-06-09: cover EVERY prompt).
+# ──────────────────────────────────────────────────────────────────────
+
+# Registry tokens (mirrors scripts/render-review-prompt.py TOKEN_REGISTRY)
+# each prompt file is allowed to carry — and the exact set each recipe must
+# provide inside its command-substitution env prefix.
+PROMPT_FILE_TOKENS = {
+    "prompts/plan-review.txt": {"PLAN_FILE", "ITERATION", "KEY"},
+    "prompts/commit-review-plan-bound.txt": {"COMMIT_REF", "PLAN_FILE"},
+    "prompts/commit-review-unbound.txt": {"COMMIT_REF"},
+    "prompts/plan-consistency.txt": {"PLAN_FILE"},
+    "prompts/fact-check-interpret.txt": {"PLAN_FILE", "VERIFICATION_JSON"},
+}
+
+_TOKEN_REGISTRY = ("PLAN_FILE", "ITERATION", "KEY", "COMMIT_REF", "VERIFICATION_JSON")
+
+# Which prompt file(s) each review recipe must build its PROMPT from. The
+# commit targets carry two branches (plan-bound + unbound).
+RECIPE_PROMPT_FILES = {
+    "review-plan-by-codex": ["prompts/plan-review.txt"],
+    "review-plan-by-claude": ["prompts/plan-review.txt"],
+    "review-commit-by-codex": [
+        "prompts/commit-review-plan-bound.txt",
+        "prompts/commit-review-unbound.txt",
+    ],
+    "review-commit-by-claude": [
+        "prompts/commit-review-plan-bound.txt",
+        "prompts/commit-review-unbound.txt",
+    ],
+    "review-plan-consistency-by-claude": ["prompts/plan-consistency.txt"],
+    "review-plan-fact-check-by-codex": ["prompts/fact-check-interpret.txt"],
+    "review-plan-fact-check-by-claude": ["prompts/fact-check-interpret.txt"],
+}
+
+# The two recipe surfaces that must stay in lockstep (also byte-locked by
+# tests/test_selftest_overlap.py; asserting both keeps THESE tests meaningful
+# even if that lock is ever loosened).
+_RECIPE_SURFACES = ["Makefile", "shared/Makefile.review.tmpl"]
+
+# Lead phrases shared by the five prompt texts — after Bucket B none may
+# remain INLINE in a recipe surface (iter-2 FN2: the narrow "no `Review …`
+# form would miss a partial extraction of the consistency/fact-check texts).
+_PROMPT_LEAD_PHRASES = [
+    "Review the plan file",
+    "Review commit HEAD",
+    "Read the plan file",
+    "Interpret these fact-check",
+]
 
 
-def _extract_prompts_between_quotes(text: str, start_marker: str, count: int) -> list[str]:
-    """Extract `count` quoted prompts from `text`, each starting with `start_marker`."""
-    prompts: list[str] = []
-    cursor = 0
-    for _ in range(count):
-        idx = text.index(start_marker, cursor)
-        # The prompt is a single line; find the closing quote at end of that line
-        line_end = text.index("\n", idx)
-        quoted = text[idx + 1 : line_end].rstrip('"').rstrip(" \\").rstrip('"')
-        prompts.append(quoted)
-        cursor = line_end
-    return prompts
+def _prompt_text(rel_path):
+    return (SKILL_ROOT / rel_path).read_text(encoding="utf-8")
 
 
-def test_makefile_tier1_prompt_byte_identical_between_makefile_and_contributing():
-    """PR #4 idea-(b) macro design + PR #5b dual-variant: the Tier-1 prompts
-    must be byte-identical between Makefile recipe's rendered prompts and
-    CONTRIBUTING.md template's two subagent variants. After PR #5b the macro
-    has TWO branches (with vs without plan_file); both must round-trip
-    identically across the two surfaces."""
-    makefile = _render("Makefile.review.tmpl", _context())
-    contributing = _render("CONTRIBUTING.md.tmpl", _context())
-
-    # Extract from review-commit-by-codex (two prompts: with-plan, without-plan)
-    rec_start = makefile.index("review-commit-by-codex:")
-    rec_end = makefile.index("review-commit-by-claude:")
-    rec_block = makefile[rec_start:rec_end]
-    makefile_prompts = _extract_prompts_between_quotes(rec_block, '"Review commit HEAD', count=2)
-    assert len(makefile_prompts) == 2, (
-        "Makefile recipe should have 2 prompts (with + without plan_file)"
-    )
-    # By order in the recipe: first is the `if [ -n "$(PLAN_FILE)" ]` branch (with plan), second is else (without)
-    makefile_with_plan, makefile_without_plan = makefile_prompts
-
-    # Extract from CONTRIBUTING.md (two prompts: Variant A with-plan, Variant B without)
-    contributing_prompts = _extract_prompts_between_quotes(
-        contributing, '"Review commit <SHA>', count=2
-    )
-    assert len(contributing_prompts) == 2, "CONTRIBUTING.md should have 2 prompt variants"
-    contributing_with_plan, contributing_without_plan = contributing_prompts
-
-    # Normalize placeholders: HEAD <-> <SHA>, $(PLAN_FILE) <-> <PLAN_FILE>
-    def normalize(p: str) -> str:
-        return (
-            p.replace("HEAD", "<COMMIT>")
-            .replace("<SHA>", "<COMMIT>")
-            .replace("$(PLAN_FILE)", "<PLAN>")
-            .replace("<PLAN_FILE>", "<PLAN>")
-        )
-
-    assert normalize(makefile_with_plan) == normalize(contributing_with_plan), (
-        f"with-plan prompt drift between Makefile + CONTRIBUTING:\n"
-        f"Makefile:     {normalize(makefile_with_plan)!r}\n"
-        f"CONTRIBUTING: {normalize(contributing_with_plan)!r}"
-    )
-    assert normalize(makefile_without_plan) == normalize(contributing_without_plan), (
-        f"without-plan prompt drift between Makefile + CONTRIBUTING:\n"
-        f"Makefile:     {normalize(makefile_without_plan)!r}\n"
-        f"CONTRIBUTING: {normalize(contributing_without_plan)!r}"
-    )
+def _recipe_lines_invoking_helper(surface_text):
+    return [line for line in surface_text.splitlines() if "render-review-prompt.py" in line]
 
 
-def test_tier1_prompt_macro_empty_string_equivalent_to_none():
-    """PR #5 Codex Tier-2 lesson: empty-string plan_file must trigger the
-    same unbound prompt as None (not the with-plan branch with literal
-    empty path)."""
-    env = render.build_env("python")
-    # Render the macro directly via a tiny test template that imports it
-    test_tmpl_source = (
-        "{% from 'Makefile.review.tmpl' import tier1_prompt %}"
-        "NONE:{{ tier1_prompt('HEAD') }}\n"
-        "EMPTY:{{ tier1_prompt('HEAD', '') }}\n"
-        "BOUND:{{ tier1_prompt('HEAD', 'docs/plans/x.md') }}\n"
-    )
-    rendered = env.from_string(test_tmpl_source).render()
-    none_line = rendered.split("\n")[0].removeprefix("NONE:")
-    empty_line = rendered.split("\n")[1].removeprefix("EMPTY:")
-    bound_line = rendered.split("\n")[2].removeprefix("BOUND:")
-    assert none_line == empty_line, (
-        f"None and '' should produce identical prompts (unbound branch);\n"
-        f"None:  {none_line!r}\nEmpty: {empty_line!r}"
-    )
-    assert none_line != bound_line, "bound prompt should differ from unbound"
-    assert "No plan binding" in none_line, "unbound prompt should contain canonical phrase"
-    assert "docs/plans/x.md" in bound_line, "bound prompt should mention the plan file path"
-
-
-def test_tier1_prompt_has_no_backticks_or_shell_metachars():
-    """PR #5 Tier-2 lesson: prompt must not contain backticks or `$(` —
-    those trigger shell command substitution when the rendered prompt is
-    passed as a double-quoted shell arg."""
-    env = render.build_env("python")
-    test_tmpl_source = (
-        "{% from 'Makefile.review.tmpl' import tier1_prompt %}"
-        "{{ tier1_prompt('HEAD') }}\n"
-        "{{ tier1_prompt('HEAD', 'docs/plans/x.md') }}\n"
-    )
-    rendered = env.from_string(test_tmpl_source).render()
-    assert "`" not in rendered, (
-        "Tier-1 prompt must not contain backticks (shell-substitution class); "
-        "PR #5 iter-5 fold required plain text only"
-    )
-    assert "$(" not in rendered, (
-        "Tier-1 prompt must not contain `$(` (shell-substitution); "
-        "the only $(...) allowed is the Make-level $(PLAN_FILE) in the recipe wrapper, "
-        "NOT in the macro-rendered prompt body"
+@pytest.mark.parametrize("rel_path,expected_tokens", sorted(PROMPT_FILE_TOKENS.items()))
+def test_prompt_file_exists_nonempty_with_exact_token_set(rel_path, expected_tokens):
+    """Each prompt file exists, is non-empty, and carries EXACTLY the registry
+    tokens its recipes provide — a missing token silently un-parameterizes the
+    prompt; an extra one makes the fail-loud helper exit 2 on every run."""
+    path = SKILL_ROOT / rel_path
+    assert path.is_file(), f"{rel_path} missing"
+    text = path.read_text(encoding="utf-8")
+    assert text.strip(), f"{rel_path} is empty"
+    found = {m for m in re.findall(r"\{([A-Z_]+)\}", text) if m in _TOKEN_REGISTRY}
+    assert found == expected_tokens, (
+        f"{rel_path}: registry tokens {sorted(found)} != expected {sorted(expected_tokens)}"
     )
 
 
-def test_simplify_pass_has_gating_wording():
-    """PR #5c Bucket F test (d): `/simplify` sub-bullet must gate the step
-    for Claude-Code-only sessions — substrings 'Claude Code' + 'skip' +
-    'optional' present in both rendered template AND skill-repo dogfood
-    CONTRIBUTING.md. Closes Tier-1 P1 (Codex caught this in self-review:
-    plan required the assertion but it was missed in initial commit)."""
+@pytest.mark.parametrize("rel_path", sorted(PROMPT_FILE_TOKENS))
+def test_prompt_files_are_shell_safe(rel_path):
+    """Every prompt file must stay shell-safe (LESSONS.md 2026-06-09, extended
+    to ALL prompts): the resolved prompt is passed as a double-quoted shell
+    arg, so no backticks, no `$(`, no literal double-quote. Command
+    substitution makes these inert at runtime — this guards the source texts
+    so a future edit cannot reintroduce the hazard class."""
+    text = _prompt_text(rel_path)
+    assert "`" not in text, f"{rel_path} contains a backtick"
+    assert "$(" not in text, f"{rel_path} contains shell-substitution `$(`"
+    assert '"' not in text, f"{rel_path} contains a literal double-quote"
+
+
+@pytest.mark.parametrize("surface", _RECIPE_SURFACES)
+def test_review_recipes_invoke_helper_with_exact_prompt_files(surface):
+    """Each review target builds PROMPT from its exact prompt file via
+    scripts/render-review-prompt.py (test-surgery item (b): recipe side)."""
+    text = (SKILL_ROOT / surface).read_text(encoding="utf-8")
+    for target, files in RECIPE_PROMPT_FILES.items():
+        start = text.index(f"\n{target}:")
+        # Recipe block ends at the next top-level target definition.
+        next_defs = [
+            m.start() for m in re.finditer(r"\n[A-Za-z][A-Za-z0-9_-]*:", text) if m.start() > start
+        ]
+        block = text[start : next_defs[0] if next_defs else len(text)]
+        for rel_path in files:
+            needle = f"$(CURDIR)/scripts/render-review-prompt.py $(CURDIR)/{rel_path})"
+            assert needle in block, f"{surface}: {target} does not build PROMPT from {rel_path}"
+
+
+@pytest.mark.parametrize("surface", _RECIPE_SURFACES)
+def test_no_inline_prompt_lead_phrases_remain(surface):
+    """No prompt text remains inline in a recipe surface — all four lead
+    phrases shared by the five extracted texts are gone (iter-2 FN2)."""
+    text = (SKILL_ROOT / surface).read_text(encoding="utf-8")
+    for phrase in _PROMPT_LEAD_PHRASES:
+        assert phrase not in text, f"{surface}: inline prompt text {phrase!r} still present"
+
+
+@pytest.mark.parametrize("surface", _RECIPE_SURFACES)
+def test_every_helper_call_carries_fail_loud_guard(surface):
+    """Tier-2 codex P2: make's default shell has no -e and recipes are
+    `;`-chained, so an unguarded `PROMPT="$$(helper …)"` would swallow the
+    helper's exit-2 and invoke the CLI with an empty prompt. Every helper
+    call must guard the substitution with `|| exit $$?` on the same line."""
+    text = (SKILL_ROOT / surface).read_text(encoding="utf-8")
+    lines = _recipe_lines_invoking_helper(text)
+    # 9 call sites: 2 plan-review + 4 commit branches + 1 consistency + 2 fact-check
+    assert len(lines) == 9, f"{surface}: expected 9 helper call sites, found {len(lines)}"
+    for line in lines:
+        assert "|| exit $$?" in line, f"{surface}: unguarded helper call: {line.strip()[:120]}"
+
+
+@pytest.mark.parametrize("surface", _RECIPE_SURFACES)
+def test_recipes_provide_every_token_their_prompt_file_needs(surface):
+    """Placeholder-drift lock (risk table row 2): for each helper call, every
+    registry token the referenced prompt file carries is provided INSIDE the
+    command substitution (env `TOKEN=` or file-backed `TOKEN_FILE=`) — a
+    same-line prefix outside the substitution never reaches the helper
+    (Tier-2 codex P1)."""
+    text = (SKILL_ROOT / surface).read_text(encoding="utf-8")
+    lines = _recipe_lines_invoking_helper(text)
+    assert lines, f"{surface}: no helper call sites found"
+    for line in lines:
+        m = re.search(r"render-review-prompt\.py \$\(CURDIR\)/(prompts/[a-z-]+\.txt)\)", line)
+        assert m, f"{surface}: cannot parse prompt file from: {line.strip()[:120]}"
+        rel_path = m.group(1)
+        substitution = line[line.index('"$$(') : line.index(')" || exit')]
+        for token in PROMPT_FILE_TOKENS[rel_path]:
+            assert f'{token}="' in substitution or f'{token}_FILE="' in substitution, (
+                f"{surface}: {rel_path} needs {{{token}}} but the substitution does not "
+                f"provide {token}= or {token}_FILE=: {line.strip()[:160]}"
+            )
+
+
+def test_plan_review_prompt_contains_cross_section_instruction():
+    """PR #4 idea-(a), retargeted from the rendered recipe to the prompt file:
+    the plan-review prompt must include the 'where else in the plan'
+    cross-section impact instruction."""
+    text = _prompt_text("prompts/plan-review.txt")
+    assert "OTHER sections of the same plan" in text, "idea-(a) prompt extension missing"
+
+
+def test_plan_review_prompt_contains_calibration_and_json_fence_contract():
+    """Test-surgery item (c): calibration wording + the machine-readable JSON
+    footer contract, retargeted from rendered recipe strings to the file."""
+    text = _prompt_text("prompts/plan-review.txt")
+    assert "Calibrate importance strictly" in text, "imp-3 calibration sentence missing"
+    assert "append a json code fence" in text, "JSON-fence footer contract missing"
+    assert "key: '{KEY}'" in text, "JSON footer must carry the {KEY} token"
+
+
+def test_simplify_merged_into_tier1_focus():
+    """AD7 (user request 2026-07-05): the dormant optional `/simplify` pass is
+    merged into Tier-1 — both commit-review prompt files carry the
+    simplification focus item, and CONTRIBUTING's sub-bullet shrank to the
+    one-liner (simplification is part of Tier-1's focus; `/simplify` stays an
+    optional interactive extra). Replaces the retired gating-wording test."""
+    for rel_path in (
+        "prompts/commit-review-plan-bound.txt",
+        "prompts/commit-review-unbound.txt",
+    ):
+        assert "reuse / dead code / cruft accumulated across fold rounds" in _prompt_text(
+            rel_path
+        ), f"{rel_path}: simplification focus item missing"
+
     rendered = _render("CONTRIBUTING.md.tmpl", _context())
-    # Extract the /simplify bullet line (and a few surrounding chars for safety)
-    idx = rendered.index("/simplify")
-    line_start = rendered.rfind("\n", 0, idx)
-    # Read forward to end of bullet (next bullet or blank line)
-    line_end = rendered.index("\n", idx + 1)
-    simplify_line = rendered[line_start:line_end]
-    for needle in ("Claude Code", "skip", "optional"):
-        assert needle.lower() in simplify_line.lower(), (
-            f"/simplify rendered template missing gating substring {needle!r}: {simplify_line!r}"
-        )
-
-    # Same check on dogfood
-    from pathlib import Path as _P
-
-    SKILL_ROOT = _P(__file__).resolve().parent.parent
     dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
-    idx_d = dogfood.index("/simplify")
-    line_start_d = dogfood.rfind("\n", 0, idx_d)
-    line_end_d = dogfood.index("\n", idx_d + 1)
-    dogfood_line = dogfood[line_start_d:line_end_d]
-    for needle in ("Claude Code", "skip", "optional"):
-        assert needle.lower() in dogfood_line.lower(), (
-            f"/simplify dogfood CONTRIBUTING.md missing gating substring {needle!r}: "
-            f"{dogfood_line!r}"
+    for surface_name, text in (("rendered", rendered), ("dogfood", dogfood)):
+        idx = text.index("/simplify")
+        line = text[text.rfind("\n", 0, idx) : text.index("\n", idx + 1)]
+        assert "part of Tier-1's focus" in line, (
+            f"{surface_name} CONTRIBUTING /simplify bullet must say Tier-1 covers it: {line!r}"
+        )
+        assert "optional interactive extra" in line, (
+            f"{surface_name} CONTRIBUTING /simplify bullet must keep the optional-extra note"
+        )
+        # The old gating machinery (>200 lines / multi-commit conditions) is gone.
+        assert ">200 lines" not in line, f"{surface_name}: old /simplify gating wording remains"
+
+
+def test_contributing_references_prompt_files():
+    """iter-1 FN4: CONTRIBUTING (template AND dogfood) documents BOTH manual
+    subagent variants by pointing at the prompt files with their substitution
+    sets — replaces the retired macro byte-identity test (single-source files
+    make cross-surface drift structurally impossible; what remains testable is
+    that the doc actually references them)."""
+    rendered = _render("CONTRIBUTING.md.tmpl", _context())
+    dogfood = (SKILL_ROOT / "CONTRIBUTING.md").read_text()
+    for surface_name, text in (("rendered", rendered), ("dogfood", dogfood)):
+        assert "prompts/commit-review-plan-bound.txt" in text, (
+            f"{surface_name} CONTRIBUTING must reference the plan-bound prompt file"
+        )
+        assert "prompts/commit-review-unbound.txt" in text, (
+            f"{surface_name} CONTRIBUTING must reference the unbound prompt file"
+        )
+        assert "{COMMIT_REF}" in text, (
+            f"{surface_name} CONTRIBUTING must name the {{COMMIT_REF}} substitution"
+        )
+        assert "{PLAN_FILE}" in text, (
+            f"{surface_name} CONTRIBUTING must name the {{PLAN_FILE}} substitution"
         )
 
 
-def test_makefile_tier1_prompt_contains_key_phrases():
-    """Defensive smoke check: known-good phrases must appear in the rendered
-    Tier-1 prompt regardless of macro construction."""
-    rendered = _render("Makefile.review.tmpl", _context())
-    rec_start = rendered.index("review-commit-by-codex:")
-    rec_end = rendered.index("review-commit-by-claude:")
-    rec_block = rendered[rec_start:rec_end]
-    for phrase in [
-        "tests that pass for the wrong reason",
-        "Tier-1",
-        "plan-impl drift",
-        "Do NOT edit files",
-    ]:
-        assert phrase in rec_block, f"Tier-1 prompt missing phrase: {phrase!r}"
+def test_tier1_prompt_files_contain_key_phrases():
+    """Retargeted from the recipe-block slice (Tier-2 codex P1): the prompt
+    BODY phrases the old test pinned now live in the prompt files."""
+    for rel_path in (
+        "prompts/commit-review-plan-bound.txt",
+        "prompts/commit-review-unbound.txt",
+    ):
+        text = _prompt_text(rel_path)
+        for phrase in [
+            "tests that pass for the wrong reason",
+            "Tier-1",
+            "plan-impl drift",
+            "Do NOT edit files",
+        ]:
+            assert phrase in text, f"{rel_path} missing phrase: {phrase!r}"
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,3 @@
-{% from 'Makefile.review.tmpl' import tier1_prompt -%}
 # Contributing to {{project_name}}
 
 This is the per-change workflow. Local + CI gates are aligned, so a green
@@ -208,7 +207,7 @@ within ~1 minute.
      Triage findings per the (a/b/c/d) framework in `CLAUDE.md` (with the four-questions check).
      - **Blockers**: fix and either `git commit --amend` (if not yet pushed) or create a follow-up focused commit. Then **rerun `make review-commit-by-*`** on the corrected commit until no importance-3 findings remain. Then `make check`. THEN push.
      - **MANDATED: append the Tier-1-suggested impl-log row to the plan's `## Implementation log` section before push**. The reviewer outputs a single markdown table row in the documented format (`| short-sha | what landed | deviations | issues |`). Paste it into your plan file, then create a SEPARATE docs-only commit (e.g. `git commit -m "Append impl-log row for <short-sha>"`). The docs-only commit qualifies as a trivial diff and is exempt from Tier-1 (no recursion). Amending the reviewed commit to include the row would change the SHA and invalidate the audit trail — the docs-only pattern keeps both stable. For commits that don't warrant a row (e.g. trivial-diff Tier-1-skips), mark `N/A` in the impl-log instead.
-     - **Optional `/simplify` pass** (Claude Code sessions only — not available in Codex CLI or generic terminals; skip if unavailable). Substantive PRs only: >200 lines OR multi-commit OR multiple iter folds. After Tier-1 fold + before push, run `/simplify` to catch reuse / dead code / cruft accumulated across folds. For trivial diffs OR non-Claude-Code sessions, skip — or do a manual cruft pass if you suspect accumulation.
+     - Simplification is part of Tier-1's focus (the commit-review prompts carry a reuse / dead code / cruft focus item, so it runs every time Tier-1 runs); `/simplify` remains an optional interactive extra in Claude Code sessions.
      - For trivial diffs (typo, single-line refactor): skip Tier-1 entirely; rely on {% if github_review_mode in ['claude', 'both-docs'] %}Tier-2 + `make check`{% else %}`make check`{% endif %}. Docs-only impl-log commits also qualify as trivial and don't loop back through Tier-1.
 
 10. **Push** and open a draft PR:
@@ -264,19 +263,15 @@ plateau rule.
 
 ## Tier-1 review — prompt template for in-session subagents
 
-Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. Substitute your commit SHA for `<SHA>` (get it from `git log -1 --pretty=%H`). **Pick ONE variant** matching your situation:
+Claude Code sessions (only) can run Tier-1 via a fresh `general-purpose` subagent instead of the Makefile target — useful when you want to ask follow-up questions interactively. The prompt texts live in `prompts/` — the same single source the Makefile recipes build from via `scripts/render-review-prompt.py`, so the subagent path can never drift from the recipe path. Substitute your commit SHA for `{COMMIT_REF}` (get it from `git log -1 --pretty=%H`). **Pick ONE variant** matching your situation:
 
 ### Variant A — If you have a plan to check drift against
 
-Substitute BOTH `<SHA>` and `<PLAN_FILE>` (your active plan path, e.g. `docs/plans/2026-05-17-foo.md`):
-
-> "{{ tier1_prompt('<SHA>', '<PLAN_FILE>') }}"
+Read `prompts/commit-review-plan-bound.txt` and substitute BOTH `{COMMIT_REF}` and `{PLAN_FILE}` (your active plan path, e.g. `docs/plans/2026-05-17-foo.md`); pass the result as the subagent prompt.
 
 ### Variant B — If you have no plan binding (code-correctness only)
 
-Substitute only `<SHA>`. The macro emits the unbound prompt; reviewer will limit findings to code-correctness and won't infer a plan file by mtime:
+Read `prompts/commit-review-unbound.txt` and substitute only `{COMMIT_REF}`. The unbound prompt tells the reviewer to limit findings to code-correctness and not to infer a plan file by mtime.
 
-> "{{ tier1_prompt('<SHA>') }}"
-
-(For non-Claude-Code sessions, just run `make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md` — or `make review-commit-by-codex PLAN_FILE=...` when Codex is the implementer; Tier-1 uses the same AI as the implementer, cross-AI review is Tier-2's job. The Makefile passes through `PLAN_FILE` to the same macro. Omit `PLAN_FILE` for the unbound variant.)
+(For non-Claude-Code sessions, just run `make review-commit-by-claude PLAN_FILE=docs/plans/<active>.md` — or `make review-commit-by-codex PLAN_FILE=...` when Codex is the implementer; Tier-1 uses the same AI as the implementer, cross-AI review is Tier-2's job. The Makefile builds its prompt from the same `prompts/` files. Omit `PLAN_FILE` for the unbound variant.)
 

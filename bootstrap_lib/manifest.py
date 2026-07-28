@@ -18,6 +18,7 @@ EXECUTABLE_TARGETS = {
     "scripts/extract-codex-session-id.py",
     "scripts/verify-plan-facts.py",
     "scripts/propagate-shared-rules.py",
+    "scripts/render-review-prompt.py",
     ".husky/pre-commit",
     ".husky/pre-push",
     "hooks/pre-commit",

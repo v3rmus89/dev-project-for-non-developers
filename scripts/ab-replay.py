@@ -60,31 +60,14 @@ ITERATIONS = (1, 2, 3)
 DEFAULT_MAX_SECONDS = 1800  # 30 min total wall-clock cap across all calls
 PER_CALL_MAX_SECONDS = 900  # a single call may not run away past 15 min (plan:157)
 
-# Close mirror of the Makefile review-plan-by-codex prompt (Makefile:186).
-# ASCII-only (the Makefile's em-dash is ascii-ified here to satisfy ruff RUF001);
-# the byte-identity prompt test is the BACKLOG escalation, not this screen.
-# Placeholders <<PLAN>> / <<ITER>> are substituted per call (str.format is unsafe
-# here -- the JSON-fence example below contains literal braces).
-PROMPT_TEMPLATE = (
-    "Review the plan file at '<<PLAN>>'. This is iteration <<ITER>>. Be skeptical "
-    "and critical (not approving). Inspect the repository as needed to verify the "
-    "plan's assumptions. Do NOT edit any files. Focus on: unsafe sequencing, hidden "
-    "assumptions, missing verification, missing rollback / adoption path, phases that "
-    "are too large, vague ownership / unclear acceptance criteria, places where manual "
-    "copy-paste could be automated, hidden dependency on subscriptions / API keys / "
-    "GitHub permissions / local tools, contradictions between the plan and current "
-    "repository state, and places where the plan says 'later' but the dependency is "
-    "actually needed earlier. Return findings ordered by importance (3 = blocker, "
-    "2 = improvement, 1 = polish). For each finding give: importance, what is wrong, "
-    "why it matters, concrete suggested change. End with a stop/go verdict: 'ready "
-    "after minor edits' / 'needs another iteration' / 'do not implement yet'. If there "
-    "are no importance-3 findings, say that explicitly. Tag every prose finding with "
-    "**FN (importance N):** at the start."
-)
+# The prompt is the SHARED prompts/plan-review.txt -- the same file the
+# Makefile recipes render via scripts/render-review-prompt.py. ab-replay
+# supplies every token the file carries ({PLAN_FILE}, {ITERATION}, {KEY});
+# `lib.build_plan_review_prompt` computes {KEY} with the Makefile's formula.
 
 
-def build_prompt(plan_path: str, iteration: int) -> str:
-    return PROMPT_TEMPLATE.replace("<<PLAN>>", plan_path).replace("<<ITER>>", str(iteration))
+def build_prompt(repo_abspath: str, plan_path: str, iteration: int) -> str:
+    return lib.build_plan_review_prompt(repo_abspath, plan_path, iteration)
 
 
 def _utcnow() -> str:
@@ -132,11 +115,15 @@ def run_call(call: lib.CodexCall, out_path: Path, timeout: float) -> dict:
 def _print_planned(repo: str, plan: str) -> None:
     print("DRY RUN -- planned calls (pre-registered order: FRESH x3, then CONTINUE):\n")
     print("  [fresh/seed argv]")
-    print("   ", " ".join(lib.build_fresh_call(repo, build_prompt(plan, 1)).argv[:-1]), "<PROMPT>")
+    print(
+        "   ",
+        " ".join(lib.build_fresh_call(repo, build_prompt(repo, plan, 1)).argv[:-1]),
+        "<PROMPT>",
+    )
     print("  [resume argv]")
     print(
         "   ",
-        " ".join(lib.build_resume_call("<THREAD_ID>", build_prompt(plan, 2)).argv[:-1]),
+        " ".join(lib.build_resume_call("<THREAD_ID>", build_prompt(repo, plan, 2)).argv[:-1]),
         "<PROMPT>",
     )
     print("\n  stdin: /dev/null on every call; raw JSONL -> the --out-dir (/tmp), never committed.")
@@ -204,13 +191,13 @@ def main(argv: list[str]) -> int:
     # --- FRESH block first (pre-registered order; warms cache for continue) ---
     fresh_records = []
     for it in ITERATIONS:
-        call = lib.build_fresh_call(args.repo, build_prompt(args.plan, it))
+        call = lib.build_fresh_call(args.repo, build_prompt(args.repo, args.plan, it))
         rec = run_call(call, out_dir / f"fresh-iter{it}.jsonl", call_timeout())
         fresh_records.append(rec)
         print(f"fresh iter{it}: {rec['elapsed_s']}s, uncached={_uncached(rec)}")
 
     # --- CONTINUE block: seed iter 1, resume iters 2/3 on one thread ---
-    seed_call = lib.build_fresh_call(args.repo, build_prompt(args.plan, 1))
+    seed_call = lib.build_fresh_call(args.repo, build_prompt(args.repo, args.plan, 1))
     seed_jsonl = out_dir / "continue-seed-iter1.jsonl"
     seed_rec = run_call(seed_call, seed_jsonl, call_timeout())
     tid = _extract_thread_id(seed_jsonl)
@@ -219,7 +206,7 @@ def main(argv: list[str]) -> int:
     )
     continue_records = [seed_rec]
     for it in (2, 3):
-        call = lib.build_resume_call(tid, build_prompt(args.plan, it))
+        call = lib.build_resume_call(tid, build_prompt(args.repo, args.plan, it))
         rec = run_call(call, out_dir / f"continue-resume-iter{it}.jsonl", call_timeout())
         continue_records.append(rec)
         print(f"continue resume iter{it}: {rec['elapsed_s']}s, uncached={_uncached(rec)}")
