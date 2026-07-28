@@ -137,7 +137,11 @@ def main() -> int:
     # destination is containment-validated FIRST -- a symlinked prompts/ dir
     # or helper file pointing outside the project would otherwise let --apply
     # overwrite an unrelated path (dry-run reads through it too).
-    project_root = args.target.resolve().parent
+    # `.parent.resolve()`, NOT `.resolve().parent`: the latter follows a symlinked
+    # --target and reroots every copy at the symlink's real directory, silently
+    # writing outside the project the operator named. Resolving the containing
+    # directory keeps the migration where they pointed it.
+    project_root = args.target.parent.resolve()
     copies: list[tuple[str, str]] = []  # (rel_path, "new" | "changed" | "mode")
     for rel in _files_to_carry():
         src = _SKILL_ROOT / rel
@@ -191,8 +195,14 @@ def main() -> int:
         print("(prompt files + helper already in sync)")
 
     if args.apply:
-        if block_differs:
-            args.target.write_text("".join(updated_lines))
+        # Order matters: carry the files FIRST, rewrite the Makefile LAST.
+        # The Makefile edit is what makes the recipes reference prompts/ and the
+        # helper, so writing it before the copies means any mid-loop failure
+        # (chmod/mkdir/copy error, or the TOCTOU re-check below firing) leaves a
+        # Makefile pointing at files that were never installed -- broken, with
+        # the sentinel block already consumed. Copying first inverts that: a
+        # failure leaves the Makefile untouched and at worst some unreferenced
+        # files, which the printed `git checkout` hint cleans up.
         for rel, status in copies:
             src = _SKILL_ROOT / rel
             dst = validate_target_path(project_root, rel)  # re-check at write time
@@ -201,6 +211,8 @@ def main() -> int:
                 continue
             dst.parent.mkdir(parents=True, exist_ok=True)
             _atomic_copy(src, dst, 0o755 if rel == _HELPER_REL else 0o644)
+        if block_differs:
+            args.target.write_text("".join(updated_lines))
         print("\nApplied. Use `git diff` to review; `git checkout` to revert.")
         return 0
     else:

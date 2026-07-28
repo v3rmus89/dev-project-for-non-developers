@@ -216,3 +216,67 @@ def test_migration_set_matches_shipped_inventory():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod._files_to_carry() == [*PROMPT_RELS, HELPER_REL]
+
+
+def test_symlinked_target_does_not_reroot_the_migration(tmp_path):
+    """Tier-2 P2 (PR #52): `--target` pointing at a SYMLINKED Makefile must not
+    move the migration to the symlink's real directory.
+
+    The old `args.target.resolve().parent` followed the link, so every carried
+    file landed next to the pointee instead of in the project the operator
+    named — the same escape class already guarded for a symlinked `prompts/`
+    dir and helper file, just on the `--target` argument. Codex claimed this
+    was fixed in commit `ddcfbed`; that object does not exist in this repo, so
+    the fix is landed and tested here instead.
+    """
+    target, _stale_marker = _make_stale_downstream(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    real_makefile = elsewhere / "Makefile"
+    real_makefile.write_text((target / "Makefile").read_text())
+
+    link = target / "Makefile.link"
+    link.symlink_to(real_makefile)
+
+    result = _run_migrate(link, "--apply")
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+
+    # Carried files belong beside the symlink the operator named...
+    assert (target / HELPER_REL).is_file(), "helper did not land in the named project"
+    # ...and must NOT have been rerouted next to the pointee.
+    assert not (elsewhere / HELPER_REL).exists(), (
+        "migration followed the symlinked --target and wrote outside the named project"
+    )
+    for rel in PROMPT_RELS:
+        assert not (elsewhere / rel).exists(), f"{rel} was rerouted to the pointee's directory"
+
+
+def test_failed_copy_leaves_makefile_unmodified(tmp_path):
+    """Tier-2 P1 (PR #52): a mid-apply copy failure must not leave the Makefile
+    rewritten to reference files that were never installed.
+
+    The Makefile edit is what points the recipes at prompts/ and the helper, so
+    writing it before the copies meant any failure in the copy loop produced a
+    broken target with the sentinel block already consumed and no restore path.
+    Copies now run first. Simulated by making the destination prompts/ directory
+    read-only so the copy loop raises partway through.
+    """
+    target, stale_marker = _make_stale_downstream(tmp_path)
+    before = (target / "Makefile").read_text()
+    assert stale_marker in before, "fixture should start stale"
+
+    prompts_dir = target / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    prompts_dir.chmod(0o500)  # readable/traversable, not writable
+    try:
+        result = _run_migrate(target / "Makefile", "--apply")
+    finally:
+        prompts_dir.chmod(0o755)
+
+    assert result.returncode != 0, (
+        f"a failed copy must not report success: {result.returncode}\n{result.stdout}"
+    )
+    assert (target / "Makefile").read_text() == before, (
+        "Makefile was rewritten despite the copy loop failing — it now references "
+        "prompt files that were never installed"
+    )
