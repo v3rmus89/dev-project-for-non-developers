@@ -334,3 +334,30 @@ def test_is_read_only_argv_resume_without_pin_is_rejected():
 def test_is_read_only_argv_fresh_without_sandbox_pin_is_rejected():
     unsafe = ["w", "--", "codex", "exec", "--json", "-C", "/r", "p"]
     assert not lib.is_read_only_argv(unsafe)
+
+
+# ── DEFAULT_PLAN must name a plan file that exists (Bucket D) ───────────────
+#
+# `scripts/ab-replay.py` defaults to reviewing one real checked-in plan. The
+# constant is a repo-relative path, so archiving or renaming that plan silently
+# turns the default into a path the operator only discovers at live-call time
+# (the script is operator-run, never exercised by `make check`). Assert the
+# path resolves; the file is hyphenated, so load it the importlib way.
+
+
+def _load_ab_replay():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ab_replay_cli", SKILL_ROOT / "scripts" / "ab-replay.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_default_plan_exists():
+    default_plan = _load_ab_replay().DEFAULT_PLAN
+    assert (SKILL_ROOT / default_plan).is_file(), (
+        f"scripts/ab-replay.py DEFAULT_PLAN points at a missing file: {default_plan}"
+    )

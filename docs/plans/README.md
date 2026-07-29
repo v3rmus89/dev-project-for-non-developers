@@ -34,6 +34,30 @@ Plan-review outputs use this convention:
 The `-by-codex-` / `-by-claude-` infix keeps per-reviewer iteration counters
 independent.
 
+## Archiving completed plans
+
+When a plan's implementation PR merges, move the plan file into
+`docs/plans/archive/`:
+
+```bash
+mkdir -p docs/plans/archive
+git mv docs/plans/YYYY-MM-DD-<slug>.md docs/plans/archive/
+```
+
+The `mkdir` is not optional on the first archive: git does not track empty
+directories, so `docs/plans/archive/` does not exist in a fresh checkout and
+`git mv` fails with `fatal: destination directory does not exist`.
+
+Archived plans stay in the repo — they are the institutional memory this
+directory exists for — but they drop out of `make status`, whose plan
+auto-detect globs `docs/plans/*.md` non-recursively. So `docs/plans/` holds
+only plans still awaiting or undergoing implementation, and `make status` names
+the active one instead of warning that several are present.
+
+Moving a plan changes what its own relative links resolve against (one
+directory deeper) and breaks every in-repo reference that pointed at its old
+path. Rewrite both in the same commit as the move.
+
 ## Workflow
 
 Two distinct PR types:

@@ -31,7 +31,7 @@ once `make install-hooks` is run on a git-initialised clone.
 workflow into Python / Node-TS / Go projects. PR #1 ships Python only.
 
 Single source of truth for what's in scope and why:
-[docs/plans/2026-05-15-skill-pr1-minimal-python-bootstrap.md](docs/plans/2026-05-15-skill-pr1-minimal-python-bootstrap.md).
+[docs/plans/archive/2026-05-15-skill-pr1-minimal-python-bootstrap.md](docs/plans/archive/2026-05-15-skill-pr1-minimal-python-bootstrap.md).
 
 ## Plan review loop
 

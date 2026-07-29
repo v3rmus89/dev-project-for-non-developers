@@ -7,7 +7,7 @@ No escalation to a full-rigor measurement is warranted (the screen showed no
 best-case payoff to chase; it showed a structural penalty).
 
 This is the screen-only measurement specified in
-[docs/plans/2026-06-01-continue-thread-ab-measurement.md](../plans/2026-06-01-continue-thread-ab-measurement.md).
+[docs/plans/archive/2026-06-01-continue-thread-ab-measurement.md](../plans/archive/2026-06-01-continue-thread-ab-measurement.md).
 By design the screen can only conclude *stay-fresh* / *escalate-to-full-rigor* /
 *inconclusive* — it never flips the default.
 
@@ -15,7 +15,7 @@ By design the screen can only conclude *stay-fresh* / *escalate-to-full-rigor* /
 
 - **Runner**: `scripts/ab-replay.py --execute` (metric + argv logic in the
   unit-tested `scripts/ab_replay_lib.py`).
-- **Subject plan P**: `docs/plans/2026-05-31-skill-pr2-bucket-a-skill-wrapper.md`,
+- **Subject plan P**: `docs/plans/archive/2026-05-31-skill-pr2-bucket-a-skill-wrapper.md`,
   reviewed at iterations 1/2/3.
 - **codex**: codex-cli 0.130.0. **Run date**: 2026-06-01.
 - **Pre-registered run order**: FRESH block (3 new sessions) first, then CONTINUE

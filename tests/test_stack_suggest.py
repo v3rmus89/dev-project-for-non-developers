@@ -12,7 +12,7 @@ import pytest
 from bootstrap_lib import _flags, stack_suggest
 from bootstrap_lib.stack_suggest import StackSuggestion, suggest_stack
 
-# ── Brief acceptance matrix v1 — fixed in docs/plans/2026-05-22-skill-pr9-… ──
+# ── Brief acceptance matrix v1 — fixed in docs/plans/archive/2026-05-22-skill-pr9-… ──
 # (brief, expected language or None). Must not be weakened without a plan
 # amendment; may be extended (every added signal needs a row — Tier-2 #2).
 _MATRIX: list[tuple[str, str | None]] = [

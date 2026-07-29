@@ -389,3 +389,17 @@ def test_looks_like_env_failure_true(text):
 )
 def test_looks_like_env_failure_false(text):
     assert not verify.looks_like_env_failure(text)
+
+
+# ── DEFAULT_PLAN must name a plan file that exists (Bucket D) ───────────────
+#
+# The verifier reviews one real checked-in plan when invoked without an argv
+# plan path (main(): `plan_file = argv[0] if argv else DEFAULT_PLAN`). It makes
+# live, paid codex calls and never runs in `make check`, so an archived or
+# renamed plan would otherwise surface as a live-run failure months later.
+
+
+def test_default_plan_exists():
+    assert (SKILL_ROOT / verify.DEFAULT_PLAN).is_file(), (
+        f"scripts/verify-v13-5.py DEFAULT_PLAN points at a missing file: {verify.DEFAULT_PLAN}"
+    )

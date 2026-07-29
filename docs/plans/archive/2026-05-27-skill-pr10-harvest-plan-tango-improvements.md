@@ -418,13 +418,13 @@ After commit 4, run `make check` and `make test` to confirm the full test surfac
 
 ## Critical files to read before each iter's review
 
-- [Makefile:80-209](Makefile) — current review targets (the SELFTEST-OVERLAP block)
-- [shared/Makefile.review.tmpl](shared/Makefile.review.tmpl) — template counterpart; ALL changes happen here first, then mirror to Makefile
-- [tests/test_triage_byte_identity.py](tests/test_triage_byte_identity.py) — confirm this stays untouched
-- [tests/test_selftest_overlap.py](tests/test_selftest_overlap.py) — confirm Makefile↔template mirror still valid
-- [LESSONS.md:98-104](LESSONS.md) — the percent-trim lesson (relevant when reviewer suggests "also trim CLAUDE.md while you're here")
-- [LESSONS.md:108-114](LESSONS.md) — Tier-1 same-AI rule (relevant when reviewer suggests changing review-direction semantics)
-- [docs/plans/README.md](docs/plans/README.md) — section taxonomy (this plan file follows it)
-- [CLAUDE.md](CLAUDE.md) — confirm the harvest does NOT contradict the triage / pre-coding / approval-gate sections
+- [Makefile:80-209](../../../Makefile) — current review targets (the SELFTEST-OVERLAP block)
+- [shared/Makefile.review.tmpl](../../../shared/Makefile.review.tmpl) — template counterpart; ALL changes happen here first, then mirror to Makefile
+- [tests/test_triage_byte_identity.py](../../../tests/test_triage_byte_identity.py) — confirm this stays untouched
+- [tests/test_selftest_overlap.py](../../../tests/test_selftest_overlap.py) — confirm Makefile↔template mirror still valid
+- [LESSONS.md:98-104](../../../LESSONS.md) — the percent-trim lesson (relevant when reviewer suggests "also trim CLAUDE.md while you're here")
+- [LESSONS.md:108-114](../../../LESSONS.md) — Tier-1 same-AI rule (relevant when reviewer suggests changing review-direction semantics)
+- [docs/plans/README.md](../README.md) — section taxonomy (this plan file follows it)
+- [CLAUDE.md](../../../CLAUDE.md) — confirm the harvest does NOT contradict the triage / pre-coding / approval-gate sections
 - [egsok/plan-tango plugins/plan-tango/skills/run/SKILL.md](https://github.com/egsok/plan-tango/blob/main/plugins/plan-tango/skills/run/SKILL.md) — the source we're harvesting from; useful for the reviewer to cross-check claims about plan-tango's mechanics
 - `~/code/downstream-app/docs/plans/2026-05-25-phase-5a-prep-amendments.md` (**external reference — may not be accessible to all reviewers; this is a sibling repo on the original driver's machine**) — the 17-iter case study that motivates Bucket E. The Iteration log + Evidence table inside this plan file restate the relevant trajectory data inline, so reviewers without access to the sibling repo can still verify the convergence pattern.
