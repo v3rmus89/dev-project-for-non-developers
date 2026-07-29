@@ -29,6 +29,12 @@ Covered link forms: inline (`[text](target)`), reference-style definitions
 Raw HTML anchors are NOT covered — none exist in this corpus, and adding an
 HTML parser to catch a form nothing uses would be cost without coverage.
 
+A bare target ends at the first `)`, so a filename containing parentheses
+(`[g](guide(v2).md)`) must use the angle-bracket form (`[g](<guide(v2).md>)`),
+which this gate resolves correctly. Balanced-paren parsing is parked in
+BACKLOG.md rather than built: no such filename exists here (plan files are
+dated slugs), and the workaround is one character at each end.
+
 Scope note: this gate covers markdown LINK form only. Backticked path
 citations (`` `docs/plans/foo.md` ``) are prose, not links, and stay unchecked;
 the two `DEFAULT_PLAN` script constants get their own existence assertions in
@@ -61,6 +67,10 @@ _LINK_RE = re.compile(
 # TARGET is a path like any other and rots the same way.
 _REF_DEF_RE = re.compile(r"^ {0,3}\[(?P<label>[^\]]+)\]:\s+(?:<(?P<angle>[^>\n]*)>|(?P<bare>\S+))")
 _BACKTICK_RUN_RE = re.compile(r"`+")
+# RFC 3986 scheme: letter, then letters/digits/`+`/`-`/`.`, then `:`. A relative
+# path cannot match it — `docs/foo:bar.md` has a `/` before the colon, and `/`
+# is not in the scheme character set.
+_URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*:")
 
 
 def _load_fence_tracker():
@@ -100,10 +110,17 @@ def _mask_code_spans(line: str) -> str:
 
 
 def _is_checkable(target: str) -> bool:
-    """False for targets with no in-repo path to resolve."""
-    if not target or target.startswith(("#", "mailto:", "<")):
+    """False for targets with no in-repo path to resolve.
+
+    Externality is decided by URI SCHEME, not by the presence of `://`: `tel:`,
+    `sms:`, and `data:` are perfectly valid targets with no `//` in them, and
+    treating them as repo-relative paths would fail `make check` on a document
+    that is entirely correct. `//host/path` (protocol-relative) is external for
+    the same reason — and would otherwise be read as a root-relative path.
+    """
+    if not target or target.startswith(("#", "<", "//")):
         return False
-    return "://" not in target
+    return not _URI_SCHEME_RE.match(target)
 
 
 def _target_of(m: re.Match) -> str:
@@ -151,7 +168,12 @@ def broken_links(path: Path, root: Path = SKILL_ROOT) -> list[tuple[int, str]]:
         if not bare:
             continue
         base = root if bare.startswith("/") else path.parent
-        if not (base / bare.lstrip("/")).exists():
+        resolved = (base / bare.lstrip("/")).resolve()
+        # Containment, not just existence: `../../etc/passwd` exists on most
+        # machines and would pass an exists()-only check, but it is not an
+        # in-repo target and 404s for every reader on GitHub. A link that only
+        # works on the author's filesystem is broken.
+        if not resolved.is_relative_to(root.resolve()) or not resolved.exists():
             broken.append((lineno, target))
     return broken
 
@@ -211,14 +233,14 @@ def test_a_real_break_is_detected(tmp_path):
     """The detector must actually fail on a broken link (not just never fire)."""
     doc = tmp_path / "doc.md"
     doc.write_text("See [the thing](does-not-exist.md).\n", encoding="utf-8")
-    assert broken_links(doc) == [(1, "does-not-exist.md")]
+    assert broken_links(doc, root=tmp_path) == [(1, "does-not-exist.md")]
 
 
 def test_a_resolving_link_is_accepted(tmp_path):
     (tmp_path / "target.md").write_text("hi\n", encoding="utf-8")
     doc = tmp_path / "doc.md"
     doc.write_text("See [the thing](target.md#anchor).\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 # ── exemptions ─────────────────────────────────────────────────────────────
@@ -227,19 +249,19 @@ def test_a_resolving_link_is_accepted(tmp_path):
 def test_code_span_link_is_exempt(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("Link syntax looks like `[Makefile](Makefile)` in prose.\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_double_backtick_span_link_is_exempt(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("A span holding a backtick: `` [x](nope.md) `` here.\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_fenced_block_link_is_exempt(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("```\n[x](nope.md)\n```\n\ntext\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_nested_fence_does_not_reopen_the_scan(tmp_path):
@@ -247,7 +269,7 @@ def test_nested_fence_does_not_reopen_the_scan(tmp_path):
     the naive toggle would treat it as a close and start checking links again."""
     doc = tmp_path / "doc.md"
     doc.write_text("````\n```\n[x](nope.md)\n```\n````\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_external_and_anchor_targets_are_exempt(tmp_path):
@@ -256,14 +278,14 @@ def test_external_and_anchor_targets_are_exempt(tmp_path):
         "[a](https://example.com/x.md) [b](#section) [c](mailto:x@example.com)\n",
         encoding="utf-8",
     )
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_link_after_a_closed_fence_is_still_checked(tmp_path):
     """The fence must close: a break in prose following a code block is real."""
     doc = tmp_path / "doc.md"
     doc.write_text("```\ncode\n```\n\n[x](nope.md)\n", encoding="utf-8")
-    assert broken_links(doc) == [(5, "nope.md")]
+    assert broken_links(doc, root=tmp_path) == [(5, "nope.md")]
 
 
 # ── link forms beyond the plain inline one ─────────────────────────────────
@@ -273,40 +295,40 @@ def test_reference_style_definition_is_checked(tmp_path):
     """`[label]: target` is a link form and rots exactly like an inline one."""
     doc = tmp_path / "doc.md"
     doc.write_text("See [the thing][t].\n\n[t]: does-not-exist.md\n", encoding="utf-8")
-    assert broken_links(doc) == [(3, "does-not-exist.md")]
+    assert broken_links(doc, root=tmp_path) == [(3, "does-not-exist.md")]
 
 
 def test_reference_style_definition_that_resolves_is_accepted(tmp_path):
     (tmp_path / "target.md").write_text("hi\n", encoding="utf-8")
     doc = tmp_path / "doc.md"
     doc.write_text('[t]: target.md "A title"\n', encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_reference_style_definition_in_fence_is_exempt(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("```\n[t]: nope.md\n```\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_angle_bracket_target_is_checked(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("See [x](<does-not-exist.md>).\n", encoding="utf-8")
-    assert broken_links(doc) == [(1, "does-not-exist.md")]
+    assert broken_links(doc, root=tmp_path) == [(1, "does-not-exist.md")]
 
 
 def test_angle_bracket_target_with_a_space_is_checked(tmp_path):
     """The form exists precisely to allow spaces, which the bare form cannot."""
     doc = tmp_path / "doc.md"
     doc.write_text("See [x](<no such file.md>).\n", encoding="utf-8")
-    assert broken_links(doc) == [(1, "no such file.md")]
+    assert broken_links(doc, root=tmp_path) == [(1, "no such file.md")]
 
 
 def test_angle_bracket_target_that_resolves_is_accepted(tmp_path):
     (tmp_path / "a target.md").write_text("hi\n", encoding="utf-8")
     doc = tmp_path / "doc.md"
     doc.write_text("See [x](<a target.md>).\n", encoding="utf-8")
-    assert broken_links(doc) == []
+    assert broken_links(doc, root=tmp_path) == []
 
 
 def test_root_relative_target_resolves_against_the_repo_root(tmp_path):
@@ -324,3 +346,41 @@ def test_root_relative_target_that_is_missing_is_still_caught(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("See [x](/docs/nope.md).\n", encoding="utf-8")
     assert broken_links(doc, root=tmp_path) == [(1, "/docs/nope.md")]
+
+
+def test_scheme_targets_without_a_double_slash_are_exempt(tmp_path):
+    """`tel:`/`sms:`/`data:` have no `://`; treating them as paths false-fails."""
+    doc = tmp_path / "doc.md"
+    doc.write_text(
+        "[a](tel:+15551212) [b](sms:+15551212) [c](data:image/png;base64,AAA)\n",
+        encoding="utf-8",
+    )
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_protocol_relative_url_is_exempt(tmp_path):
+    """`//host/path` is external — and would otherwise read as root-relative."""
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](//example.com/foo.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_a_colon_in_a_relative_path_is_not_a_scheme(tmp_path):
+    """`docs/foo:bar.md` is a path, not a URI — the `/` precedes the colon."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "foo:bar.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](docs/foo:bar.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_target_escaping_the_repo_is_broken_even_when_it_exists(tmp_path):
+    """A link that resolves only on the author's filesystem 404s for readers."""
+    outside = tmp_path / "outside.md"
+    outside.write_text("hi\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    doc = repo / "docs" / "doc.md"
+    doc.write_text("See [x](../../outside.md).\n", encoding="utf-8")
+    assert outside.exists(), "fixture must exist, or the test proves nothing"
+    assert broken_links(doc, root=repo) == [(1, "../../outside.md")]

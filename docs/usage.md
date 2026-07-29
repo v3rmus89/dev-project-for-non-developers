@@ -570,6 +570,14 @@ files and `scripts/render-review-prompt.py` that its recipes call. The three mov
 as a unit — a migrated block whose prompt files are missing fails at review time,
 not at migration time.
 
+**Its dry run is not symmetrical, and this matters.** You get a full unified diff
+for the Makefile block, but the carried files are listed only by name and status
+(`prompts/plan-review.txt (changed)`) — no content diff. `--apply` then replaces
+each one wholesale. So if an adopted project has edited a prompt file locally,
+the dry run will NOT show you what you are about to lose. Before applying step 2
+against a project you have customised, commit or stash first, and diff the named
+files against this repo's copies yourself.
+
 **3. Newly added planned files** — a plain adopt re-run
 
 ```bash

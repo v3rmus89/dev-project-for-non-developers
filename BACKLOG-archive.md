@@ -195,6 +195,23 @@ plan file drift detector). Different problem, separate trigger.
 
 ---
 
+### `review-plan-fact-check-by-{claude,codex}` subagent target (imp-2)
+
+**Status**: unparked → shipped in PR #30 (feat/pr0-review-plan-fact-check).
+
+**Why parked**: separate from idea-(b) consistency check. A narrow subagent
+that reads the plan + the current repo, and for every file path / test name /
+line number / module reference in the plan, verifies it matches reality.
+Catches the plan-vs-repo factual-mismatch class of findings (~25% of what
+Codex finds) before Codex does.
+
+**Triggers to pick up**: if iter-N reviews on upcoming PRs keep finding
+plan-vs-repo factual mismatches.
+
+**Rough effort**: ~half a day.
+
+---
+
 ## PR #7 follow-ups
 
 ### ✅ Adopt-mode skips the greenfield smoke placeholders for an existing project (imp-2) — DONE in PR #48

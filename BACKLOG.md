@@ -30,10 +30,16 @@ and the optional `/simplify` pass, which shipped as a documented step and shows 
 evidence of ever having fired in a shipped PR record (retired into the Tier-1 focus
 list by the pre-expansion refactors plan, AD7).
 
-**How to satisfy it**: `scripts/ab-replay.py` is the existing harness — it replays
-one real checked-in plan through both arms and reports the cost ratio. A qualitative
-win ("the review reads better") counts only if it is stated as a claim someone else
-could check against the two outputs.
+**How to satisfy it**: run one real checked-in plan through the loop twice — once
+on a checkout WITHOUT the feature, once WITH it — and compare captured cost plus a
+stated quality claim. There is no turnkey harness for this: `scripts/ab-replay.py`
+compares fresh-vs-continued sessions against a single repo state, so it measures
+session strategy, not features. What it does supply is the precedent and the
+plumbing — pinned read-only argv, per-call token capture, a pre-registered run
+order, a verdict that cannot flip the default on its own. Reuse those; point the
+two runs at two checkouts via `--repo` and compare across runs rather than within
+one. A qualitative win ("the review reads better") counts only if stated as a claim
+someone else could check against the two outputs.
 
 **Scope**: this governs additions to the loop. Fixes to an existing target
 (correctness, safety, a broken guard) are not features and need no A/B.
@@ -688,23 +694,6 @@ complementary catches that each reviewer surfaces.
 AND idea-(a)/(b) prompt improvements don't reduce loop count enough.
 
 **Rough effort**: ~1 day to design + measure on a real PR.
-
----
-
-### `review-plan-fact-check-by-{claude,codex}` subagent target (imp-2)
-
-**Status**: unparked → shipped in PR #30 (feat/pr0-review-plan-fact-check).
-
-**Why parked**: separate from idea-(b) consistency check. A narrow subagent
-that reads the plan + the current repo, and for every file path / test name /
-line number / module reference in the plan, verifies it matches reality.
-Catches the plan-vs-repo factual-mismatch class of findings (~25% of what
-Codex finds) before Codex does.
-
-**Triggers to pick up**: if iter-N reviews on upcoming PRs keep finding
-plan-vs-repo factual mismatches.
-
-**Rough effort**: ~half a day.
 
 ---
 
