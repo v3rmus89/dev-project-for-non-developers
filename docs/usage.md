@@ -542,9 +542,18 @@ with `--apply`.
 **1. Shared markdown sections** — `scripts/propagate-shared-rules.py`
 
 ```bash
-./venv/bin/python scripts/propagate-shared-rules.py ~/code/<target>/CLAUDE.md
-./venv/bin/python scripts/propagate-shared-rules.py --apply ~/code/<target>/CLAUDE.md
+./venv/bin/python scripts/propagate-shared-rules.py \
+    ~/code/<target>/CLAUDE.md ~/code/<target>/AGENTS.md \
+    ~/code/<target>/CONTRIBUTING.md ~/code/<target>/docs/plans/README.md
+./venv/bin/python scripts/propagate-shared-rules.py --apply \
+    ~/code/<target>/CLAUDE.md ~/code/<target>/AGENTS.md \
+    ~/code/<target>/CONTRIBUTING.md ~/code/<target>/docs/plans/README.md
 ```
+
+**Pass all four, not just `CLAUDE.md`.** The triage rule is byte-identical
+across every one of them, and this repo has a test that fails when they drift.
+Syncing one file creates exactly the drift that test exists to catch — in the
+adopted project, where no such test is watching.
 
 Section-level replacement: it swaps the named `##` section (default
 `## Triaging review findings`; `--section` selects another, `--source` another

@@ -49,6 +49,7 @@ import importlib.util
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -97,6 +98,13 @@ def _mask_code_spans(line: str) -> str:
         m = _BACKTICK_RUN_RE.match(line, i)
         if not m:
             i += 1
+            continue
+        # A backslash-escaped backtick is a literal character, not a delimiter:
+        # in `\`[x](nope.md)\`` CommonMark leaves the link ACTIVE. Masking it
+        # would hide a broken target — a silent pass, the failure this gate
+        # exists to prevent.
+        if (len(line[: m.start()]) - len(line[: m.start()].rstrip("\\"))) % 2 == 1:
+            i = m.start() + 1
             continue
         ticks = m.group(0)
         close = line.find(ticks, m.end())
@@ -151,7 +159,15 @@ def iter_links(text: str):
             yield lineno, _target_of(ref)
 
 
-def broken_links(path: Path, root: Path = SKILL_ROOT) -> list[tuple[int, str]]:
+def _is_tracked(resolved: Path, root: Path, tracked: set[str]) -> bool:
+    """A file must be in the index; a directory must contain something that is."""
+    rel = str(resolved.relative_to(root.resolve()))
+    return rel in tracked or any(k.startswith(rel + "/") for k in tracked)
+
+
+def broken_links(
+    path: Path, root: Path = SKILL_ROOT, tracked: set[str] | None = None
+) -> list[tuple[int, str]]:
     """Every in-repo link in *path* that does not resolve.
 
     Targets resolve from the linking file's directory, EXCEPT root-relative ones
@@ -168,12 +184,20 @@ def broken_links(path: Path, root: Path = SKILL_ROOT) -> list[tuple[int, str]]:
         if not bare:
             continue
         base = root if bare.startswith("/") else path.parent
-        resolved = (base / bare.lstrip("/")).resolve()
+        # `[g](a%20b.md)` is how a link to `a b.md` is written; GitHub decodes
+        # it, so asking the filesystem for the literal `%20` name would fail a
+        # correct link.
+        resolved = (base / unquote(bare.lstrip("/"))).resolve()
         # Containment, not just existence: `../../etc/passwd` exists on most
         # machines and would pass an exists()-only check, but it is not an
         # in-repo target and 404s for every reader on GitHub. A link that only
         # works on the author's filesystem is broken.
         if not resolved.is_relative_to(root.resolve()) or not resolved.exists():
+            broken.append((lineno, target))
+        elif tracked is not None and not _is_tracked(resolved, root, tracked):
+            # Existing-but-untracked is a 404 for every reader after push: the
+            # file is on this machine and not in the commit. Same silent-pass
+            # class as the traversal case above.
             broken.append((lineno, target))
     return broken
 
@@ -191,7 +215,19 @@ def _tracked_markdown() -> list[str]:
     return sorted(p for p in r.stdout.split("\0") if p)
 
 
+def _tracked_files() -> set[str]:
+    r = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=SKILL_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {p for p in r.stdout.split("\0") if p}
+
+
 TRACKED_MARKDOWN = _tracked_markdown()
+TRACKED_FILES = _tracked_files()
 
 
 # ── the gate ───────────────────────────────────────────────────────────────
@@ -200,7 +236,7 @@ TRACKED_MARKDOWN = _tracked_markdown()
 @pytest.mark.parametrize("rel_path", TRACKED_MARKDOWN)
 def test_in_repo_links_resolve(rel_path):
     path = SKILL_ROOT / rel_path
-    broken = broken_links(path)
+    broken = broken_links(path, tracked=TRACKED_FILES)
     assert not broken, "\n".join(
         [f"{rel_path} has in-repo links that do not resolve:"]
         + [f"  line {lineno}: ({target})" for lineno, target in broken]
@@ -384,3 +420,43 @@ def test_target_escaping_the_repo_is_broken_even_when_it_exists(tmp_path):
     doc.write_text("See [x](../../outside.md).\n", encoding="utf-8")
     assert outside.exists(), "fixture must exist, or the test proves nothing"
     assert broken_links(doc, root=repo) == [(1, "../../outside.md")]
+
+
+def test_escaped_backticks_do_not_mask_a_live_link(tmp_path):
+    r"""`\`[x](nope.md)\`` — escaped backticks are literal, so the link is ACTIVE.
+    Treating them as code-span delimiters would hide a broken target."""
+    doc = tmp_path / "doc.md"
+    doc.write_text("A literal backtick pair: \\`[x](nope.md)\\` here.\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == [(1, "nope.md")]
+
+
+def test_unescaped_backticks_still_mask(tmp_path):
+    """The escape handling must not break the ordinary code-span case."""
+    doc = tmp_path / "doc.md"
+    doc.write_text("Ordinary span: `[x](nope.md)` here.\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_percent_encoded_target_is_decoded(tmp_path):
+    """`[g](a%20b.md)` is how a link to `a b.md` is written; GitHub decodes it."""
+    (tmp_path / "a b.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [g](a%20b.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_untracked_target_is_broken_even_though_it_exists(tmp_path):
+    """A file on disk but not in the commit 404s for every reader after push."""
+    (tmp_path / "scratch.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](scratch.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path, tracked=set()) == [(1, "scratch.md")]
+    assert broken_links(doc, root=tmp_path, tracked={"scratch.md"}) == []
+
+
+def test_directory_target_counts_as_tracked_when_it_holds_a_tracked_file(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [d](docs).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path, tracked={"docs/a.md"}) == []
