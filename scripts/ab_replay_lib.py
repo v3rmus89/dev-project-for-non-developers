@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pure helpers for the continue-thread A/B SCREEN (see
-`docs/plans/2026-06-01-continue-thread-ab-measurement.md`).
+`docs/plans/archive/2026-06-01-continue-thread-ab-measurement.md`).
 
 Two responsibilities, both pure + unit-tested in `make check` (the live runner
 `scripts/ab-replay.py` is operator-run and NOT in `make check`):

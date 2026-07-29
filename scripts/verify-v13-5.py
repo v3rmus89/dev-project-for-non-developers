@@ -75,7 +75,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PLAN = "docs/plans/2026-05-29-skill-pr1-bucket-f-continue-thread.md"
+DEFAULT_PLAN = "docs/plans/archive/2026-05-29-skill-pr1-bucket-f-continue-thread.md"
 
 # Exit classes. Every non-zero value is merge-blocking; the value distinguishes
 # "rerun in a valid env" (ENV) from "file a bug" (PROBE / FAIL).

@@ -535,5 +535,5 @@ recommendation report (adopt requires `--apply`, so they never show in
 ## Reference
 
 - `SKILL.md` — invocation entry-point doc consumed by Claude Code's skill registry
-- `docs/plans/2026-05-15-skill-pr1-minimal-python-bootstrap.md` — the converged plan PR #1 implements
+- `docs/plans/archive/2026-05-15-skill-pr1-minimal-python-bootstrap.md` — the converged plan PR #1 implements
 - `BACKLOG.md` — parked decisions and follow-up triggers

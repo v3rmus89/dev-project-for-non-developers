@@ -6,7 +6,7 @@
 
 PR #1 (merged) shipped the bootstrap engine, safety primitives, Python language templates, shared templates, and bidirectional plan-review fragments. PR #2 is the **first PR to use the skill's self-hosted bidirectional review loop** — the bootstrap exception no longer applies. The plan PR is reviewed via `make review-plan-by-codex` AND `make review-plan-by-claude`, both already on `main`.
 
-Per [`docs/plans/README.md`](../plans/README.md), PR #2 is split into:
+Per [`docs/plans/README.md`](../README.md), PR #2 is split into:
 - **Plan PR (this file)** — only adds `docs/plans/2026-05-15-skill-pr2-nodejs-language.md`. Records the loop convergence + evidence table.
 - **Implementation PR** — follows after the plan PR merges. Adds `languages/nodejs/`, small engine dispatch extensions, language-conditional shared-template surgery, and tests.
 
@@ -134,7 +134,7 @@ PR #2's implementation is one combined PR (subsystems are small and tightly coup
    make review-plan-by-codex  PLAN_FILE=docs/plans/2026-05-15-skill-pr2-nodejs-language.md ITERATION=1
    make review-plan-by-claude PLAN_FILE=docs/plans/2026-05-15-skill-pr2-nodejs-language.md ITERATION=1
    ```
-   Apply the "Don't fold by default — triage" rule. Stopping rule per [`docs/plans/README.md`](README.md): zero importance-3 findings + remaining 1/2 findings folded or accepted.
+   Apply the "Don't fold by default — triage" rule. Stopping rule per [`docs/plans/README.md`](../README.md): zero importance-3 findings + remaining 1/2 findings folded or accepted.
 2. **Active-surface consistency check** — same as PR #1 step 2, but expanded to the broader Python-only term sweep introduced in Bucket E + iter-2 #4 (closes Codex iter-3 #4 — Phase 1's grep had drifted narrower than Bucket E's). Includes the skill repo's own `Makefile` and `.github/workflows/` too:
    ```bash
    grep -rnE --include='*.md' --include='*.tmpl' --include='*.py' --include='*.yml' \

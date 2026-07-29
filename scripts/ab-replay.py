@@ -5,7 +5,7 @@ OPERATOR-RUN, NOT in `make check` (it makes live, paid `codex` calls -- like
 `scripts/verify-v13-5.py`). The pure metric + argv logic it uses lives in
 `scripts/ab_replay_lib.py` and IS unit-tested in `make check`.
 
-What it does (see `docs/plans/2026-06-01-continue-thread-ab-measurement.md`):
+What it does (see `docs/plans/archive/2026-06-01-continue-thread-ab-measurement.md`):
 reviews ONE real checked-in plan at iterations 1/2/3 twice -- once FRESH (a new
 codex session per iteration) and once CONTINUE (seed iter 1, then resume iters
 2/3 on one thread) -- and reports the uncached-input ratio that screens whether
@@ -55,7 +55,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 import ab_replay_lib as lib  # noqa: E402
 
 EXTRACTOR = SCRIPTS_DIR / "extract-codex-session-id.py"
-DEFAULT_PLAN = "docs/plans/2026-05-31-skill-pr2-bucket-a-skill-wrapper.md"
+DEFAULT_PLAN = "docs/plans/archive/2026-05-31-skill-pr2-bucket-a-skill-wrapper.md"
 ITERATIONS = (1, 2, 3)
 DEFAULT_MAX_SECONDS = 1800  # 30 min total wall-clock cap across all calls
 PER_CALL_MAX_SECONDS = 900  # a single call may not run away past 15 min (plan:157)

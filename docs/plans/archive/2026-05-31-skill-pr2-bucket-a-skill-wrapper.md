@@ -5,7 +5,7 @@
 PR-2 implements **Bucket A** from the meta-plan
 (`~/.claude/plans/what-else-i-want-majestic-rain.md`, "PR-2: Bucket A —
 third priority") and its merged design pre-work
-([docs/design-notes/2026-05-29-bucket-a-architecture.md](../design-notes/2026-05-29-bucket-a-architecture.md)).
+([docs/design-notes/2026-05-29-bucket-a-architecture.md](../../design-notes/2026-05-29-bucket-a-architecture.md)).
 Bucket A was deferred out of PR #10 after 6 cross-review iters failed to plateau
 on three adopt-engine architectural blockers; the design note resolves all
 three (options considered + rejected + acceptance criteria), and the focused
@@ -548,7 +548,7 @@ _(reviewer-proposed lessons triaged later → real ones to LESSONS.md)_
 
 ## Critical files to read before each iter's review
 
-- [docs/design-notes/2026-05-29-bucket-a-architecture.md](../design-notes/2026-05-29-bucket-a-architecture.md) — the 3 sub-designs (options + rejected + acceptance criteria). NOTE: this plan refines it where its premises missed — Codex can't invoke a Claude slash command (FN3), NEUTRALIZE must be `.claude/`-class-only for AC4 (FN5), the dogfood command needs a skill-repo `.gitignore` exception (iter-2 FN1), NEUTRALIZE restore is sentinel-based not SHA (iter-2 FN2), and the command is renamed `dev-review` (FN6).
+- [docs/design-notes/2026-05-29-bucket-a-architecture.md](../../design-notes/2026-05-29-bucket-a-architecture.md) — the 3 sub-designs (options + rejected + acceptance criteria). NOTE: this plan refines it where its premises missed — Codex can't invoke a Claude slash command (FN3), NEUTRALIZE must be `.claude/`-class-only for AC4 (FN5), the dogfood command needs a skill-repo `.gitignore` exception (iter-2 FN1), NEUTRALIZE restore is sentinel-based not SHA (iter-2 FN2), and the command is renamed `dev-review` (FN6).
 - `bootstrap_lib/adopt.py` — `Policy` (`:29`), `TargetMeta` (`:58`), `recommend_policy` rule-a0 (`:419`), `_check_ignored_by_git` (`:144`, drops the pattern for privacy — extended with a derived `.claude/`-class boolean).
 - `bootstrap_lib/manifest.py` — v2 entry builders (`:168-253`), `plan_adoption_entries` (`:256`), `_V2_RESTORE_HANDLERS` dict (`:573`) registered just before `_restore_v2` (`:581`); APPEND_MERGE restore SHA-gate at `:558-565`; `EXECUTABLE_TARGETS` (`:14`).
 - `bootstrap_lib/render.py` — `SHARED_TEMPLATE_MAP` (`:9`, dict spans `:9-27`).

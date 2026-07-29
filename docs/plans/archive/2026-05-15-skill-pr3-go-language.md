@@ -6,7 +6,7 @@
 
 PR #1 (merged) shipped the bootstrap engine + Python language. PR #2 (merged) added Node-TS via Husky + Biome + vitest + TypeScript. PR #3 follows the same pattern for Go.
 
-This is the **second PR using the skill's self-hosted bidirectional review loop** (PR #2 was the first post-bootstrap-exception PR; PR #3 inherits the discipline). Closes Codex iter-1 #7. Per [`docs/plans/README.md`](../plans/README.md), PR #3 is split into:
+This is the **second PR using the skill's self-hosted bidirectional review loop** (PR #2 was the first post-bootstrap-exception PR; PR #3 inherits the discipline). Closes Codex iter-1 #7. Per [`docs/plans/README.md`](../README.md), PR #3 is split into:
 - **Plan PR (this file)** — adds `docs/plans/2026-05-15-skill-pr3-go-language.md`.
 - **Implementation PR** — follows after the plan PR merges. Adds `languages/go/`, small engine dispatch extensions, Jinja conditional surgery for the new third language, tests, and Bucket E doc updates.
 

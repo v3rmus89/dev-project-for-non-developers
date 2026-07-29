@@ -1,6 +1,6 @@
 """Adoption-mode analyze + recommend engine for `--mode=adopt`.
 
-Per the merged Plan PR #7 (`docs/plans/2026-05-19-skill-pr7-hybrid-trial-adoption-mode.md`),
+Per the merged Plan PR #7 (`docs/plans/archive/2026-05-19-skill-pr7-hybrid-trial-adoption-mode.md`),
 this module ships the per-file analyze-then-decide-with-owner UX:
 
     1. analyze_target(target_root, planned_files) -> AdoptionPlan

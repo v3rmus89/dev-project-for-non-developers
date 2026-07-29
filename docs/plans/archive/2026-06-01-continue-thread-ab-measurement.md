@@ -8,7 +8,7 @@ decision-bearing). **Scope: a cheap SCREEN** — it can soundly conclude *stay-f
 ## Context
 
 PR #33 (Bucket F) shipped the Codex continue-thread **mechanism** but left it **dormant**:
-`THREAD_MODE ?= fresh` is the default ([Makefile:94](../../Makefile)), so every
+`THREAD_MODE ?= fresh` is the default ([Makefile:94](../../../Makefile)), so every
 `make review-plan-by-codex` starts a new Codex session. The hypothesis that drove Bucket F —
 *resuming one Codex thread across a plan-review loop costs less than a fresh session per
 iteration* — was deliberately left **unverified** (meta-plan PR-1 iter-1 F3: "MAY reduce —
@@ -23,17 +23,17 @@ parked in BACKLOG.
 - Seed/resume in `review-plan-by-codex`, each wrapped in `scripts/run-with-clean-env.py`
   (prefix scrub of `CLAUDE_CODE_*` / `CODEX_*` + `THREAD_*` / Make-internal vars): fresh =
   `codex exec -C "$(CURDIR)" --sandbox read-only --color never ...` (no `--json`)
-  ([Makefile:214](../../Makefile)); continue-seed = `codex exec --json -C "$(CURDIR)"
+  ([Makefile:214](../../../Makefile)); continue-seed = `codex exec --json -C "$(CURDIR)"
   --sandbox read-only --color never ...` then `scripts/extract-codex-session-id.py` -> atomic
-  `.tmp`+UUID+`mv` ([Makefile:206](../../Makefile)); continue-resume = `codex exec resume
+  `.tmp`+UUID+`mv` ([Makefile:206](../../../Makefile)); continue-resume = `codex exec resume
   "$SESSION_ID" -c sandbox_mode=read-only ...` (NO `-C` / `--sandbox`; relies on `-c`)
-  ([Makefile:191](../../Makefile)).
+  ([Makefile:191](../../../Makefile)).
 - The review prompt STRING embeds the plan **path** + **iteration** (not contents — contents
-  enter when Codex reads the file) ([Makefile:186](../../Makefile)); seed and resume reuse it.
+  enter when Codex reads the file) ([Makefile:186](../../../Makefile)); seed and resume reuse it.
 - Session-id extractor reads `thread.started.thread_id` from the `--json` stream
-  ([scripts/extract-codex-session-id.py:45](../../scripts/extract-codex-session-id.py)).
+  ([scripts/extract-codex-session-id.py:45](../../../scripts/extract-codex-session-id.py)).
 - Stream cache metric = `turn.completed.usage.cached_input_tokens`
-  ([tests/test_codex_jsonl_fixture.py:150](../../tests/test_codex_jsonl_fixture.py));
+  ([tests/test_codex_jsonl_fixture.py:150](../../../tests/test_codex_jsonl_fixture.py));
   `cached_input_tokens` is a SUBSET of `input_tokens`.
 - Safety gate `scripts/verify-v13-5.py` already PASSED for the mechanism (untouched here).
 
@@ -143,13 +143,13 @@ any flip), or **inconclusive** (confounded/unclear -> stay fresh, escalate). In 
   - **resume**: `scripts/run-with-clean-env.py -- codex exec resume <tid> -c
     sandbox_mode=read-only --json "<prompt>" < /dev/null` (resume defaults to workspace-WRITE
     WITHOUT `-c sandbox_mode=read-only`; it does NOT take `-C` / `--sandbox` — memory
-    `codex-json-resume-behavior` + [Makefile:191](../../Makefile)).
+    `codex-json-resume-behavior` + [Makefile:191](../../../Makefile)).
   - `--json` is added on ALL calls (the Makefile's non-continue fresh path omits it; the screen
     needs `turn.completed.usage`) — a documented close-mirror deviation.
   - `< /dev/null` on every call (codex `--json` hangs on open stdin — memory
     `codex-json-resume-behavior`).
 - **Prompt**: built to **closely mirror** the Makefile `review-plan-by-codex` prompt
-  ([Makefile:186](../../Makefile)); the exact prompt used is recorded in the result. (For a
+  ([Makefile:186](../../../Makefile)); the exact prompt used is recorded in the result. (For a
   screen a documented close-mirror is acceptable; the full byte-identity test is the BACKLOG
   escalation.)
 - **Raw JSONL -> `/tmp` only, NEVER committed** (iter-2 FN2). The result + design note carry
@@ -207,7 +207,7 @@ any flip), or **inconclusive** (confounded/unclear -> stay fresh, escalate). In 
   does NOT carry workspace-write / `-C` / `--sandbox`. Mirrors the argv-capture pattern in
   `tests/test_makefile_review_targets.py`. Committed tiny fixtures; zero live calls.
 - **V-2 (default unchanged — screen never flips)**: assert `THREAD_MODE` default is still `fresh`
-  in BOTH [Makefile:94](../../Makefile) AND `shared/Makefile.review.tmpl`;
+  in BOTH [Makefile:94](../../../Makefile) AND `shared/Makefile.review.tmpl`;
   `tests/test_selftest_overlap.py` stays green. (No flip branch exists in this PR.)
 - **V-3 (live A/B screen, operator-run, NOT in `make check`)**: run `ab-replay.py` under a clean
   env in the pre-registered order; aggregate + per-call uncached numbers + the manual quality
@@ -252,14 +252,14 @@ Plan-PR-then-impl-PR: this docs-only plan PR merges first; implementation branch
 
 ## Critical files / context
 
-- [Makefile:94](../../Makefile) (`THREAD_MODE ?= fresh` — the screen asserts it STAYS `fresh`; no
-  flip), [:186](../../Makefile) (prompt to mirror), [:206](../../Makefile) (seed argv),
-  [:191](../../Makefile) (resume argv — `-c sandbox_mode=read-only`, no `-C`/`--sandbox`).
-- [scripts/run-with-clean-env.py](../../scripts/run-with-clean-env.py) — the prefix-aware env
+- [Makefile:94](../../../Makefile) (`THREAD_MODE ?= fresh` — the screen asserts it STAYS `fresh`; no
+  flip), [:186](../../../Makefile) (prompt to mirror), [:206](../../../Makefile) (seed argv),
+  [:191](../../../Makefile) (resume argv — `-c sandbox_mode=read-only`, no `-C`/`--sandbox`).
+- [scripts/run-with-clean-env.py](../../../scripts/run-with-clean-env.py) — the prefix-aware env
   scrubber the Makefile wraps every codex call in; the screen reuses it.
 - `shared/Makefile.review.tmpl` — byte-identical mirror; V-2 asserts the default is unchanged in both.
-- [scripts/extract-codex-session-id.py](../../scripts/extract-codex-session-id.py) — reused for the seed thread-id.
-- `tests/fixtures/codex-json-stream.jsonl` + [tests/test_codex_jsonl_fixture.py:150](../../tests/test_codex_jsonl_fixture.py) — the `turn.completed.usage` schema the helper parses.
+- [scripts/extract-codex-session-id.py](../../../scripts/extract-codex-session-id.py) — reused for the seed thread-id.
+- `tests/fixtures/codex-json-stream.jsonl` + [tests/test_codex_jsonl_fixture.py:150](../../../tests/test_codex_jsonl_fixture.py) — the `turn.completed.usage` schema the helper parses.
 - `tests/test_makefile_review_targets.py` — the argv-capture shim pattern V-1's safe-argv test mirrors.
 - `BACKLOG.md` `continue-thread-pr-followup` — parked entry; gets the screen result + (if escalate) the full-rigor-escalation spec.
 - `~/.claude/plans/what-else-i-want-majestic-rain.md` (external) PR-1 cond. 2 — the meta-plan bar this refines (deviation 2) and defers the flip to (deviation 3).
@@ -301,7 +301,7 @@ Plan-PR-then-impl-PR: this docs-only plan PR merges first; implementation branch
 ## Measured result (filled at V-3)
 
 Run 2026-06-01, codex-cli 0.130.0. Full detail + mechanism + quality table in
-[docs/design-notes/2026-06-01-continue-thread-ab-result.md](../design-notes/2026-06-01-continue-thread-ab-result.md).
+[docs/design-notes/2026-06-01-continue-thread-ab-result.md](../../design-notes/2026-06-01-continue-thread-ab-result.md).
 
 | Mode | total input | total cached_input | total uncached_input | cache share | total output | wall-clock (s) |
 |---|---|---|---|---|---|---|

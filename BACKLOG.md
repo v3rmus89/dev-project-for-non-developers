@@ -215,7 +215,7 @@ NEEDS-ASK instead of silently dispatching. Applied in the skill `Makefile` +
 - iter-5 F6 / iter-5 F7: V-1 tests all 3 approval branches (Claude/Codex/Other); commit-review same-AI branching added to Skill.
 - iter-3 F5: AGENTS.md has no approval-gate paragraph — NOT a target for keyword swap (scope confirmed removed).
 
-**Rough effort**: ~1 week. The Evidence table in `docs/plans/2026-05-27-skill-pr10-harvest-plan-tango-improvements.md` carries the full iter-1..6 triage record.
+**Rough effort**: ~1 week. The Evidence table in `docs/plans/archive/2026-05-27-skill-pr10-harvest-plan-tango-improvements.md` carries the full iter-1..6 triage record.
 
 ---
 
@@ -236,7 +236,7 @@ NEEDS-ASK instead of silently dispatching. Applied in the skill `Makefile` +
   the model's first call). Any Bucket F code reading `cached_input_tokens` must guard
   `if info is not None`. Fixture null-info variant + guard test parked below.
 
-**PR-1 PLAN IN REVIEW (2026-05-29)**: plan at `docs/plans/2026-05-29-skill-pr1-bucket-f-continue-thread.md`.
+**PR-1 PLAN IN REVIEW (2026-05-29)**: plan at `docs/plans/archive/2026-05-29-skill-pr1-bucket-f-continue-thread.md`.
 Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 - Stale-session fallback matcher: `"no rollout found for thread id"` (verified live 2026-05-29).
 - Atomic THREAD_FILE write pattern (`.tmp` + UUID validate + `mv`).
@@ -268,7 +268,7 @@ Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 
 ## Follow-ups from the config-shadowing fix
 
-Parked items from [docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md) (Bucket E).
+Parked items from [docs/plans/archive/2026-05-21-skill-config-shadowing-fix.md](docs/plans/archive/2026-05-21-skill-config-shadowing-fix.md) (Bucket E).
 
 ### TOML section-merge for adoption-into-existing-`pyproject.toml` (imp-2)
 
@@ -356,7 +356,7 @@ config.
 ### ✅ PR #9 — smart stack suggestion from a plain-English project description — DONE
 
 **Status**: shipped — see
-[docs/plans/2026-05-22-skill-pr9-smart-stack-suggestion.md](docs/plans/2026-05-22-skill-pr9-smart-stack-suggestion.md).
+[docs/plans/archive/2026-05-22-skill-pr9-smart-stack-suggestion.md](docs/plans/archive/2026-05-22-skill-pr9-smart-stack-suggestion.md).
 The interactive intake gained an optional "describe your project" step: a
 deterministic keyword `stack_suggest` engine maps the description to a
 *language* suggestion that pre-fills the language-menu default (the user still
@@ -542,7 +542,7 @@ verify `pip install -e .` works in a fresh venv, document in `docs/usage.md`.
 
 **What landed**: Biome + vitest + TypeScript + Husky v9 + lint-staged, framework-agnostic Node-TS (no React/Vue/Svelte; those parked separately — see entry below).
 
-**Loop convergence**: Codex 4 iters + Claude 1 iter; zero importance-3 findings at convergence; documented trade-offs and autonomous decisions in [`docs/plans/2026-05-15-skill-pr2-nodejs-language.md`](docs/plans/2026-05-15-skill-pr2-nodejs-language.md).
+**Loop convergence**: Codex 4 iters + Claude 1 iter; zero importance-3 findings at convergence; documented trade-offs and autonomous decisions in [`docs/plans/archive/2026-05-15-skill-pr2-nodejs-language.md`](docs/plans/archive/2026-05-15-skill-pr2-nodejs-language.md).
 
 ---
 
@@ -568,7 +568,7 @@ verify `pip install -e .` works in a fresh venv, document in `docs/usage.md`.
 
 **What landed**: gofumpt + golangci-lint v2 + native git hooks via `core.hooksPath` (no pre-commit framework, no Husky — fully Native Go). Tools install project-local via `GOBIN="$(CURDIR)/bin"`. Module path auto-derived: `github.com/{owner}/{repo}` when `--github-*` set, else bare `{project_name}`. Pinned `gofumpt v0.9.2` + `golangci-lint v2.12.2`.
 
-**Loop convergence**: Codex 5 iterations (trajectory 3→4→1→1→0 imp-3); stopping rule met at iter-5. See [`docs/plans/2026-05-15-skill-pr3-go-language.md`](docs/plans/2026-05-15-skill-pr3-go-language.md).
+**Loop convergence**: Codex 5 iterations (trajectory 3→4→1→1→0 imp-3); stopping rule met at iter-5. See [`docs/plans/archive/2026-05-15-skill-pr3-go-language.md`](docs/plans/archive/2026-05-15-skill-pr3-go-language.md).
 
 ---
 
@@ -1216,7 +1216,7 @@ structured trial write-up (all four deliverables — trial plan, trial report,
 The trial's downstream value also materialised later: dogfooding adopt-mode
 into `downstream-app` is exactly what surfaced the config-shadowing bug, fixed in
 the 2026-05-21 config-shadowing fix
-([docs/plans/2026-05-21-skill-config-shadowing-fix.md](docs/plans/2026-05-21-skill-config-shadowing-fix.md)).
+([docs/plans/archive/2026-05-21-skill-config-shadowing-fix.md](docs/plans/archive/2026-05-21-skill-config-shadowing-fix.md)).
 
 ---
 
