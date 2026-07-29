@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-29: A count taken from the categories I reasoned about, not the artifact I produced
+
+**Trigger**: Bucket D's archive commit. Before rewriting the moved plans' relative links I enumerated **six** classes of affected file, then ran a script that printed exactly which files it touched: **five**. The sixth (`2026-06-10`'s bare sibling link) needed no rewrite — both endpoints moved together, so the relative path still resolved. I wrote "31 targets across 6 files" into the commit body anyway, carrying the number from my planning list rather than from the tool output that was on screen. The target count (31) was right because it came from the script; the file count was wrong because it came from my head. Tier-1 caught it by running `git show --stat`. Same shape as the 2026-07-27 tautological-grep entry — a number that was never actually derived from the thing it describes — but the failure here is subtler: the artifact WAS produced and WAS correct, and I simply didn't read it.
+
+**Rule**: When a durable record (commit body, PR description, implementation log, plan evidence table) states a count, derive it from the artifact at the moment of writing — re-run the command, read the script's output, `git show --stat` — never from the enumeration that preceded the work. Items considered and items changed are different sets, and the gap between them is exactly the no-op cases that make an enumeration feel complete. If a count is worth stating, it is worth one command.
+
+**Status**: Active
+
+---
+
 ### 2026-07-28: Retargeting a pointer after a code move can name the right module and still weaken the invariant
 
 **Trigger**: Bucket C moved `_cli_layer_path_safety` into `apply_pipeline.py` while its only call stayed in `cli.main`. I retargeted CLAUDE.md's path-safety invariant from "inside `cli.py`'s apply planning" to "inside `apply_pipeline.py`'s apply planning" — correct about where the function now lives, but the invariant exists to say "both layers must remain in place", and what must remain is the CALL. Under the new wording someone could delete the call in `cli.main`, leave the function defined, and read the invariant as satisfied while the actual safety boundary was gone. I had made the pointer locally accurate and globally weaker, in the same commit whose own message argued that a wrong module name in an invariant is worse than none. Tier-1 caught it; the same sentence had already propagated to two more surfaces (`tests/test_path_safety.py`, `bootstrap_lib/adopt.py`).
