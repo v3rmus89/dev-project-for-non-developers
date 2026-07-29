@@ -134,8 +134,15 @@ def iter_links(text: str):
             yield lineno, _target_of(ref)
 
 
-def broken_links(path: Path) -> list[tuple[int, str]]:
-    """Every in-repo link in *path* that does not resolve from its directory."""
+def broken_links(path: Path, root: Path = SKILL_ROOT) -> list[tuple[int, str]]:
+    """Every in-repo link in *path* that does not resolve.
+
+    Targets resolve from the linking file's directory, EXCEPT root-relative ones
+    (`/docs/foo.md`), which GitHub resolves against the repo root. Without that
+    case, `Path.parent / "/docs/foo.md"` would resolve against the filesystem
+    root and report a perfectly good link as broken — a false failure, which is
+    the one way a gate like this loses its authority.
+    """
     broken = []
     for lineno, target in iter_links(path.read_text(encoding="utf-8")):
         if not _is_checkable(target):
@@ -143,7 +150,8 @@ def broken_links(path: Path) -> list[tuple[int, str]]:
         bare = target.split("#", 1)[0].split("?", 1)[0]
         if not bare:
             continue
-        if not (path.parent / bare).exists():
+        base = root if bare.startswith("/") else path.parent
+        if not (base / bare.lstrip("/")).exists():
             broken.append((lineno, target))
     return broken
 
@@ -299,3 +307,20 @@ def test_angle_bracket_target_that_resolves_is_accepted(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("See [x](<a target.md>).\n", encoding="utf-8")
     assert broken_links(doc) == []
+
+
+def test_root_relative_target_resolves_against_the_repo_root(tmp_path):
+    """`[x](/docs/foo.md)` is valid GitHub markdown; naive joining would resolve
+    it against the FILESYSTEM root and report a good link as broken."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "foo.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "sub" / "doc.md"
+    doc.parent.mkdir()
+    doc.write_text("See [x](/docs/foo.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == []
+
+
+def test_root_relative_target_that_is_missing_is_still_caught(tmp_path):
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](/docs/nope.md).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path) == [(1, "/docs/nope.md")]
