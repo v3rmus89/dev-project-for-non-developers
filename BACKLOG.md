@@ -22,8 +22,10 @@ beats the status quo on a real plan. No measured win, no addition.
 every substantive PR by every future session. Features accrete easily (each one is
 locally plausible) and are near-impossible to remove later, because nothing records
 whether they ever fired. Two data points motivate the rule: the `continue`-thread
-A/B, which disconfirmed an intuitively obvious saving (`continue` ran **1.69x
-costlier** — see [docs/design-notes/2026-06-01-continue-thread-ab-result.md](docs/design-notes/2026-06-01-continue-thread-ab-result.md)),
+A/B, which disconfirmed an intuitively obvious saving (`continue` consumed **1.69x
+more uncached input** than fresh — the price-independent figure the verdict rests
+on; the est-cost ratio of ~1.81 in the same note is explicitly placeholder-priced —
+see [docs/design-notes/2026-06-01-continue-thread-ab-result.md](docs/design-notes/2026-06-01-continue-thread-ab-result.md)),
 and the optional `/simplify` pass, which shipped as a documented step and shows no
 evidence of ever having fired in a shipped PR record (retired into the Tier-1 focus
 list by the pre-expansion refactors plan, AD7).
@@ -42,6 +44,30 @@ could check against the two outputs.
 
 Parked during the Buckets A–E work
 ([docs/plans/2026-07-05-pre-expansion-structural-refactors.md](docs/plans/2026-07-05-pre-expansion-structural-refactors.md)).
+
+### Resolve intra-page anchors in the markdown link gate (`markdown-anchor-resolution`)
+
+**Status**: parked (Bucket D Tier-1, imp-1). `tests/test_markdown_link_integrity.py`
+proves that every in-repo link TARGET exists, but exempts the `#anchor` part: a
+link to a real file at a heading that no longer exists passes. `docs/usage.md`'s
+runbook already carries one such link (`#worked-example-downstream-app-shape`),
+correct today, unprotected tomorrow.
+
+**Why parked**: the fix needs GitHub's heading-slug algorithm — lowercasing,
+punctuation stripping, and the `-1`/`-2` suffixes GitHub appends to duplicate
+headings. Getting it subtly wrong produces FALSE failures on correct links,
+which is worse than the gap: a gate that cries wolf gets weakened or deleted.
+The link gate's value comes from being trusted, so this only lands with the slug
+rules pinned by their own tests.
+
+**Trigger to pick up**: the first time a broken anchor is actually found (in
+review, or by a reader), OR when any shipped doc gains a generated table of
+contents — at that point anchors become load-bearing rather than incidental.
+
+**Rough effort**: ~half a day (slug function + duplicate-suffix handling + tests
++ one pass fixing whatever it turns up).
+
+---
 
 ### `--mode=upgrade`: re-adopt engine keyed to an OWNERSHIP model (`adopt-upgrade-ownership-engine`)
 

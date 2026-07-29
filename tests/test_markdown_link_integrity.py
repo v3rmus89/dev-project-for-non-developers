@@ -24,10 +24,17 @@ Fence tracking reuses `scripts/extract-plan-facts.py::_FenceTracker` — the
 CommonMark-correct implementation this repo already ships and tests — rather
 than adding a fourth hand-rolled toggle.
 
+Covered link forms: inline (`[text](target)`), reference-style definitions
+(`[label]: target`), and either with an angle-bracket target (`[t](<path>)`).
+Raw HTML anchors are NOT covered — none exist in this corpus, and adding an
+HTML parser to catch a form nothing uses would be cost without coverage.
+
 Scope note: this gate covers markdown LINK form only. Backticked path
 citations (`` `docs/plans/foo.md` ``) are prose, not links, and stay unchecked;
 the two `DEFAULT_PLAN` script constants get their own existence assertions in
-tests/test_ab_replay_lib.py and tests/test_verify_v13_5.py.
+tests/test_ab_replay_lib.py and tests/test_verify_v13_5.py. Intra-page anchors
+are exempt as paths, and their slugs are not resolved against the target file's
+headings either — parked in BACKLOG.md as `markdown-anchor-resolution`.
 """
 
 from __future__ import annotations
@@ -42,8 +49,17 @@ import pytest
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 # `[text](target)` / `![alt](target)`, with an optional "title" after the target.
-# The target stops at whitespace or `)`; escaped `\[` does not open a link.
-_LINK_RE = re.compile(r"(?<!\\)\[(?P<text>[^\]]*)\]\((?P<target>[^)\s]*)(?:\s+\"[^\"]*\")?\)")
+# A bare target stops at whitespace or `)`; an angle-bracket target may contain
+# spaces. Escaped `\[` does not open a link.
+_LINK_RE = re.compile(
+    r"(?<!\\)\[(?P<text>[^\]]*)\]\(\s*"
+    r"(?:<(?P<angle>[^>\n]*)>|(?P<bare>[^)\s]*))"
+    r"(?:\s+\"[^\"]*\")?\s*\)"
+)
+# Reference-style definition: `[label]: target "optional title"`, up to 3 spaces
+# of indent (CommonMark). The label is resolved elsewhere in the doc, but the
+# TARGET is a path like any other and rots the same way.
+_REF_DEF_RE = re.compile(r"^ {0,3}\[(?P<label>[^\]]+)\]:\s+(?:<(?P<angle>[^>\n]*)>|(?P<bare>\S+))")
 _BACKTICK_RUN_RE = re.compile(r"`+")
 
 
@@ -90,15 +106,32 @@ def _is_checkable(target: str) -> bool:
     return "://" not in target
 
 
+def _target_of(m: re.Match) -> str:
+    """The path from either target form; angle brackets are delimiters, not path."""
+    angle = m.group("angle")
+    return angle if angle is not None else m.group("bare")
+
+
 def iter_links(text: str):
-    """Yield (lineno, target) for every real (un-backticked, un-fenced) link."""
+    """Yield (lineno, target) for every real (un-backticked, un-fenced) link.
+
+    Covers both inline links and reference-style definitions, in bare and
+    angle-bracket target form. A fence opener/closer line is skipped whole, so a
+    link sharing that line is not checked — per CommonMark the text after an
+    opener is the info string, and a closer may hold nothing but the fence, so
+    there is no real link to miss there.
+    """
     fences = _FenceTracker()
     for lineno, raw in enumerate(text.splitlines(), start=1):
         boundary = fences.feed(raw)
         if boundary or fences.in_fence:
             continue
-        for m in _LINK_RE.finditer(_mask_code_spans(raw)):
-            yield lineno, m.group("target")
+        masked = _mask_code_spans(raw)
+        for m in _LINK_RE.finditer(masked):
+            yield lineno, _target_of(m)
+        ref = _REF_DEF_RE.match(masked)
+        if ref:
+            yield lineno, _target_of(ref)
 
 
 def broken_links(path: Path) -> list[tuple[int, str]]:
@@ -116,14 +149,16 @@ def broken_links(path: Path) -> list[tuple[int, str]]:
 
 
 def _tracked_markdown() -> list[str]:
+    # -z: NUL-separated and never quote-escaped, so a path containing a space
+    # stays one path instead of splitting into two nonexistent ones.
     r = subprocess.run(
-        ["git", "ls-files", "*.md"],
+        ["git", "ls-files", "-z", "*.md"],
         cwd=SKILL_ROOT,
         capture_output=True,
         text=True,
         check=True,
     )
-    return sorted(r.stdout.split())
+    return sorted(p for p in r.stdout.split("\0") if p)
 
 
 TRACKED_MARKDOWN = _tracked_markdown()
@@ -221,3 +256,46 @@ def test_link_after_a_closed_fence_is_still_checked(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("```\ncode\n```\n\n[x](nope.md)\n", encoding="utf-8")
     assert broken_links(doc) == [(5, "nope.md")]
+
+
+# ── link forms beyond the plain inline one ─────────────────────────────────
+
+
+def test_reference_style_definition_is_checked(tmp_path):
+    """`[label]: target` is a link form and rots exactly like an inline one."""
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [the thing][t].\n\n[t]: does-not-exist.md\n", encoding="utf-8")
+    assert broken_links(doc) == [(3, "does-not-exist.md")]
+
+
+def test_reference_style_definition_that_resolves_is_accepted(tmp_path):
+    (tmp_path / "target.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text('[t]: target.md "A title"\n', encoding="utf-8")
+    assert broken_links(doc) == []
+
+
+def test_reference_style_definition_in_fence_is_exempt(tmp_path):
+    doc = tmp_path / "doc.md"
+    doc.write_text("```\n[t]: nope.md\n```\n", encoding="utf-8")
+    assert broken_links(doc) == []
+
+
+def test_angle_bracket_target_is_checked(tmp_path):
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](<does-not-exist.md>).\n", encoding="utf-8")
+    assert broken_links(doc) == [(1, "does-not-exist.md")]
+
+
+def test_angle_bracket_target_with_a_space_is_checked(tmp_path):
+    """The form exists precisely to allow spaces, which the bare form cannot."""
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](<no such file.md>).\n", encoding="utf-8")
+    assert broken_links(doc) == [(1, "no such file.md")]
+
+
+def test_angle_bracket_target_that_resolves_is_accepted(tmp_path):
+    (tmp_path / "a target.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [x](<a target.md>).\n", encoding="utf-8")
+    assert broken_links(doc) == []

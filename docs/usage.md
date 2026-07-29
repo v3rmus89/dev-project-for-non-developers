@@ -542,8 +542,8 @@ with `--apply`.
 **1. Shared markdown sections** — `scripts/propagate-shared-rules.py`
 
 ```bash
-python3.12 scripts/propagate-shared-rules.py ~/code/<target>/CLAUDE.md
-python3.12 scripts/propagate-shared-rules.py --apply ~/code/<target>/CLAUDE.md
+./venv/bin/python scripts/propagate-shared-rules.py ~/code/<target>/CLAUDE.md
+./venv/bin/python scripts/propagate-shared-rules.py --apply ~/code/<target>/CLAUDE.md
 ```
 
 Section-level replacement: it swaps the named `##` section (default
@@ -561,8 +561,8 @@ is the `--mode=upgrade` ownership-engine entry in `BACKLOG.md`.)
 **2. Review block + prompts + helper** — `scripts/migrate-selftest-block.py`
 
 ```bash
-python3.12 scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile
-python3.12 scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile --apply
+./venv/bin/python scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile
+./venv/bin/python scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile --apply
 ```
 
 Re-syncs the `SELFTEST-OVERLAP` Makefile block together with the `prompts/*.txt`
