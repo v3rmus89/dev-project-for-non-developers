@@ -532,6 +532,63 @@ write `.new` companions for mapped paths. `--dry-run` shows the exact
 recommendation report (adopt requires `--apply`, so they never show in
 `--dry-run` output).
 
+## Bringing an adopted project up to date
+
+There is no `--mode=upgrade`. When the skill changes and an already-adopted
+project needs that change, you re-sync it by hand, per project, in this order.
+Every step below is read-only by default — look at what it would do, then re-run
+with `--apply`.
+
+**1. Shared markdown sections** — `scripts/propagate-shared-rules.py`
+
+```bash
+python3.12 scripts/propagate-shared-rules.py ~/code/<target>/CLAUDE.md
+python3.12 scripts/propagate-shared-rules.py --apply ~/code/<target>/CLAUDE.md
+```
+
+Section-level replacement: it swaps the named `##` section (default
+`## Triaging review findings`; `--section` selects another, `--source` another
+source file) and leaves the rest of the target alone. That makes it the safe
+channel for **mixed-ownership** files — a downstream `CLAUDE.md` holds the
+project's own details next to the shared rules, and whole-file replacement would
+destroy the owner's half.
+
+Its only guard for owner edits **inside** a managed section is the dry-run diff:
+if the target customised text within the section, `--apply` overwrites it and
+says nothing. Reading the diff first *is* the guard. (Closing that gap properly
+is the `--mode=upgrade` ownership-engine entry in `BACKLOG.md`.)
+
+**2. Review block + prompts + helper** — `scripts/migrate-selftest-block.py`
+
+```bash
+python3.12 scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile
+python3.12 scripts/migrate-selftest-block.py --target ~/code/<target>/Makefile --apply
+```
+
+Re-syncs the `SELFTEST-OVERLAP` Makefile block together with the `prompts/*.txt`
+files and `scripts/render-review-prompt.py` that its recipes call. The three move
+as a unit — a migrated block whose prompt files are missing fails at review time,
+not at migration time.
+
+**3. Newly added planned files** — a plain adopt re-run
+
+```bash
+./venv/bin/python bootstrap.py --diff --language python \
+    --project-name <target> --out ~/code/<target>/
+./venv/bin/python bootstrap.py --apply --mode=adopt --language python \
+    --project-name <target> --out ~/code/<target>/
+```
+
+Adopt-mode is a modifier of `--apply`, so its read-only pre-check is `--diff`
+(step 1 of the [worked example](#worked-example-downstream-app-shape)), not
+`--dry-run`. Files the target already has come back as per-file recommendations
+you decide on; files the skill has added since the last adopt are simply written.
+
+This is the honest current story, not the intended end state: it is the right
+answer at two or three adopted projects and the wrong one at ten. The trigger for
+replacing it with an engine is recorded in `BACKLOG.md`
+(`adopt-upgrade-ownership-engine`).
+
 ## Reference
 
 - `SKILL.md` — invocation entry-point doc consumed by Claude Code's skill registry
