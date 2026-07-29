@@ -162,6 +162,8 @@ def iter_links(text: str):
 def _is_tracked(resolved: Path, root: Path, tracked: set[str]) -> bool:
     """A file must be in the index; a directory must contain something that is."""
     rel = str(resolved.relative_to(root.resolve()))
+    if rel == ".":  # the repo root itself — `[repo](.)` / `[repo](/)`
+        return bool(tracked)
     return rel in tracked or any(k.startswith(rel + "/") for k in tracked)
 
 
@@ -460,3 +462,12 @@ def test_directory_target_counts_as_tracked_when_it_holds_a_tracked_file(tmp_pat
     doc = tmp_path / "doc.md"
     doc.write_text("See [d](docs).\n", encoding="utf-8")
     assert broken_links(doc, root=tmp_path, tracked={"docs/a.md"}) == []
+
+
+def test_link_to_the_repo_root_is_accepted(tmp_path):
+    """`[repo](.)` resolves to the root, whose relative path is "." — never a
+    key in the tracked set, so a naive membership test would false-fail it."""
+    (tmp_path / "a.md").write_text("hi\n", encoding="utf-8")
+    doc = tmp_path / "doc.md"
+    doc.write_text("See [repo](.) and [root](/).\n", encoding="utf-8")
+    assert broken_links(doc, root=tmp_path, tracked={"a.md"}) == []

@@ -25,6 +25,16 @@ solved structurally.
 
 ## Active
 
+### 2026-07-29: Running the full check BEFORE the last edit is not running it
+
+**Trigger**: Bucket D, PR #58. I folded a review finding that made backslash-escaped backticks stop masking links, ran `make check` (1292 passed), THEN appended an implementation-log row to the plan file — a row whose own text used escaped backticks around `[x](nope.md)` as the illustrative example — then committed and pushed. The example became a live link to a file that does not exist, and the gate I had just strengthened failed on my own plan file. CI caught it; my local run could not have, because the edit came after it. The same commit's message claimed "make check: 1292 passed, 4 skipped", which was true of a tree that was never committed.
+
+**Rule**: The verification must cover the FINAL tree. If any file changes after `make check` — including a doc, a plan log, or a commit-message-adjacent artifact — re-run it before committing, and quote the number from that run. This bites hardest when a test covers documentation, because a doc edit stops feeling like a code change: prose that a gate reads IS input to that gate. Corollary: when a fold changes what counts as an example versus live content, re-read your own writing for instances of the form you just changed the meaning of.
+
+**Status**: Active
+
+---
+
 ### 2026-07-29: A count taken from the categories I reasoned about, not the artifact I produced
 
 **Trigger**: Bucket D's archive commit. Before rewriting the moved plans' relative links I enumerated **six** classes of affected file, then ran a script that printed exactly which files it touched: **five**. The sixth (`2026-06-10`'s bare sibling link) needed no rewrite — both endpoints moved together, so the relative path still resolved. I wrote "31 targets across 6 files" into the commit body anyway, carrying the number from my planning list rather than from the tool output that was on screen. The target count (31) was right because it came from the script; the file count was wrong because it came from my head. Tier-1 caught it by running `git show --stat`. Same shape as the 2026-07-27 tautological-grep entry — a number that was never actually derived from the thing it describes — but the failure here is subtler: the artifact WAS produced and WAS correct, and I simply didn't read it.
