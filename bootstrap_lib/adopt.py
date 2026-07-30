@@ -355,10 +355,14 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
 class AdoptionCollisionError(Exception):
     """Raised when apply-time invariants for adoption-mode are violated.
 
-    The current trigger is the `.new` collision rule: if
-    `<original>.new` already exists at apply time, fail-loud rather than
-    overwrite a file the user may have authored or already-merged.
-    `apply_pipeline.py` catches this and converts to `CLIError(exit_code=2)`.
+    Triggers: the `.new` collision rule — `<original>.new` already exists at
+    plan-time or appears before apply — and the NEUTRALIZE TOCTOU guards
+    (`.gitignore` vanished / gained the un-ignore block between plan and
+    apply). Fail-loud rather than overwrite a file the user may have
+    authored or already-merged, or mutate a `.gitignore` that changed
+    underfoot. `apply_pipeline._main_apply_adopt` catches this, writes the
+    message to stderr, and returns exit code 2 (the mid-apply catch also
+    prints the restore hint).
     """
 
 
