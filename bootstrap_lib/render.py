@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 
 import jinja2
@@ -241,8 +242,6 @@ def render_all(context, language="python"):
 
     # First-tier path-safety check: every rel_path stays inside a notional root
     # (cross-platform-safe — uses temp dir to absorb resolve() side-effects)
-    import tempfile
-
     sandbox = Path(tempfile.gettempdir()) / "_dev-project-setup-path-validate"
     for rel_path in output:
         validate_target_path(sandbox, rel_path)
