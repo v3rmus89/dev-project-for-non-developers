@@ -2,7 +2,7 @@
 """Live A/B SCREEN runner for the continue-thread hypothesis.
 
 OPERATOR-RUN, NOT in `make check` (it makes live, paid `codex` calls -- like
-`scripts/verify-v13-5.py`). The pure metric + argv logic it uses lives in
+`scripts/verify-codex-thread-continuation.py`). The pure metric + argv logic it uses lives in
 `scripts/ab_replay_lib.py` and IS unit-tested in `make check`.
 
 What it does (see `docs/plans/archive/2026-06-01-continue-thread-ab-measurement.md`):

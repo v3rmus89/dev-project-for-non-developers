@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V-13.5 — live pre-merge gate for Bucket F (Codex thread-continuation).
+"""Live pre-merge gate for Codex thread-continuation (the V-13.5 gate).
 
 REPO-INTERNAL proof harness. This script verifies the skill's OWN dogfood
 `THREAD_MODE=continue` behaviour; it is deliberately NOT bootstrapped to
@@ -8,7 +8,7 @@ inherit the proven feature, not the harness.
 
 Run it from the repo root before opening the PR:
 
-    python3 scripts/verify-v13-5.py [PLAN_FILE]
+    python3 scripts/verify-codex-thread-continuation.py [PLAN_FILE]
 
 It is a MERGE BLOCKER: any non-zero exit means do NOT merge. The non-zero
 exit CLASS tells you what to do:
@@ -60,7 +60,8 @@ general config override `-c sandbox_mode=read-only`.
 
 The PURE functions below (make_command, resume_probe_command, compute_key,
 parse_jsonl, thread_id_of, sandbox_type_of, check_gates, normal_path_artifacts_ok,
-looks_like_env_failure) are unit-tested in tests/test_verify_v13_5.py with
+looks_like_env_failure) are unit-tested in
+tests/test_verify_codex_thread_continuation.py with
 fixtures — no live calls in CI.
 """
 
