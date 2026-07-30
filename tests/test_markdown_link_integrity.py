@@ -39,9 +39,9 @@ Scope note: this gate covers markdown LINK form only. Backticked path
 citations (`` `docs/plans/foo.md` ``) are prose, not links, and stay unchecked;
 the two `DEFAULT_PLAN` script constants get their own existence assertions in
 tests/test_ab_replay_lib.py and tests/test_verify_codex_thread_continuation.py.
-Intra-page anchors
-are exempt as paths, and their slugs are not resolved against the target file's
-headings either — parked in BACKLOG.md as `markdown-anchor-resolution`.
+Intra-page anchors are exempt as paths, and their slugs are not resolved
+against the target file's headings either — parked in BACKLOG.md as
+`markdown-anchor-resolution`.
 """
 
 from __future__ import annotations

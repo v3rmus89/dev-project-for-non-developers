@@ -356,7 +356,7 @@ class AdoptionCollisionError(Exception):
     """Raised when apply-time invariants for adoption-mode are violated.
 
     Triggers: the `.new` collision rule — `<original>.new` already exists at
-    plan-time or appears before apply — and the NEUTRALIZE TOCTOU guards
+    plan-time, or appears in the plan→apply window — and the NEUTRALIZE TOCTOU guards
     (`.gitignore` vanished / gained the un-ignore block between plan and
     apply). Fail-loud rather than overwrite a file the user may have
     authored or already-merged, or mutate a `.gitignore` that changed

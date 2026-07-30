@@ -2,8 +2,8 @@
 
 The V-13.5 verifier is a repo-internal live pre-merge gate. Its live codex/make
 calls are exercised only by the manual
-`python3 scripts/verify-codex-thread-continuation.py` run —
-NEVER in CI. These tests cover the pure logic with fixtures:
+`python3 scripts/verify-codex-thread-continuation.py` run — NEVER in CI.
+These tests cover the pure logic with fixtures:
   - make_command (PLAN_FILE= always present — iter-8 FN1)
   - resume_probe_command (the SAFETY core: `-c sandbox_mode=read-only` present,
     --sandbox/-C/--color/--skip-git-repo-check absent)

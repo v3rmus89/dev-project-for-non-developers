@@ -61,8 +61,8 @@ general config override `-c sandbox_mode=read-only`.
 The PURE functions below (make_command, resume_probe_command, compute_key,
 parse_jsonl, thread_id_of, sandbox_type_of, check_gates, normal_path_artifacts_ok,
 looks_like_env_failure) are unit-tested in
-tests/test_verify_codex_thread_continuation.py with
-fixtures — no live calls in CI.
+tests/test_verify_codex_thread_continuation.py with fixtures — no live calls
+in CI.
 """
 
 from __future__ import annotations
