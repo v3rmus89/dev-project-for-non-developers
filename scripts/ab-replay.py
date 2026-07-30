@@ -2,7 +2,7 @@
 """Live A/B SCREEN runner for the continue-thread hypothesis.
 
 OPERATOR-RUN, NOT in `make check` (it makes live, paid `codex` calls -- like
-`scripts/verify-v13-5.py`). The pure metric + argv logic it uses lives in
+`scripts/verify-codex-thread-continuation.py`). The pure metric + argv logic it uses lives in
 `scripts/ab_replay_lib.py` and IS unit-tested in `make check`.
 
 What it does (see `docs/plans/archive/2026-06-01-continue-thread-ab-measurement.md`):
@@ -18,15 +18,14 @@ the operator supplies the manual quality + warmup judgement.
 Safety / rigor controls baked in:
 - **Pre-registered run order**: FRESH block first (3 calls), then CONTINUE
   (seed + 2 resume). Fresh-first warms the server prefix cache for continue,
-  biasing TOWARD continue looking cheap -- so a stay-fresh verdict is robust
-  (iter-3 FN3).
+  biasing TOWARD continue looking cheap -- so a stay-fresh verdict is robust.
 - **Pinned read-only argv** for every call, via `lib.build_fresh_call` /
   `lib.build_resume_call` (both wrap codex in `run-with-clean-env.py` + close
-  stdin) (iter-3 FN2).
-- **Raw JSONL -> a /tmp dir ONLY, never committed** (iter-2 FN2). Only
+  stdin).
+- **Raw JSONL -> a /tmp dir ONLY, never committed**. Only
   aggregate numbers + per-call uncached are printed / written to the summary.
 - **Dry-run by default**: prints the exact planned argv and exits. `--execute`
-  is required to make live calls (a safety gate on top of the V-4 preflight).
+  is required to make live calls (a safety gate on top of the manual env preflight).
 - **Wall-clock cap** (default 30 min) across all calls.
 
 Usage:
@@ -143,7 +142,7 @@ def main(argv: list[str]) -> int:
         _print_planned(args.repo, args.plan)
         return 0
 
-    # Codex Tier-2 C2: fail BEFORE any paid call if --plan is a typo / stale path.
+    # Fail BEFORE any paid call if --plan is a typo / stale path.
     # codex resolves the plan relative to the repo (-C), so check it there. A
     # missing path would otherwise spend all 6 calls reviewing nothing.
     plan_full = Path(args.plan) if Path(args.plan).is_absolute() else Path(args.repo) / args.plan
@@ -152,7 +151,7 @@ def main(argv: list[str]) -> int:
             f"--plan not found: {plan_full} -- refusing to spend paid calls on a missing/typo'd plan"
         )
 
-    # Codex Tier-2 C1: the raw JSONL must never land in the repo (the plan's
+    # The raw JSONL must never land in the repo (the plan's
     # "never committed" contract). Enforce repo-exclusion by construction rather
     # than trusting the operator's --out-dir. (Repo-exclusion, not literal /tmp:
     # tempfile.gettempdir() is /var/folders/... on macOS, so a literal-/tmp check

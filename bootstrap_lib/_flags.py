@@ -112,7 +112,7 @@ def add_flags(parser):
         action="store_true",
         help="emit docs/SMOKE.md skeleton",
     )
-    # PR #7 Bucket A: --mode=adopt is a SINGLE-VALUE adoption modifier of
+    # --mode=adopt is a SINGLE-VALUE adoption modifier of
     # --apply, NOT a 5th mode in the mutually-exclusive group above. choices
     # is intentionally [adopt] only — that's the one modifier we ship today.
     # Validation lives in cli.py:_resolve_mode (requires --apply, Python-only,

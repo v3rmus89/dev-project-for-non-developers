@@ -36,7 +36,7 @@ def _cli_layer_path_safety(target_root, planned_files):
     """Second-tier path-safety check, run AFTER render.render_all.
 
     Uses the real target_root (which may not exist yet) so symlink escapes are
-    caught. Closes Codex iter-8 finding #2.
+    caught.
     """
     root = Path(target_root)
     # For a not-yet-existing target_root, resolve the parent for symlink
@@ -49,10 +49,10 @@ def _cli_layer_path_safety(target_root, planned_files):
 def _prepare_apply(target_root, planned_files, args):
     """Plan entries, build + fsync the manifest. Returns (root, entries,
     manifest_path). Separated from the write phase so `main()` keeps the
-    manifest path available even if writes fail mid-apply — closes Codex
-    iter-22 P1 (restore hint must still print on partial-apply failure).
+    manifest path available even if writes fail mid-apply
+    (the restore hint must still print on partial-apply failure).
 
-    Does NOT create `target_root` here — closes Codex iter-24 P1: mkdir
+    Does NOT create `target_root` here: mkdir
     before manifest_write would leave a partial side effect (orphan
     target dir) with no rollback path. `atomic_write` lazily creates
     parent dirs per file, so target_root is implicitly created on the
@@ -88,12 +88,12 @@ def _apply_writes(root, planned_files, entries):
 
 
 def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
-    """Apply v2 entries per Scope #7's per-policy write contract.
+    """Apply v2 entries per the per-policy write contract.
 
     Replaces the plain `_apply_writes` flow when `--mode=adopt`. SKIP entries
     are NOT in the manifest (mutation-only contract), so the loop never sees
     them. Each remaining policy uses `io.atomic_write` (tmp + os.replace) for
-    crash-safety — closes Codex iter-21 P1 contract carried into v2.
+    crash-safety — the v1 crash-safety contract carried into v2.
 
       WRITE         atomic_write(rel_path, skill_content) + chmod
       OVERWRITE     atomic_write(rel_path, skill_content) + chmod
@@ -154,7 +154,7 @@ def _apply_adoption_writes(root, planned_files, adoption_plan, entries):
             # it vanished, or someone added the block, FAIL LOUD rather than
             # recreate-from-empty / no-op while the manifest still records the
             # block — either would make `--restore` remove user content or leave
-            # a stray `.gitignore` (Tier-2 codex P2 on PR #35).
+            # a stray `.gitignore`.
             if not target_full.exists():
                 raise AdoptionCollisionError(
                     f"{entry['target_path']} disappeared between plan-time and apply-time; "
@@ -216,15 +216,15 @@ def _main_apply_adopt(args, target_root, planned_files, context):
       4. manifest.plan_adoption_entries(...) → v2 entries + created_dirs
          (may raise AdoptionCollisionError on `.new` collision)
       5. Build + write v2 manifest BEFORE any filesystem mutation, so
-         restore can roll back partial-apply (carries the iter-22 P1
-         contract into adopt-mode).
+         restore can roll back partial-apply (the manifest-before-writes
+         contract carried into adopt-mode).
       6. _apply_adoption_writes(...) → atomic writes per policy.
 
     Returns the exit code. _AdoptionAbort / AdoptionCollisionError both
     map to exit 2 (fail-loud CI contract); mid-write exceptions map to
     exit 1 with a restore hint.
     """
-    # Bucket A: adopt brings the skill into a project that ALREADY has its own
+    # Adopt brings the skill into a project that ALREADY has its own
     # source + tests, so the greenfield-only entrypoint/smoke placeholders
     # (python: src/main.py, tests/test_smoke.py) are never wanted — suppress
     # them from the planned set BEFORE analyze so they never become a rule-(a)
@@ -237,7 +237,7 @@ def _main_apply_adopt(args, target_root, planned_files, context):
             rel: content for rel, content in planned_files.items() if rel not in placeholders
         }
 
-    # Bucket B: the plan-review machinery (the `make review` dispatcher,
+    # The plan-review machinery (the `make review` dispatcher,
     # review-plan/commit targets, loop helpers) lives inline inside the generated
     # Makefile via `{% include 'Makefile.review.tmpl' %}`. When the target OWNS a
     # Makefile, adopt SKIPs it (rule h) — so none of those targets land, yet the
@@ -264,8 +264,8 @@ def _main_apply_adopt(args, target_root, planned_files, context):
             traceback.print_exc()
         return 1
 
-    # Bucket B prune, pass 1 — recommendation-keyed (iter-2 FN1); pass 2 below
-    # re-checks against the owner's actual decision (codex P2). Keep the
+    # Standalone-Makefile.review prune, pass 1 — recommendation-keyed; pass 2
+    # below re-checks against the owner's actual decision. Keep the
     # standalone Makefile.review ONLY when the target's own Makefile is SKIPped
     # (it owns one — the fragment's targets otherwise never arrive). When the
     # base Makefile is itself written (rule-(a) WRITE for a missing Makefile,
@@ -281,8 +281,8 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     )
     # Keep the standalone ONLY when the target owns a Makefile (SKIP) that does
     # NOT already inline the review machinery. A Makefile byte-identical to — or
-    # previously bootstrapped by — the skill already carries the fragment inline
-    # (codex round-3 P2), so a standalone would be redundant and the include hint
+    # previously bootstrapped by — the skill already carries the fragment inline,
+    # so a standalone would be redundant and the include hint
     # would duplicate those targets; drop it in that case too. (The broader
     # re-adopt / upgrade-delta feature stays parked — this is just the stateless
     # "active Makefile already has the machinery" check, not prior-state tracking.)
@@ -307,7 +307,7 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         sys.stderr.write(f"{e}\n")
         return 2
 
-    # Bucket B prune, pass 2 (codex P2). Pass 1 keyed on the Makefile
+    # Standalone-Makefile.review prune, pass 2. Pass 1 keyed on the Makefile
     # RECOMMENDATION, but the owner is prompted on their own Makefile and can
     # turn a SKIP into [o]verwrite (or [n]ew). If they OVERWRITE/WRITE the active
     # Makefile with the skill's — which inlines the fragment via `{% include %}` —
@@ -343,8 +343,8 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         )
         return 0
 
-    # Bucket B emitted flag — ground-truth from the FINAL entries (codex round-2
-    # P2). We "emitted" a standalone Makefile.review only if we actually
+    # Emitted flag — ground-truth from the FINAL entries.
+    # We "emitted" a standalone Makefile.review only if we actually
     # WRITE/OVERWRITE it: a target that already owns a Makefile.review can SKIP it
     # (keep theirs) or take [n]ew, leaving no fresh standalone — so the include
     # hint must not fire. (Pass 2 above separately prevents WRITING a redundant
@@ -357,7 +357,7 @@ def _main_apply_adopt(args, target_root, planned_files, context):
         colliding_targets = ()
     # Whether the skill's Makefile (which defines `install-hooks`) actually
     # landed — gates the `make install-hooks` next-step so adopt never advertises
-    # a target absent from the owner's own Makefile (Tier-2 codex round-4 P2).
+    # a target absent from the owner's own Makefile.
     base_makefile_written = any(
         e["path"] == "Makefile" and e["policy"] in ("WRITE", "OVERWRITE") for e in entries
     )
@@ -406,9 +406,9 @@ def _main_apply_adopt(args, target_root, planned_files, context):
     print(f"adopt-mode apply: {n_mutated} mutating entries written to {target_root}")
     print(f"restore manifest: {manifest_p}")
     print(f"to rollback: {_format_restore_hint(manifest_p)}")
-    # Bucket C: give the adopt success path the same next-steps / gh-repo / token
-    # guidance the v1 path prints (folds the parked gh-repo-create mirror item).
-    # Bucket B: when a standalone Makefile.review was emitted (the target owns a
+    # Give the adopt success path the same next-steps / gh-repo / token
+    # guidance the v1 path prints.
+    # When a standalone Makefile.review was emitted (the target owns a
     # Makefile), the helper also prints the `include Makefile.review` hint naming
     # the computed colliding_targets.
     _print_post_apply_guidance(

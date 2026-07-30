@@ -32,8 +32,9 @@ EXECUTABLE_TARGETS = {
 #       policy, target_path, sha256_before_target_path, sha256_after_target_path,
 #       pre_append_length. SKIP entries are NOT in v2 manifests (mutation-only).
 #
-# Backward-compat dispatch (Bucket B): when loading a manifest, `format_version`
-# absent or None → treated as v1 (preserves PR #1-#6 manifest compat); `2` →
+# Backward-compat dispatch: when loading a manifest, `format_version`
+# absent or None → treated as v1 (preserves compat with manifests written
+# before `format_version` existed); `2` →
 # v2 semantics. Any other value → ValueError (fail-loud on unknown future
 # versions rather than silently mis-interpreting).
 MANIFEST_FORMAT_V1 = 1
@@ -85,8 +86,9 @@ class Manifest:
 
     @classmethod
     def from_dict(cls, data):
-        # `format_version` absent / None → v1 (preserves PR #1-#6 manifest
-        # backward-compat per Bucket B). `2` → v2. Anything else → ValueError
+        # `format_version` absent / None → v1 (preserves backward-compat with
+        # manifests written before the field existed). `2` → v2. Anything else
+        # → ValueError
         # (raised by the constructor via _SUPPORTED_FORMAT_VERSIONS check).
         raw_version = data.get("format_version")
         format_version = MANIFEST_FORMAT_V1 if raw_version is None else raw_version
@@ -102,7 +104,7 @@ class Manifest:
 
 def manifest_path():
     # mkstemp guarantees uniqueness even when two --apply runs land in the
-    # same second — closes Codex iter-21 P2. The timestamp prefix keeps
+    # same second. The timestamp prefix keeps
     # the manifests human-sortable; the random suffix prevents collisions.
     timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
     fd, path = tempfile.mkstemp(
@@ -166,12 +168,12 @@ def plan_entries(target_root, planned_files):
     return entries, created_directories
 
 
-# The NEUTRALIZE un-ignore block (design note Option B). The intermediate
+# The NEUTRALIZE un-ignore block. The intermediate
 # `!.claude/commands/` line is REQUIRED — git cannot descend into `commands/`
 # to re-include the file without first re-including the dir. EXACTLY 6 lines
 # (sentinel comment + 5 patterns); the sentinel-based restore removes exactly
-# these (a 7th line after the block is never consumed — iter-4 FN4). This must
-# stay byte-identical to the Part-1 dogfood `.gitignore` exception.
+# these (a 7th line after the block is never consumed). This must
+# stay byte-identical to the dogfood `.gitignore` exception.
 NEUTRALIZE_SENTINEL = "# dev-project-setup: un-ignore the managed /dev-review command below"
 NEUTRALIZE_BLOCK_LINES = [
     NEUTRALIZE_SENTINEL,
@@ -196,7 +198,7 @@ def compute_neutralize_apply_bytes(current_bytes, block_lines):
     NO whole-file SHA is recorded for NEUTRALIZE (restore is sentinel-based):
     the block lands LAST (sort_key tier 1, after any tier-0 APPEND_MERGE on the
     same `.gitignore`), and restore composes with that APPEND_MERGE because
-    NEUTRALIZE restores FIRST (iter-2 FN2).
+    NEUTRALIZE restores FIRST.
     """
     block_bytes_lines = [line.encode("utf-8") for line in block_lines]
     lines = current_bytes.split(b"\n")
@@ -309,15 +311,15 @@ def _build_v2_neutralize_entry(target_root, rel_path=".gitignore", sort_key=1):
 
     Restore is SENTINEL-based — the entry records `NEUTRALIZE_BLOCK_LINES`, NOT
     a whole-file SHA: `sha256_*_target_path` / `pre_append_length` are None.
-    That is deliberate (iter-2 FN2): a whole-file SHA computed at plan-time
+    That is deliberate: a whole-file SHA computed at plan-time
     against the ORIGINAL `.gitignore` would be un-matchable at restore-time
     because the tier-0 APPEND_MERGE already mutated the file. The sentinel guard
     is position- and length-independent, so it composes with that APPEND_MERGE
     (NEUTRALIZE restores first — tier 1 > tier 0).
 
     Captures the existing `.gitignore` mode in `mode_before` so apply + restore
-    PRESERVE it — never loosen a private (e.g. 0600) ignore file to 0644 (Tier-2
-    codex P2 on PR #35). NEUTRALIZE only fires when the `.gitignore` exists (the
+    PRESERVE it — never loosen a private (e.g. 0600) ignore file to
+    0644. NEUTRALIZE only fires when the `.gitignore` exists (the
     root-`.gitignore`-source precondition), so the stat normally succeeds; a
     defensive miss leaves `mode_before=None` → apply/restore fall back to
     `mode_after`.
@@ -345,17 +347,17 @@ def _build_v2_neutralize_entry(target_root, rel_path=".gitignore", sort_key=1):
 
 
 def plan_adoption_entries(target_root, planned_files, adoption_plan):
-    """Build v2 manifest entries from an AdoptionPlan + planned_files (Bucket B
-    Scope #7).
+    """Build v2 manifest entries from an AdoptionPlan + planned_files.
 
     SKIP-policy analyses produce NO manifest entry (mutation-only contract;
     SKIP decisions live in the adoption report instead). Each mutating policy
     has its own builder above.
 
-    `.new` collision rule (Scope #7): if `<original>.new` already exists at
-    plan-time for a WRITE_NEW entry, raise `AdoptionCollisionError`. The
-    caller (`apply_pipeline.py`) converts to `CLIError(exit_code=2)` with the user-facing
-    "rename or remove it before running --mode=adopt" message. Fail-loud
+    `.new` collision rule: if `<original>.new` already exists at
+    plan-time for a WRITE_NEW entry, raise `AdoptionCollisionError` with the
+    user-facing "rename or remove it before running --mode=adopt" message;
+    the caller (`apply_pipeline._main_apply_adopt`) writes it to stderr and
+    returns exit code 2. Fail-loud
     rather than risk overwriting a file the user authored or already-merged.
 
     Returns `(entries, created_directories)` matching `plan_entries`' shape.
@@ -420,7 +422,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
                 entries.append(_build_v2_neutralize_entry(root, sort_key=1))
                 neutralize_gitignore_added = True
             # (ii) reuse normal WRITE parent-dir tracking so `_restore_v2` can
-            # remove any `.claude/` / `.claude/commands/` it created (iter-3 FN3).
+            # remove any `.claude/` / `.claude/commands/` it created.
             parent = Path(rel_path).parent
             while str(parent) not in (".", ""):
                 if str(parent) not in pre_existing_dirs:
@@ -433,7 +435,7 @@ def plan_adoption_entries(target_root, planned_files, adoption_plan):
                 "WRITE/OVERWRITE/WRITE_NEW/APPEND_MERGE/NEUTRALIZE/SKIP)"
             )
 
-    # Apply ordering (Bucket A `sort_key` tiers): sort ascending by
+    # Apply ordering (`sort_key` tiers): sort ascending by
     # (sort_key, path). Tier 0 = all normal mutations (incl. APPEND_MERGE on
     # `.gitignore`); tier 1 = the NEUTRALIZE `.gitignore` entry (must apply
     # AFTER the APPEND_MERGE so its sentinel block is last); tier 2 = the
@@ -462,9 +464,9 @@ def restore_from_manifest(m, stderr=None):
     """Restore a target_root to its pre-apply state using the manifest.
 
     Dispatches on `format_version`:
-      v1 → `_restore_v1` (PR #1 contract: created files removed, overwritten
-           files written back from `content_before_b64`).
-      v2 → `_restore_v2` (Bucket B per-policy matrix: WRITE deletes,
+      v1 → `_restore_v1` (the original contract: created files removed,
+           overwritten files written back from `content_before_b64`).
+      v2 → `_restore_v2` (per-policy matrix: WRITE deletes,
            OVERWRITE writes back, WRITE_NEW removes the `.new` file,
            APPEND_MERGE truncates to `pre_append_length`. SKIP entries
            don't appear in v2 manifests per the mutation-only contract).
@@ -514,7 +516,7 @@ def _restore_v1(m, stderr):
                 current = target_path.read_bytes()
                 current_sha = _sha256(current)
                 if current_sha == entry["sha256_after"]:
-                    # Crash-safe write-back: closes Codex iter-21 P1. A bare
+                    # Crash-safe write-back. A bare
                     # write_bytes truncates in place; if the restore is
                     # interrupted, the user is left with an empty or partial
                     # file. Route through atomic_write for the same tmp+rename
@@ -533,7 +535,7 @@ def _restore_v1(m, stderr):
             else:
                 # Overwritten file is missing at restore time. Current state
                 # matches neither sha256_after nor sha256_before — conservative
-                # rule says SKIP (Codex iter-20 P1: never undo a user deletion
+                # rule says SKIP (never undo a user deletion
                 # even if the apply might just have been interrupted).
                 stderr.write(
                     "SKIP {}: file missing; left absent (user deletion or "
@@ -570,7 +572,7 @@ def _restore_v1(m, stderr):
     return (n_restored, n_removed, n_skipped, n_rejected)
 
 
-# ─── v2 per-policy restore matrix (Bucket B) ────────────────────────────────
+# ─── v2 per-policy restore matrix ───────────────────────────────────────────
 #
 # Each per-policy handler returns one of:
 #   "restored" — file mutated back to pre-apply state
@@ -579,7 +581,7 @@ def _restore_v1(m, stderr):
 #                unknown policy)
 #
 # v2 uses `target_path` + `sha256_before_target_path` / `sha256_after_target_path`
-# as the authoritative mutation surface (Bucket B): for WRITE_NEW these point
+# as the authoritative mutation surface: for WRITE_NEW these point
 # at the `.new` file, not the original; for APPEND_MERGE they point at the
 # original and `pre_append_length` says where to truncate. WRITE + OVERWRITE
 # always have `target_path == path` so the v2 fields collapse to the v1 SHAs.
@@ -686,7 +688,7 @@ def _restore_v2_append_merge(entry, target_root, stderr):
 
 def _restore_v2_neutralize(entry, target_root, stderr):
     """NEUTRALIZE appended the managed un-ignore block to `.gitignore`. Restore
-    is SENTINEL-based (no whole-file SHA, iter-2 FN2): locate the sentinel line,
+    is SENTINEL-based (no whole-file SHA): locate the sentinel line,
     verify the slice starting there matches the recorded `neutralize_block`
     EXACTLY, then delete exactly those lines (a 7th line after the block is never
     consumed). Composes with a same-file APPEND_MERGE because NEUTRALIZE (tier 1)
@@ -735,7 +737,7 @@ _V2_RESTORE_HANDLERS = {
 
 
 def _restore_v2(m, stderr):
-    """Bucket B v2 restore matrix dispatcher.
+    """v2 restore matrix dispatcher.
 
     SKIP entries don't appear in v2 manifests by contract (mutation-only); if
     one shows up anyway, the dispatch hits the unknown-policy branch and

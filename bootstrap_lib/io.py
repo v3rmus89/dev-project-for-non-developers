@@ -43,9 +43,9 @@ def atomic_write(target_path, content_bytes):
             f.write(content_bytes)
             f.flush()
             os.fsync(f.fileno())
-        # os.replace (not os.rename) so cross-platform overwrite works
-        # (Codex iter-23 P2#2): on Windows os.rename fails when target
-        # exists, breaking --overwrite-existing on every collided file.
+        # os.replace (not os.rename) so cross-platform overwrite works:
+        # on Windows os.rename fails when target exists, breaking
+        # --overwrite-existing on every collided file.
         os.replace(tmp, target)
         renamed = True
     finally:
@@ -53,7 +53,7 @@ def atomic_write(target_path, content_bytes):
         # If the rename didn't happen (write/fsync/replace raised), the
         # orphan .bootstrap-tmp must be removed here — the atexit/signal
         # cleanup can no longer see it once it's discarded from
-        # _pending_tmp. Closes Codex iter-23 P2#1.
+        # _pending_tmp.
         if not renamed:
             with contextlib.suppress(OSError):
                 os.remove(tmp)

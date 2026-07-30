@@ -31,7 +31,7 @@ def _print_post_apply_guidance(
     both-docs Codex hint + the CLAUDE_CODE_OAUTH_TOKEN secret step.
 
     Called from BOTH the v1 `--apply` success path and `_main_apply_adopt`
-    (Bucket C / AD3) — a single source of truth so the two paths cannot drift
+    — a single source of truth so the two paths cannot drift
     (that drift is exactly what created the parked "mirror the gh-repo-create
     hint into adopt" BACKLOG item this folds).
 
@@ -44,8 +44,8 @@ def _print_post_apply_guidance(
       - `make install-hooks` is gated on `base_makefile_written` in adopt mode:
         that target lives in the skill's Makefile, which only lands when we
         WRITE/OVERWRITE it; when the target owns its Makefile (SKIP) the target
-        has no such recipe, so advertising it would fail (Tier-2 codex round-4);
-      - when `makefile_review_emitted` is True, print the Bucket B
+        has no such recipe, so advertising it would fail;
+      - when `makefile_review_emitted` is True, print the
         `include Makefile.review` hint and name `colliding_targets` (the
         computed fragment-vs-target Makefile target overlap) as the ones to
         remove, so the advice is correct for ANY existing Makefile rather than
@@ -53,8 +53,8 @@ def _print_post_apply_guidance(
 
     `makefile_review_emitted` / `colliding_targets` are explicit because the
     helper cannot otherwise tell an emitted `Makefile.review` from a
-    pre-existing or dropped one (iter-1 FN6) nor recompute the overlap
-    (iter-2 FN2); both are values the caller already computed.
+    pre-existing or dropped one nor recompute the overlap; both are values
+    the caller already computed.
     """
     if args.language in ("python", "nodejs", "go"):
         steps = []
@@ -66,12 +66,12 @@ def _print_post_apply_guidance(
             # `make install-hooks` is defined by the skill's Makefile — only
             # advertise it when that Makefile actually landed (greenfield always;
             # adopt only when the base Makefile was WRITE/OVERWRITE). Advertising
-            # it for an owned-Makefile SKIP would name a non-existent target
-            # (Tier-2 codex round-4). In adopt the `cd … && make install` line
-            # above is gated off, so the hooks step carries its own `cd` —
-            # bootstrap is usually run from outside the target (Tier-2 codex
-            # round-5). Greenfield keeps the bare form (the install line above
-            # already cd'd in) so its output stays byte-identical.
+            # it for an owned-Makefile SKIP would name a non-existent target.
+            # In adopt the `cd … && make install` line above is gated off, so
+            # the hooks step carries its own `cd` — bootstrap is usually run
+            # from outside the target. Greenfield keeps the bare form (the
+            # install line above already cd'd in) so its output stays
+            # byte-identical.
             if adopt:
                 steps.append(
                     f"  cd {target_root} && make install-hooks  "
@@ -85,7 +85,7 @@ def _print_post_apply_guidance(
                 print(step)
 
     if makefile_review_emitted:
-        # Bucket B: a standalone Makefile.review carries the plan-review
+        # A standalone Makefile.review carries the plan-review
         # machinery into a target that owns its own Makefile (which adopt
         # SKIPs, so the inline `{% include %}` never lands). Tell the owner to
         # wire it in and which of their targets the fragment redefines — GNU
@@ -231,8 +231,7 @@ def _makefile_target_names(text):
 
 def _compute_colliding_targets(target_root, review_fragment_bytes):
     """Return the sorted tuple of target names defined in BOTH the standalone
-    `Makefile.review` fragment and the target's existing `Makefile` (R-B1 /
-    iter-2 FN2).
+    `Makefile.review` fragment and the target's existing `Makefile`.
 
     These are the names the owner must remove before `include Makefile.review`:
     GNU Make warns ("overriding recipe for target …") and silently keeps the

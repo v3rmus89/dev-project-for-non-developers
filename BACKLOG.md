@@ -291,7 +291,7 @@ Iter 1 + 2 folded (5 imp-3 total, all addressed). Key verified items:
 
 **Trigger to pick up**:
 - ~~A real `codex exec --json` JSONL output is captured~~ **DONE** — V-13 complete.
-- ~~V-13.5 protocol: 3-assertion gate~~ ~~UPDATED to 4-assertion gate~~ — **CORRECTED (2026-05-30) to a 3-gate read-only-ENFORCED check** (thread-id continuity + write-BLOCKED + resumed-rollout `sandbox_policy.type == "read-only"`; cwd gate dropped). Run the V-13.5 verifier (`scripts/verify-v13-5.py`) before merge.
+- ~~V-13.5 protocol: 3-assertion gate~~ ~~UPDATED to 4-assertion gate~~ — **CORRECTED (2026-05-30) to a 3-gate read-only-ENFORCED check** (thread-id continuity + write-BLOCKED + resumed-rollout `sandbox_policy.type == "read-only"`; cwd gate dropped). Run the V-13.5 verifier (`scripts/verify-codex-thread-continuation.py`) before merge.
 - ~~A long plan loop (>8 iters) makes Codex token cost a real operational concern.~~ **SUPERSEDED 2026-06-01** — measured stay-fresh (see Status).
 
 **Starting requirements (iter-1..5 F-series findings)**:

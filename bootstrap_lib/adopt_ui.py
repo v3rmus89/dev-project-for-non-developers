@@ -8,7 +8,7 @@ import difflib
 import sys
 from pathlib import Path
 
-# ─── --mode=adopt interactive decide-phase UX (PR #7 Bucket C / Scope #6) ─────
+# ─── --mode=adopt interactive decide-phase UX ─────────────────────────────────
 
 
 class _AdoptionAbort(Exception):
@@ -19,7 +19,7 @@ class _AdoptionAbort(Exception):
     """
 
 
-# Per-file allowed-actions matrix (Scope #6):
+# Per-file allowed-actions matrix:
 #   always-allowed: r/s/d/?/q
 #   [n] (WRITE_NEW): any manual-review file
 #   [a] (APPEND_MERGE): ONLY .gitignore (rule (d) line-level idempotent merge)
@@ -32,7 +32,7 @@ def _allowed_actions_for(rel_path, policy=None):
     if policy == "NEUTRALIZE":
         # NEUTRALIZE is a two-entry mutation (append the `.gitignore` un-ignore
         # block + WRITE the command file). The generic mutating actions are all
-        # UNSAFE here (iter-4 FN1): [n]ew would write an ignored `.new`,
+        # UNSAFE here: [n]ew would write an ignored `.new`,
         # [o]verwrite assumes the target file already exists, [a]ppend is
         # `.gitignore`-only. Offer ONLY recommended/skip/diff/help/quit.
         return ["r", "s", "d", "?", "q"]
@@ -177,7 +177,7 @@ def _prompt_one_file(analysis, planned_files, target_root, stdin, stdout):
 
 
 def _interactive_decide(plan, planned_files, *, non_interactive=False, stdin=None, stdout=None):
-    """Per-file decide-phase UX (Bucket C / Scope #6 single-matrix contract).
+    """Per-file decide-phase UX (the single-matrix consent contract).
 
     Only files with `manual_review_needed=True` trigger a prompt. Files with
     `manual_review_needed=False` pass through unchanged (their recommendation
@@ -189,7 +189,7 @@ def _interactive_decide(plan, planned_files, *, non_interactive=False, stdin=Non
     everything safe applies, anything needing review fails the run.
 
     EOF on stdin before a required decision also raises `_AdoptionAbort`
-    (per Codex iter-5 #1 fold: heredoc / piped input works, but running out
+    (heredoc / piped input works, but running out
     mid-decision is fail-loud).
 
     Returns a new `AdoptionPlan` with each prompted analysis's recommendation

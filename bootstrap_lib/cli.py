@@ -58,7 +58,7 @@ def _resolve_mode(args):
             bad.append("--github-repo")
         if args.package_manager is not None:
             bad.append("--package-manager")
-        # PR #7 Bucket A: --mode / --auto-accept-recommendations /
+        # --mode / --auto-accept-recommendations /
         # --non-interactive are adopt-mode-only modifiers; rejected in
         # restore mode.
         if args.mode is not None:
@@ -107,7 +107,7 @@ def _resolve_mode(args):
             f"--package-manager only valid with --language=python (got --language={args.language})",
         )
 
-    # PR #7 Bucket A: --mode=adopt validations.
+    # --mode=adopt validations.
     if args.mode == "adopt":
         if not args.apply:
             raise CLIError(
@@ -154,8 +154,8 @@ def _resolve_mode(args):
 def _build_context(args, package_manager=None):
     """Build the Jinja render context dict.
 
-    Stays a pure dict-construction function — no filesystem I/O (closes
-    Claude iter-2 #6). Detection + advisory printing live in `main()`
+    Stays a pure dict-construction function — no filesystem I/O.
+    Detection + advisory printing live in `main()`
     upstream; the resolved `package_manager` value flows in as a kwarg.
 
     `package_manager` is the effective value: explicit flag > detection >
@@ -182,8 +182,8 @@ def _resolve_package_manager(args):
     for `--language=python`; for other languages, returns `(None, None)`.
 
     The CLI applies the `"uv"` default for `--language=python` when neither
-    the explicit flag nor detection produces a manager — closes Claude
-    iter-2 #1 (rule 6 returns `(None, "ambiguous: ...")` so the override
+    the explicit flag nor detection produces a manager
+    (rule 6 returns `(None, "ambiguous: ...")` so the override
     hint advisory can fire; CLI is what defaults to uv).
     """
     if args.language != "python":
@@ -200,7 +200,7 @@ def _resolve_package_manager(args):
 def _maybe_print_advisory(args, detected, effective_pm):
     """Print a one-line stderr advisory about the resolved package manager.
 
-    Rules (closes Claude iter-2 #1, Codex iter-3 #2):
+    Rules:
     - User passed `--package-manager` explicitly → no advisory.
     - Positive marker fired in detection (rules 2-5) → succinct info line.
     - Ambiguous (rule 6 → manager=None, reason starts "ambiguous") AND
@@ -324,15 +324,14 @@ def main(argv):
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             sys.stderr.write(f"cannot read manifest {args.restore}: {e}\n")
             return 1
-        # Codex iter-22 P2: surface the rejected count as a non-zero exit so
+        # Surface the rejected count as a non-zero exit so
         # scripted rollback flows don't silently report success when the
         # manifest contained a path-safety violation and no work was done.
         _r, _rm, _sk, n_rj = manifest.restore_from_manifest(m)
         return 1 if n_rj > 0 else 0
 
     # Resolve package_manager (Python-only) BEFORE _build_context so
-    # _build_context stays a pure dict-construction function (closes
-    # Claude iter-2 #6).
+    # _build_context stays a pure dict-construction function.
     effective_pm, detected = _resolve_package_manager(args)
     _maybe_print_advisory(args, detected, effective_pm)
 
@@ -361,7 +360,7 @@ def main(argv):
         return 0
 
     # apply
-    # PR #7: --mode=adopt has its own apply pipeline that supersedes the
+    # --mode=adopt has its own apply pipeline that supersedes the
     # plain-apply collision-abort contract. Per-file consent via
     # _interactive_decide IS the consent model; no --overwrite-existing
     # needed (it's actually rejected by _resolve_mode for adopt-mode).
@@ -379,7 +378,7 @@ def main(argv):
         return 2
 
     # Split prepare from writes so the manifest path is preserved if a write
-    # raises mid-apply (closes Codex iter-22 P1).
+    # raises mid-apply.
     try:
         root, entries, manifest_p = _prepare_apply(target_root, planned_files, args)
     except Exception as e:

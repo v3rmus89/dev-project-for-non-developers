@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V-13.5 — live pre-merge gate for Bucket F (Codex thread-continuation).
+"""Live pre-merge gate for Codex thread-continuation (the V-13.5 gate).
 
 REPO-INTERNAL proof harness. This script verifies the skill's OWN dogfood
 `THREAD_MODE=continue` behaviour; it is deliberately NOT bootstrapped to
@@ -8,7 +8,7 @@ inherit the proven feature, not the harness.
 
 Run it from the repo root before opening the PR:
 
-    python3 scripts/verify-v13-5.py [PLAN_FILE]
+    python3 scripts/verify-codex-thread-continuation.py [PLAN_FILE]
 
 It is a MERGE BLOCKER: any non-zero exit means do NOT merge. The non-zero
 exit CLASS tells you what to do:
@@ -60,8 +60,9 @@ general config override `-c sandbox_mode=read-only`.
 
 The PURE functions below (make_command, resume_probe_command, compute_key,
 parse_jsonl, thread_id_of, sandbox_type_of, check_gates, normal_path_artifacts_ok,
-looks_like_env_failure) are unit-tested in tests/test_verify_v13_5.py with
-fixtures — no live calls in CI.
+looks_like_env_failure) are unit-tested in
+tests/test_verify_codex_thread_continuation.py with fixtures — no live calls
+in CI.
 """
 
 from __future__ import annotations
@@ -85,7 +86,7 @@ EXIT_PROBE = 3
 EXIT_FAIL = 4
 
 # Substrings (lower-cased) that mark a codex failure as an ENVIRONMENT problem
-# rather than a feature failure (iter-8 FN3 — distinguish so the driver reruns
+# rather than a feature failure (distinguish so the driver reruns
 # instead of filing a spurious bug). Deliberately SPECIFIC phrases, not bare
 # words: the seed/resume calls cat a review of the plan (which itself contains
 # words like "network"/"quota" in its own error-class prose), so bare
@@ -134,7 +135,7 @@ def make_command(target: str, plan_file: str, **make_vars: str) -> list[str]:
 
     PLAN_FILE is ALWAYS included: both `loop-reset` and `review-plan-by-codex`
     guard on `test -n "$(PLAN_FILE)"`, so an omitted PLAN_FILE fails the make
-    call before it tests anything (iter-8 FN1 — the prior prose verifier
+    call before it tests anything (the prior prose verifier
     dropped it). This is the single source of make-invocation construction so
     the unit test can lock the PLAN_FILE= invariant.
     """
@@ -155,7 +156,7 @@ def subprocess_env(base_env: Mapping[str, str]) -> dict[str, str]:
     recipe-level shell test. The retained JSONL then trips the step-3 `jsonl_absent`
     gate and SPURIOUSLY fails V-13.5. The verifier always wants the recipe's default
     (delete-after-extract) behaviour; its own artifact retention is the separate
-    KEEP_V13_5_JSONL knob (read by this script, not by the recipe). (Tier-2 codex P2.)
+    KEEP_V13_5_JSONL knob (read by this script, not by the recipe).
     """
     env = dict(base_env)
     env.pop("KEEP_THREAD_JSONL", None)
@@ -166,7 +167,7 @@ def resume_probe_command(repo_root: str, session_id: str, probe_file: str) -> li
     """Build the read-only-ENFORCED resume-probe argv (the SAFETY core of V-13.5).
 
     Mirrors the recipe's resume invocation: `-c sandbox_mode=read-only` (resume
-    defaults to workspace-write and does NOT inherit --sandbox; F3) and NO
+    defaults to workspace-write and does NOT inherit --sandbox) and NO
     --sandbox/-C/--color (resume CLI-rejects those). `--json` captures the stream
     for the thread-id-continuity gate. The prompt asks codex to WRITE probe_file
     so the gate can assert read-only blocked it.
@@ -246,7 +247,7 @@ def check_gates(
     expected_session_id: str,
     probe_file_exists: bool,
 ) -> tuple[bool, dict[str, tuple[bool, str]]]:
-    """The V-13.5 read-only-ENFORCED gate — 3 checks (correction item 4):
+    """The V-13.5 read-only-ENFORCED gate — 3 checks:
 
     a. thread-id continuity — the resume STREAM re-emits thread.started with the
        same thread_id (resume, not restart).
@@ -320,10 +321,10 @@ def looks_like_env_failure(text: str) -> bool:
 
 
 def _run(cmd: list[str], cwd: Path | str | None = None) -> subprocess.CompletedProcess:
-    # stdin=DEVNULL: `codex exec --json` hangs reading stdin otherwise (F2); the
+    # stdin=DEVNULL: `codex exec --json` hangs reading stdin otherwise; the
     # positional prompt is still honoured. Harmless for the non-json make calls.
     # env: strip KEEP_THREAD_JSONL so an exported value can't leak into the seed
-    # recipe and spuriously fail the step-3 jsonl_absent gate (Tier-2 codex P2).
+    # recipe and spuriously fail the step-3 jsonl_absent gate.
     return subprocess.run(
         cmd,
         cwd=str(cwd) if cwd is not None else str(REPO_ROOT),

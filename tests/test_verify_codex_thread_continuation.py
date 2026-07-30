@@ -1,8 +1,9 @@
-"""Unit tests for scripts/verify-v13-5.py's PURE functions.
+"""Unit tests for scripts/verify-codex-thread-continuation.py's PURE functions.
 
 The V-13.5 verifier is a repo-internal live pre-merge gate. Its live codex/make
-calls are exercised only by the manual `python3 scripts/verify-v13-5.py` run —
-NEVER in CI. These tests cover the pure logic with fixtures:
+calls are exercised only by the manual
+`python3 scripts/verify-codex-thread-continuation.py` run — NEVER in CI.
+These tests cover the pure logic with fixtures:
   - make_command (PLAN_FILE= always present — iter-8 FN1)
   - resume_probe_command (the SAFETY core: `-c sandbox_mode=read-only` present,
     --sandbox/-C/--color/--skip-git-repo-check absent)
@@ -41,7 +42,8 @@ FIXTURE_SESSION_ID = "00000000-0000-7000-8000-000000000001"
 
 def _load_verifier():
     spec = importlib.util.spec_from_file_location(
-        "verify_v13_5", SKILL_ROOT / "scripts" / "verify-v13-5.py"
+        "verify_codex_thread_continuation",
+        SKILL_ROOT / "scripts" / "verify-codex-thread-continuation.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -401,5 +403,6 @@ def test_looks_like_env_failure_false(text):
 
 def test_default_plan_exists():
     assert (SKILL_ROOT / verify.DEFAULT_PLAN).is_file(), (
-        f"scripts/verify-v13-5.py DEFAULT_PLAN points at a missing file: {verify.DEFAULT_PLAN}"
+        f"scripts/verify-codex-thread-continuation.py DEFAULT_PLAN points at "
+        f"a missing file: {verify.DEFAULT_PLAN}"
     )

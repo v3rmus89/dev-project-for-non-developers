@@ -9,12 +9,12 @@ Two responsibilities, both pure + unit-tested in `make check` (the live runner
    is the *uncached-input ratio* `sum(uncached, continue) / sum(uncached, fresh)`,
    where `uncached = input_tokens - cached_input_tokens`. `cached_input_tokens` is
    a SUBSET of `input_tokens`, so cached tokens are never counted as a token-count
-   "saving" (iter-1 FN1) -- caching is a price discount, surfaced via `est_cost`,
+   "saving" -- caching is a price discount, surfaced via `est_cost`,
    not a reduction in input.
 
 2. **Safe-argv builders** for the codex calls. Resume defaults to workspace-WRITE
    unless `-c sandbox_mode=read-only` is passed, so the screen pins read-only argv
-   for every call (iter-3 FN2). All calls are wrapped in
+   for every call. All calls are wrapped in
    `scripts/run-with-clean-env.py` -- the same prefix-aware env scrubber the
    Makefile's review targets use -- and run with stdin closed (`codex --json`
    hangs on an open stdin; memory `codex-json-resume-behavior`).
@@ -93,7 +93,7 @@ def build_plan_review_prompt(repo_abspath: str, plan: str, iteration: int) -> st
     return _render_review_prompt.render_prompt(text, _resolve).rstrip("\n")
 
 
-# ── Safe-argv builders (iter-3 FN2) ───────────────────────────────────────────
+# ── Safe-argv builders ─────────────────────────────────────────────────────────
 
 # The env scrubber every codex call is routed through, relative to the repo root.
 CLEAN_ENV_WRAPPER = "scripts/run-with-clean-env.py"
@@ -195,7 +195,7 @@ def is_read_only_argv(argv: list[str]) -> bool:
     return any(argv[i] == "--sandbox" and argv[i + 1] == "read-only" for i in range(len(argv) - 1))
 
 
-# ── Metric math (iter-1 FN1: uncached-input, not raw token count) ──────────────
+# ── Metric math (uncached-input, not raw token count) ──────────────────────────
 
 
 def parse_turn_usages(jsonl_text: str) -> list[dict]:
@@ -242,7 +242,7 @@ def uncached_input(usage: dict) -> int:
     """`input_tokens - cached_input_tokens` (>= 0). The screen's per-call unit.
 
     Never negative: cached is clamped to a subset of input. Cached tokens are a
-    price discount, surfaced via `est_cost`, NOT a token-count saving (iter-1 FN1).
+    price discount, surfaced via `est_cost`, NOT a token-count saving.
     """
     return _int_field(usage, "input_tokens") - cached_input(usage)
 
@@ -260,7 +260,7 @@ def aggregate(usages: list[dict]) -> dict:
         "total_uncached_input": total_uncached,
         "total_output": total_output,
         "cache_share": (total_cached / total_input) if total_input else 0.0,
-        # Per-call uncached, in call order: the iter-3 FN3 warmup-confound detector.
+        # Per-call uncached, in call order: the warmup-confound detector.
         "per_call_uncached": [uncached_input(u) for u in usages],
     }
 
@@ -313,7 +313,7 @@ def est_cost_ratio(
     return cont_cost / fresh_cost
 
 
-# ── Screen verdict (iter-3 FN1: NEVER flips) ───────────────────────────────────
+# ── Screen verdict (NEVER flips) ───────────────────────────────────────────────
 
 # The screen's pre-registered bar. Verdicts are {stay-fresh, escalate-to-full-rigor,
 # inconclusive} -- there is NO flip verdict: a best-case + N=3 + order-biased screen
