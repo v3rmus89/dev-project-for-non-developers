@@ -7,7 +7,7 @@ Reads a Markdown plan file and emits JSON containing:
   as the default root to verify-plan-facts.py).
 - facts: list of typed fact items extracted from active sections only.
 
-Active/historical detection (FN1 blacklist design): sections are active
+Active/historical detection (blacklist design): sections are active
 by default; a section is treated as historical when its heading matches
 one of the EXCLUDED_HEADINGS below.  The exclusion ends when the next
 heading at the same or higher level appears.

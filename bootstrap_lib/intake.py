@@ -64,11 +64,11 @@ def _ask_menu(stdin, stdout, prompt: str, choices: list[str], default: str | Non
     non-numeric text). A non-coder typing `5` or `python` instead of `1` must
     not crash or pass a silently-wrong value.
 
-    When `default` is set (PR #9 — a pre-filled stack suggestion), a blank
+    When `default` is set (a pre-filled stack suggestion), a blank
     line accepts `default`. `default` must be one of `choices` — a fail-loud
     guard so a `stack_suggest` ↔ `_flags.LANGUAGES` drift surfaces here, not
     silently downstream. When `default` is `None` the behaviour is
-    byte-identical to PR #8: a blank line re-prompts."""
+    the original no-suggestion one: a blank line re-prompts."""
     if default is not None and default not in choices:
         raise ValueError(f"_ask_menu default {default!r} is not in choices {choices!r}")
     while True:
@@ -88,7 +88,7 @@ def _language_menu_prompt(default: str | None) -> str:
     """Render the language-menu prompt string. With `default` set (a stack
     suggestion from the brief), the matching row gets a `← recommended`
     marker and the Choose line names the default. With `default` `None` the
-    output is byte-identical to PR #8's hardcoded language prompt."""
+    output is byte-identical to the original hardcoded language prompt."""
     lines = ["Language:"]
     for i, language in enumerate(_flags.LANGUAGES, start=1):
         marker = "  ← recommended" if language == default else ""
@@ -154,9 +154,10 @@ def run_intake(stdin=None, stdout=None) -> list[str] | None:
 
     project_name = _ask_project_name(stdin, stdout)
 
-    # PR #9 — optional plain-English brief → a language suggestion that
+    # Optional plain-English brief → a language suggestion that
     # pre-fills the language menu's default. Skipping (a blank line) or a
-    # low-confidence brief leaves the language menu exactly as PR #8.
+    # low-confidence brief leaves the language menu with no pre-filled
+    # default.
     brief = _ask_text(
         stdin,
         stdout,

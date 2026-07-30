@@ -12,8 +12,8 @@ The decide phase lives in `bootstrap_lib/adopt_ui.py` (`_interactive_decide`);
 the apply phase lives in `manifest.plan_adoption_entries` +
 `apply_pipeline._apply_adoption_writes`. This module is the analyze + recommend layer.
 
-All data classes are NamedTuple via class-syntax per PR #6 Claude iter-2 #2
-lesson (functional NamedTuple stores annotations as strings; class-syntax does
+All data classes are NamedTuple via class-syntax
+(functional NamedTuple stores annotations as strings; class-syntax does
 not — matters for `Literal[...]` types).
 """
 
@@ -40,7 +40,7 @@ _MD_HEADING_RE = re.compile(rb"^#{1,6}(?:\s|$)", re.MULTILINE)
 # rule (f) to compare heading SETS between target and skill template.
 _MD_HEADING_LINE_RE = re.compile(rb"^#{1,6}\s+.+?\s*$", re.MULTILINE)
 
-# Domain-rich markdown files governed by Scope #5 rule (f) — these files'
+# Domain-rich markdown files governed by adoption rule (f) — these files'
 # non-trivial existing content gets WRITE_NEW with manual_review_needed=True
 # (preserve target's domain content; emit .new for manual merge).
 _DOMAIN_MD_FILES = frozenset(
@@ -50,15 +50,15 @@ _DOMAIN_MD_FILES = frozenset(
 # Standalone tool-config files that, when owned by the target, shadow the
 # skill's pyproject.toml [tool.*] tables: ruff reads ruff.toml / .ruff.toml in
 # preference to [tool.ruff], and pytest reads pytest.ini in preference to
-# [tool.pytest.ini_options]. Used by the B1 shadow scan (config-shadowing fix
-# plan). Top-level scan only — nested monorepo configs are out of scope.
+# [tool.pytest.ini_options]. Used by the config-shadowing scan.
+# Top-level scan only — nested monorepo configs are out of scope.
 _SHADOWING_CONFIG_FILES = ("ruff.toml", ".ruff.toml", "pytest.ini")
 
 
 class TargetMeta(NamedTuple):
     """Derived metadata about a target file.
 
-    Per Scope #11 privacy boundary: NO raw target content fields. Only
+    Per the privacy boundary: NO raw target content fields. Only
     derived markers (line count, heading count, structural flags, hashes).
     The user-facing recommendation report MUST NOT contain raw target text.
     """
@@ -93,7 +93,7 @@ class TargetMeta(NamedTuple):
 class PolicyRecommendation(NamedTuple):
     """A per-file recommendation produced by `recommend_policy`.
 
-    Per Scope #6 single-matrix consent contract:
+    Per the single-matrix consent contract:
       - `manual_review_needed=False`: `--auto-accept-recommendations` auto-applies
         without a prompt; under `--non-interactive`, still auto-applies.
       - `manual_review_needed=True`: always needs an interactive prompt; under
@@ -110,7 +110,7 @@ class PlannedFileAnalysis(NamedTuple):
     """The analyze-phase product for a single planned file.
 
     Pairs the per-file `TargetMeta` with the `PolicyRecommendation` derived from
-    Scope #5 rules. AdoptionPlan is a sequence of these.
+    the adoption rules. AdoptionPlan is a sequence of these.
     """
 
     rel_path: str
@@ -127,7 +127,7 @@ class AdoptionPlan(NamedTuple):
 
     target_root: Path
     analyses: tuple[PlannedFileAnalysis, ...]
-    # B1 shadow scan result (config-shadowing fix plan): target-owned
+    # Config-shadowing scan result: target-owned
     # standalone tool-config filenames that would shadow pyproject.toml's
     # [tool.*] tables. Computed once by `analyze_target`; consumed by both the
     # escalation post-step and `format_recommendation_report` — never
@@ -147,8 +147,8 @@ def scan_shadowing_configs(target_root: Path) -> tuple[str, ...]:
     pytest reads a `pytest.ini` in preference to `[tool.pytest.ini_options]`.
     The skill ships its config inside `pyproject.toml`, so any of these
     target-owned files silently wins. Top-level (`target_root`) only — not
-    recursive; nested monorepo configs are out of scope (config-shadowing fix
-    plan, Bucket E BACKLOG entry).
+    recursive; nested monorepo configs are out of scope (parked in
+    BACKLOG.md with its trigger).
     """
     return tuple(name for name in _SHADOWING_CONFIG_FILES if (target_root / name).is_file())
 
@@ -160,13 +160,13 @@ def _is_dotclaude_class_pattern(pattern: str) -> bool:
 
     A BROAD pattern that merely happens to match the file (e.g. `*.md`) is NOT
     `.claude/`-class: the un-ignore block wouldn't fix it, so rule (a0) must stay
-    a conservative SKIP for it (design-note AC4 / iter-1 FN5).
+    a conservative SKIP for it.
 
     Normalize first: strip a leading `!` (negation) + surrounding space, then an
     optional leading `/` (root-anchored `/.claude/`, `/.claude/**` are normal
-    gitignore forms — iter-3 FN4). Then match `.claude`, `.claude/`, `.claude/**`,
+    gitignore forms). Then match `.claude`, `.claude/`, `.claude/**`,
     or any `.claude/`-prefixed pattern. The raw pattern is consumed here and
-    never stored on TargetMeta (Scope #11 privacy boundary)."""
+    never stored on TargetMeta (privacy boundary)."""
     p = pattern.strip()
     if p.startswith("!"):
         p = p[1:].strip()
@@ -182,8 +182,7 @@ def _gitignore_has_neutralize_sentinel(target_root: Path) -> bool:
     When present, NEUTRALIZE is NOT cleanly applicable: apply would no-op on the
     sentinel (so a partial/broken block leaves the command git-hidden — silent
     failure), and restore would remove lines apply did not add (clobbering
-    pre-existing user content). The trigger falls back to SKIP+manual instead
-    (Tier-2 codex P2 on PR #35 — findings B + D)."""
+    pre-existing user content). The trigger falls back to SKIP+manual instead."""
     from bootstrap_lib.manifest import NEUTRALIZE_SENTINEL
 
     try:
@@ -245,7 +244,7 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
         # has already un-ignored the command (manual setup, or an interrupted
         # prior adopt that appended the block but never wrote the file) would be
         # mis-classified NEUTRALIZE instead of a plain rule-(a) WRITE — and
-        # `--non-interactive` would abort on it (Tier-2 codex P2 on PR #35).
+        # `--non-interactive` would abort on it.
         if pattern.lstrip().startswith("!"):
             return None, False
         ref_short = f"{parts[0]}:{parts[1]}" if len(parts) >= 2 else ref
@@ -253,8 +252,8 @@ def _check_ignored_by_git(target_root: Path, rel_path: str) -> tuple[str | None,
         # `.claude/`-class AND the ignore is sourced from the target's ROOT
         # `.gitignore` (so the un-ignore block edits the SAME file, which must
         # exist — no created-then-stray-on-restore artifact) AND that `.gitignore`
-        # has no pre-existing sentinel. Else → conservative SKIP (PR #35 codex
-        # findings A/B/D + design-note AC4 / iter-1 FN5 broad-pattern SKIP).
+        # has no pre-existing sentinel. Else → conservative SKIP (same
+        # principle as the broad-pattern SKIP in rule (a0)).
         neutralize_eligible = (
             bool(pattern)
             and _is_dotclaude_class_pattern(pattern)
@@ -294,7 +293,7 @@ def _has_dependency_groups_table(content_bytes: bytes) -> bool:
 def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
     """Inspect a single target file and produce its TargetMeta.
 
-    All fields are derived — NO raw target content is stored (per Scope #11
+    All fields are derived — NO raw target content is stored (per the
     privacy boundary). Hashes, counts, structural flags only.
 
     `ignored_by_git` is populated only when the file doesn't exist (the rule
@@ -356,7 +355,7 @@ def _compute_target_meta(target_root: Path, rel_path: str) -> TargetMeta:
 class AdoptionCollisionError(Exception):
     """Raised when apply-time invariants for adoption-mode are violated.
 
-    The current trigger is the Scope #7 `.new` collision rule: if
+    The current trigger is the `.new` collision rule: if
     `<original>.new` already exists at apply time, fail-loud rather than
     overwrite a file the user may have authored or already-merged.
     `apply_pipeline.py` catches this and converts to `CLIError(exit_code=2)`.
@@ -470,11 +469,11 @@ def recommend_policy(
     skill_content: bytes,
     target_meta: TargetMeta,
 ) -> PolicyRecommendation:
-    """Apply Scope #5 rules (a0/a..h) in order; first match wins.
+    """Apply the adoption rules (a0/a..h) in order; first match wins.
 
-    The per-rule semantics are EXACTLY as the plan specifies (manual_review_needed
-    values match Bucket D test fixture expectations + the v2 restore matrix in
-    Bucket B):
+    The per-rule semantics are EXACTLY as the adoption plan specifies
+    (manual_review_needed values match the per-rule test fixture
+    expectations + the v2 restore matrix in `manifest.py`):
 
       (a0) missing + ignored_by_git, .claude/-class → NEUTRALIZE, manual_review=True
            missing + ignored_by_git, broad pattern  → SKIP,       manual_review=True
@@ -491,9 +490,9 @@ def recommend_policy(
 
     Rule (h) is the core safety guarantee: any existing non-empty file that
     doesn't match a recognized adoption pattern gets SKIP with manual_review.
-    Codex iter-1 #3: rule (h) must NEVER recommend WRITE on an existing file
+    Rule (h) must NEVER recommend WRITE on an existing file
     — that would let `--restore` silently delete user files (WRITE's restore
-    semantics delete the path per Bucket B v2 restore matrix row (a)).
+    semantics delete the path per v2 restore matrix row (a)).
     """
     name = Path(rel_path).name
 
@@ -521,8 +520,8 @@ def recommend_policy(
         # Ignored, but NOT cleanly NEUTRALIZE-able — a broad pattern the block
         # can't fix (e.g. `*.md`), an ignore sourced from `.git/info/exclude` / a
         # global excludesfile, or a `.gitignore` that already carries the sentinel
-        # block. Stay a conservative SKIP (design-note AC4 / iter-1 FN5 + PR #35
-        # codex A/B/D); owner decides SKIP-confirm vs WRITE_NEW.
+        # block. Stay a conservative SKIP; owner decides SKIP-confirm vs
+        # WRITE_NEW.
         return PolicyRecommendation(
             policy="SKIP",
             reason=(
@@ -544,7 +543,7 @@ def recommend_policy(
 
     # All remaining rules need target content (rules b/d/f/g operate on bytes).
     # We re-read here rather than threading content through TargetMeta because
-    # TargetMeta is deliberately content-free per Scope #11 privacy boundary —
+    # TargetMeta is deliberately content-free per the privacy boundary —
     # only derived markers/hashes live there.
     target_content = target_path.read_bytes()
 
@@ -641,7 +640,7 @@ def recommend_policy(
 
     # Rule (h): DEFAULT — existing non-empty file with no recognized pattern.
     # This is the core safety guarantee: never silently WRITE over an unknown
-    # existing file (Codex iter-1 #3 closed). Owner must decide.
+    # existing file. Owner must decide.
     return PolicyRecommendation(
         policy="SKIP",
         reason=(
@@ -656,7 +655,7 @@ def recommend_policy(
 def _format_target_shape(meta: TargetMeta) -> str:
     """Render the per-file "target: ..." shape line for the report.
 
-    Per Scope #11 privacy boundary: only derived markers — sha256 (first 8 hex
+    Per the privacy boundary: only derived markers — sha256 (first 8 hex
     chars), counts (lines, headings, size), structural flags (deps groups),
     version pin, gitignore match line. NO raw file bytes anywhere.
     """
@@ -692,10 +691,10 @@ def _format_recommendation_row(analysis: PlannedFileAnalysis) -> list[str]:
 
 
 def _format_shadow_advisory(shadowing_configs: tuple[str, ...]) -> list[str]:
-    """B1 advisory block — emitted whenever the shadow scan found a
-    target-owned standalone config. Names each file and the [tool.*] table it
+    """Config-shadowing advisory block — emitted whenever the shadow scan found
+    a target-owned standalone config. Names each file and the [tool.*] table it
     overrides. Contains only filenames + table names — no raw target content
-    (Scope #11 privacy boundary)."""
+    (privacy boundary)."""
     lines = ["", "config-shadowing advisory:"]
     for name in shadowing_configs:
         table = "[tool.pytest.ini_options]" if name == "pytest.ini" else "[tool.ruff]"
@@ -706,10 +705,11 @@ def _format_shadow_advisory(shadowing_configs: tuple[str, ...]) -> list[str]:
 
 
 def _pyproject_skip_advisory(target_root: Path) -> list[str]:
-    """B2 advisory lines for a SKIPped target-owned `pyproject.toml`.
+    """Advisory lines for a SKIPped target-owned `pyproject.toml`.
 
     Three branches keyed off the target file's parse state (only the
-    classification leaves this function — no raw content, per Scope #11):
+    classification leaves this function — no raw content, per the privacy
+    boundary):
       - malformed TOML → tell the owner to fix it before adding config;
       - has `[tool.*]` / `[project]` deps / `[dependency-groups]` → compare and
         merge via `--diff`, copying ONLY the `[tool.ruff*]` /
@@ -762,7 +762,7 @@ def format_recommendation_report(plan: AdoptionPlan) -> str:
     Layout: header + sections grouped by `manual_review_needed`
     (automatic vs manual-review) + summary line with per-policy counts.
 
-    Privacy (Bucket B test row contract): the output contains NO raw target
+    Privacy contract: the output contains NO raw target
     content. Only filenames, derived markers (counts/hashes/structural flags),
     and policy decisions/reasons appear. Tests assert this empirically by
     seeding target files with a marker string and verifying the marker does
@@ -881,7 +881,7 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
 
     The orchestrator that produces the full AdoptionPlan consumed by
     `format_recommendation_report` (user-facing) and `plan_adoption_entries`
-    (apply-phase wiring per Bucket A `cli.py` row).
+    (apply-phase wiring).
 
     Stable ordering: planned_files keys are sorted lexicographically so the
     user-facing report and downstream manifest entries are deterministic
@@ -889,15 +889,14 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
 
     The function reads target files (via `_compute_target_meta` +
     `recommend_policy`) but writes NOTHING — the analyze phase is pure
-    inspection per Architecture decision "Analyze phase reads target files but
-    writes NOTHING."
+    inspection by design.
 
     Caller contract: the caller (`apply_pipeline.py`) is responsible for
     validating that `target_root` is an existing directory AND that every
     `planned_files` key is CLI-layer path-safe (no absolute paths, no `..`
     segments). Path-safety enforcement lives in
     `apply_pipeline._cli_layer_path_safety` (called by `cli.main`) +
-    `render.py` per Architecture decisions;
+    `render.py`;
     this engine assumes pre-validated inputs.
     """
     analyses: list[PlannedFileAnalysis] = []
@@ -914,7 +913,7 @@ def analyze_target(target_root: Path, planned_files: dict[str, bytes]) -> Adopti
             )
         )
 
-    # B1 shadow scan (config-shadowing fix plan, Bucket B). Run ONCE here; the
+    # Config-shadowing scan. Run ONCE here; the
     # result is stored on the plan and consumed by both the escalation below
     # and `format_recommendation_report` — never rescanned, so the escalation
     # decision and the report advisory cannot drift apart.

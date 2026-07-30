@@ -1,11 +1,11 @@
-"""Smart stack suggestion — PR #9.
+"""Smart stack suggestion.
 
 `suggest_stack(brief)` maps a plain-English project description to a *language*
 suggestion. It is a deterministic keyword **signal scorer** (no LLM, no network
-— per the plan's AD-1, this keeps the "pure offline CLI, no `.env`" invariant
+— this keeps the "pure offline CLI, no `.env`" invariant
 and stays fully CI-testable).
 
-Mechanism (plan Bucket A):
+Mechanism:
   1. normalise the brief — lowercase, every run of non-alphanumerics (hyphens
      included) becomes a single space, wrapped in spaces;
   2. match each signal as a space-bounded substring (so `"api"` does not fire
@@ -36,7 +36,7 @@ from bootstrap_lib import _flags
 class StackSuggestion(NamedTuple):
     """A language suggestion + a fixed human-readable rationale.
 
-    No `package_manager` field — the suggestion is language-only (plan AD-3).
+    No `package_manager` field — the suggestion is language-only.
     """
 
     language: str
@@ -48,12 +48,12 @@ class StackSuggestion(NamedTuple):
 # needed). All signals are hyphen-free: the brief is normalised with hyphens
 # stripped, so a hyphenated brief ("single-page") still matches "single page".
 #
-# Sourcing (plan External-sources table): the nodejs/python web + back-end
+# Sourcing: the nodejs/python web + back-end
 # groupings are inspired by StackShare "Awesome Stacks" (CC0); the go set is
 # repo-local product judgment — Go's commonly-understood strengths (CLI
 # tooling, services, systems work) — not transcribed from any one source.
 #
-# Extension rule (plan Bucket A, Tier-2 #2): a signal may be added only with
+# Extension rule: a signal may be added only with
 # an accompanying new Brief-acceptance-matrix row in tests/test_stack_suggest.py
 # — the matrix stays the complete coverage gate.
 _SIGNALS: dict[str, dict[str, frozenset[str]]] = {
@@ -122,7 +122,7 @@ _RATIONALES: dict[str, str] = {
     "go": "command-line tools and services are Go's sweet spot",
 }
 
-# Single-source-of-truth guard (plan Tier-2 / Codex iter-3 #3): the signal and
+# Single-source-of-truth guard: the signal and
 # rationale tables must be keyed exactly on `_flags.LANGUAGES`. A typo or a
 # future language addition that misses one of these tables fails loud at
 # import — not silently downstream when `_ask_menu` gets an unknown default.

@@ -135,15 +135,15 @@ def _emit_in_mode(rel_out, mode, enable_smoke):
 def _emit_python_in_pm_mode(rel_out, package_manager):
     """Filter Python-language template entries by package_manager mode.
 
-    Closes Codex Tier-2 #6: normalize `None`/missing values to `"pip"` as
+    Normalizes `None`/missing values to `"pip"` as
     the first line. Without normalization, a non-aware caller that omits
     `"package_manager"` from the context dict would pass `None` here, and
     neither `None == "uv"` nor `None == "pip"` would match — both
     `requirements-dev.txt` AND `.python-version` would render,
     contradicting the shared-templates `|default("pip")` safety convention.
 
-    Defaulting to `"pip"` preserves pre-PR-#6 rendering for non-aware
-    callers (existing tests that construct context dicts manually).
+    Defaulting to `"pip"` preserves the original pip-default rendering for
+    non-aware callers (existing tests that construct context dicts manually).
 
     Real CLI flow resolves `package_manager` to a non-None string via
     `bootstrap_lib.cli._resolve_package_manager` BEFORE context build;
@@ -195,9 +195,9 @@ def render_makefile_review(context, language="python"):
     Byte-equivalent to what `{% include 'Makefile.review.tmpl' %}` emits inside
     the generated `Makefile` (same Jinja env + same context) — adopt mode writes
     this as a standalone `Makefile.review` when the target owns its own Makefile
-    (which adopt SKIPs, so the inline include never lands). `tests/
-    test_selftest_overlap.py` + the Bucket B parity test lock the standalone and
-    inline forms together so they cannot drift (R-B2).
+    (which adopt SKIPs, so the inline include never lands). The parity tests in
+    `tests/test_selftest_overlap.py` lock the standalone and inline forms
+    together so they cannot drift.
     """
     env = build_env(language)
     return env.get_template("Makefile.review.tmpl").render(**context).encode("utf-8")
