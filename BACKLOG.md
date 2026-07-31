@@ -49,7 +49,7 @@ someone else could check against the two outputs.
 ## Follow-ups from the pre-expansion structural refactors (Buckets A–E)
 
 Parked during the Buckets A–E work
-([docs/plans/2026-07-05-pre-expansion-structural-refactors.md](docs/plans/2026-07-05-pre-expansion-structural-refactors.md)).
+([docs/plans/archive/2026-07-05-pre-expansion-structural-refactors.md](docs/plans/archive/2026-07-05-pre-expansion-structural-refactors.md)).
 
 ### Resolve intra-page anchors in the markdown link gate (`markdown-anchor-resolution`)
 
